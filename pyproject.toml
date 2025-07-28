@@ -1,0 +1,25 @@
+[project]
+name = "claude-everything"
+version = "0.0.1"
+description = "General purpose Claude agent with sub-agent spawning and todo list capabilities using LangGraph."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "langgraph>=0.2.6",
+    "langchain-anthropic>=0.1.23",
+    "langchain>=0.2.14",
+]
+
+
+[build-system]
+requires = ["setuptools>=73.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["claude_everything"]
+[tool.setuptools.package-dir]
+"claude_everything" = "src/claude_everything"
+
+[tool.setuptools.package-data]
+"*" = ["py.typed"]
