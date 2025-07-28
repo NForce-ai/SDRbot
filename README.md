@@ -15,109 +15,44 @@ A general-purpose AI agent built with LangGraph that includes two default tools:
 ## Installation
 
 ```bash
+pip install claude_everything
+```
+
+Or you can install from source
+
+```bash
 pip install -e .
 ```
 
 ## Usage
 
-### Basic Usage
-
-```python
-from claude_everything.graph import graph
-from langchain_core.messages import HumanMessage
-
-# Simple usage
-result = await graph.ainvoke({
-    "messages": [HumanMessage(content="Help me plan a project")]
-})
-```
-
-### With Additional Tools
-
-```python
-from claude_everything.graph import graph
-from langchain_core.messages import HumanMessage
-
-# Define custom tools
-def custom_calculator(expression: str) -> str:
-    """Calculate mathematical expressions."""
-    try:
-        result = eval(expression)
-        return f"Result: {result}"
-    except Exception as e:
-        return f"Error: {e}"
-
-# Use with additional tools
-result = await graph.ainvoke({
-    "messages": [HumanMessage(content="Calculate 15 * 23 + 7")],
-    "additional_tools": [custom_calculator]
-})
-```
+See [examples/research](examples/research) for an example of how to use.
 
 ## Default Tools
 
-### 1. Sub-agent Tool (`spawn_sub_agent`)
+### 1. Sub-agent Tool (`task`)
 
 Spawns a new agent instance to handle specific subtasks:
 
 ```python
 # The agent can use this internally like:
-# spawn_sub_agent(
-#     task_description="Research the latest developments in AI",
-#     additional_context="Focus on developments from 2024"
-# )
+# def task(
+#   description: str, 
+#   subagent_type: str
+# ):
 ```
 
-### 2. Todo List Tool (`update_todo_list`)
+### 2. Todo List Tool (`write_todos`)
 
 Manages tasks with a replace-entire-state pattern:
 
 ```python
 # The agent can use this internally like:
-# update_todo_list(todos_json='[
-#     {"id": "1", "content": "Research topic", "status": "completed", "priority": "high"},
-#     {"id": "2", "content": "Write summary", "status": "in_progress", "priority": "medium"}
-# ]')
+# def write_todos(
+#     todos: list[Todo]
+# )
 ```
 
 Todo items have the following structure:
-- `id`: Unique identifier
 - `content`: Task description
 - `status`: One of "pending", "in_progress", "completed"
-- `priority`: One of "high", "medium", "low"
-
-## Running with LangGraph CLI
-
-```bash
-# Start the development server
-langgraph dev
-
-# Deploy to LangGraph Cloud
-langgraph deploy
-```
-
-## Architecture
-
-The agent follows a standard LangGraph pattern:
-
-1. **State Management**: Maintains conversation messages, todo list, and additional tools
-2. **Model Calling**: Uses configurable language models (OpenAI, Anthropic, Fireworks)
-3. **Tool Execution**: Processes tool calls with special handling for todo list updates
-4. **Routing**: Continues conversation or ends based on model output
-
-## Development
-
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Type checking
-mypy src/
-
-# Code formatting
-ruff format src/
-ruff check src/
-```
