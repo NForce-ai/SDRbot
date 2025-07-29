@@ -1,7 +1,7 @@
 [project]
-name = "claude-everything"
+name = "deepagents"
 version = "0.0.1"
-description = "General purpose Claude agent with sub-agent spawning and todo list capabilities using LangGraph."
+description = "General purpose 'deep agent' with sub-agent spawning, todo list capabilities, and mock file system. Built on LangGraph."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
@@ -17,9 +17,9 @@ requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["claude_everything"]
+packages = ["deepagents"]
 [tool.setuptools.package-dir]
-"claude_everything" = "src/claude_everything"
+"deepagents" = "src/deepagents"
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
