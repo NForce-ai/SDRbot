@@ -131,11 +131,11 @@ you can pass a [LangChain model object](https://python.langchain.com/docs/integr
 
 ## Deep Agent Details
 
-These are the built in 
+The below components are built into `deepagents` and helps make it work for deep tasks off-the-shelf.
 
 ### System Prompt
 
-`deepagents` comes with a [built-in system prompt]((src/deepagents/prompts.py)). This is relatively detailed prompt that is heavily based on and inspired by [attempts](https://github.com/kn1026/cc/blob/main/claudecode.md) to [replicate](https://github.com/asgeirtj/system_prompts_leaks/blob/main/Anthropic/claude-code.md)
+`deepagents` comes with a [built-in system prompt](src/deepagents/prompts.py). This is relatively detailed prompt that is heavily based on and inspired by [attempts](https://github.com/kn1026/cc/blob/main/claudecode.md) to [replicate](https://github.com/asgeirtj/system_prompts_leaks/blob/main/Anthropic/claude-code.md)
 Claude Code's system prompt. It was made more general purpose than Claude Code's system prompt.
 This contains detailed instructions for how to use the built-in planning tool, file system tools, and sub agents.
 Note that part of this system prompt [can be customized](#promptprefix--required-)
