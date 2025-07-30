@@ -1,4 +1,3 @@
-from deepagents.model import model
 from deepagents.prompts import TASK_DESCRIPTION_PREFIX, TASK_DESCRIPTION_SUFFIX
 from deepagents.state import DeepAgentState
 from langgraph.prebuilt import create_react_agent
@@ -19,9 +18,9 @@ class SubAgent(TypedDict):
     tools: NotRequired[list[str]]
 
 
-def create_task_tool(tools, prompt_prefix, subagents: list[SubAgent]):
+def _create_task_tool(tools, instructions, subagents: list[SubAgent], model, state_schema):
     agents = {
-        "general-purpose": create_react_agent(model, prompt=prompt_prefix, tools=tools)
+        "general-purpose": create_react_agent(model, prompt=instructions, tools=tools)
     }
     tools_by_name = {}
     for tool_ in tools:
@@ -34,7 +33,7 @@ def create_task_tool(tools, prompt_prefix, subagents: list[SubAgent]):
         else:
             _tools = tools
         agents[_agent["name"]] = create_react_agent(
-            model, prompt=_agent["prompt"], tools=_tools
+            model, prompt=_agent["prompt"], tools=_tools, state_schema=state_schema
         )
 
     other_agents_string = [

@@ -31,7 +31,7 @@ Conduct thorough research and then reply to the user with a detailed answer to t
 
 research_sub_agent = {
     "name": "research-agent",
-    "description": "Used to research more in depth questions",
+    "description": "Used to research more in depth questions. Only give this researcher one topic at a time. Do not pass multiple sub questions to this researcher. Instead, you should break down a large topic into the necessary components, and then call multiple research agents in parallel, one for each sub question.",
     "prompt": sub_research_prompt,
 }
 
@@ -65,7 +65,7 @@ critique_sub_agent = {
 
 
 # Prompt prefix to steer the agent to be an expert researcher
-research_prompt_prefix = """You are an expert researcher. Your job is to conduct thorough research, and then write a polished report.
+research_instructions = """You are an expert researcher. Your job is to conduct thorough research, and then write a polished report.
 
 The first thing you should do is to write the original user question to `question.txt` so you have a record of it.
 
@@ -158,6 +158,6 @@ Use this to run an internet search for a given query. You can specify the number
 # Create the agent
 agent = create_deep_agent(
     [internet_search],
-    research_prompt_prefix,
+    research_instructions,
     subagents=[critique_sub_agent, research_sub_agent],
 ).with_config({"recursion_limit": 1000})
