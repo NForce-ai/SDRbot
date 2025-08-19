@@ -5,7 +5,8 @@ from langchain_core.tools import BaseTool
 from typing_extensions import TypedDict
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
-from typing import Annotated, NotRequired
+from langchain.chat_models import init_chat_model
+from typing import Annotated, NotRequired, Any
 from langgraph.types import Command
 
 from langgraph.prebuilt import InjectedState
@@ -16,6 +17,8 @@ class SubAgent(TypedDict):
     description: str
     prompt: str
     tools: NotRequired[list[str]]
+    # Optional per-subagent model configuration
+    model_settings: NotRequired[dict[str, Any]]
 
 
 def _create_task_tool(tools, instructions, subagents: list[SubAgent], model, state_schema):
@@ -32,8 +35,15 @@ def _create_task_tool(tools, instructions, subagents: list[SubAgent], model, sta
             _tools = [tools_by_name[t] for t in _agent["tools"]]
         else:
             _tools = tools
+        # Resolve per-subagent model if specified, else fallback to main model
+        if "model_settings" in _agent:
+            model_config = _agent["model_settings"]
+            # Always use get_default_model to ensure all settings are applied
+            sub_model = init_chat_model(**model_config)
+        else:
+            sub_model = model
         agents[_agent["name"]] = create_react_agent(
-            model, prompt=_agent["prompt"], tools=_tools, state_schema=state_schema
+            sub_model, prompt=_agent["prompt"], tools=_tools, state_schema=state_schema
         )
 
     other_agents_string = [
