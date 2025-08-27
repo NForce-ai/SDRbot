@@ -3,7 +3,7 @@ from deepagents.model import get_default_model
 from deepagents.tools import write_todos, write_file, read_file, ls, edit_file
 from deepagents.state import DeepAgentState
 from typing import Sequence, Union, Callable, Any, TypeVar, Type, Optional, Dict
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, tool
 from langchain_core.language_models import LanguageModelLike
 from deepagents.interrupt import create_interrupt_hook, ToolInterruptConfig
 from langgraph.types import Checkpointer
@@ -67,11 +67,13 @@ def create_deep_agent(
     all_builtin_tools = [write_todos, write_file, read_file, ls, edit_file]
     
     if builtin_tools is not None:
+        tools_by_name = {}
+        for tool_ in all_builtin_tools:
+            if not isinstance(tool_, BaseTool):
+                tool_ = tool(tool_)
+            tools_by_name[tool_.name] = tool_
         # Only include built-in tools whose names are in the specified list
-        built_in_tools = [
-            tool for tool in all_builtin_tools 
-            if getattr(tool, 'name', tool.__name__) in builtin_tools
-        ]
+        built_in_tools = [ tools_by_name[_tool] for _tool in builtin_tools        ]
     else:
         built_in_tools = all_builtin_tools
     

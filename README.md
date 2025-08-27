@@ -130,6 +130,18 @@ agent = create_deep_agent(
 
 By default, `deepagents` uses `"claude-sonnet-4-20250514"`. You can customize this by passing any [LangChain model object](https://python.langchain.com/docs/integrations/chat/).
 
+### `builtin_tools` (Optional)
+
+By default, a deep agent will have access to a number of [built-in tools](#builtintools--optional-).
+You can change this by specifying the tools (by name) that the agent should have access to with this parameter.
+
+Example:
+```python
+# Only give agent access to todo tool, none of the filesystem tools
+builtin_tools = ["write_todos"]
+agent = create_deep_agent(..., builtin_tools=builtin_tools, ...)
+```
+
 #### Example: Using a Custom Model
 
 Here's how to use a custom model (like OpenAI's `gpt-oss` model via Ollama):
@@ -228,6 +240,18 @@ You can also specify [custom sub agents](#subagents-optional) with their own ins
 
 Sub agents are useful for ["context quarantine"](https://www.dbreunig.com/2025/06/26/how-to-fix-your-context.html#context-quarantine) (to help not pollute the overall context of the main agent)
 as well as custom instructions.
+
+### Built In Tools
+
+By default, deep agents come with five built-in tools:
+
+- `write_todos`: Tool for writing todos
+- `write_file`: Tool for writing to a file in the virtual filesystem
+- `read_file`: Tool for reading from a file in the virtual filesystem
+- `ls`: Tool for listing files in the virtual filesystem
+- `edit_file`: Tool for editing a file in the virtual filesystem
+
+These can be disabled via the [`builtin_tools`](#builtintools--optional-) parameter.
 
 ### Tool Interrupts
 
