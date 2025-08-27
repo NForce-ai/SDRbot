@@ -31,6 +31,7 @@ def create_deep_agent(
     model: Optional[Union[str, LanguageModelLike]] = None,
     subagents: list[SubAgent] = None,
     state_schema: Optional[StateSchemaType] = None,
+    builtin_tools: Optional[list[str]] = None,
     interrupt_config: Optional[ToolInterruptConfig] = None,
     config_schema: Optional[Type[Any]] = None,
     checkpointer: Optional[Checkpointer] = None,
@@ -54,14 +55,26 @@ def create_deep_agent(
                 - (optional) `tools`
                 - (optional) `model` (either a LanguageModelLike instance or dict settings)
         state_schema: The schema of the deep agent. Should subclass from DeepAgentState
+        builtin_tools: If not provided, all built-in tools are included. If provided, 
+            only the specified built-in tools are included.
         interrupt_config: Optional Dict[str, HumanInterruptConfig] mapping tool names to interrupt configs.
-
         config_schema: The schema of the deep agent.
         checkpointer: Optional checkpointer for persisting agent state between runs.
     """
     
     prompt = instructions + base_prompt
-    built_in_tools = [write_todos, write_file, read_file, ls, edit_file]
+    
+    all_builtin_tools = [write_todos, write_file, read_file, ls, edit_file]
+    
+    if builtin_tools is not None:
+        # Only include built-in tools whose names are in the specified list
+        built_in_tools = [
+            tool for tool in all_builtin_tools 
+            if getattr(tool, 'name', tool.__name__) in builtin_tools
+        ]
+    else:
+        built_in_tools = all_builtin_tools
+    
     if model is None:
         model = get_default_model()
     state_schema = state_schema or DeepAgentState
