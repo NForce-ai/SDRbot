@@ -1,4 +1,9 @@
-from deepagents.sub_agent import _create_task_tool, _create_sync_task_tool, SubAgent
+from deepagents.sub_agent import (
+    _create_task_tool,
+    _create_sync_task_tool,
+    SubAgent,
+    CustomSubAgent,
+)
 from deepagents.model import get_default_model
 from deepagents.tools import write_todos, write_file, read_file, ls, edit_file
 from deepagents.state import DeepAgentState
@@ -29,7 +34,7 @@ def _agent_builder(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
     instructions: str,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent] = None,
+    subagents: list[SubAgent | CustomSubAgent] = None,
     state_schema: Optional[StateSchemaType] = None,
     builtin_tools: Optional[list[str]] = None,
     interrupt_config: Optional[ToolInterruptConfig] = None,
@@ -56,7 +61,7 @@ def _agent_builder(
     if model is None:
         model = get_default_model()
     state_schema = state_schema or DeepAgentState
-    
+
     # Should never be the case that both are specified
     if post_model_hook and interrupt_config:
         raise ValueError(
@@ -69,7 +74,7 @@ def _agent_builder(
         selected_post_model_hook = create_interrupt_hook(interrupt_config)
     else:
         selected_post_model_hook = None
-    
+
     if not is_async:
         task_tool = _create_sync_task_tool(
             list(tools) + built_in_tools,
@@ -105,7 +110,7 @@ def create_deep_agent(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
     instructions: str,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent] = None,
+    subagents: list[SubAgent | CustomSubAgent] = None,
     state_schema: Optional[StateSchemaType] = None,
     builtin_tools: Optional[list[str]] = None,
     interrupt_config: Optional[ToolInterruptConfig] = None,
@@ -157,7 +162,7 @@ def async_create_deep_agent(
     tools: Sequence[Union[BaseTool, Callable, dict[str, Any]]],
     instructions: str,
     model: Optional[Union[str, LanguageModelLike]] = None,
-    subagents: list[SubAgent] = None,
+    subagents: list[SubAgent | CustomSubAgent] = None,
     state_schema: Optional[StateSchemaType] = None,
     builtin_tools: Optional[list[str]] = None,
     interrupt_config: Optional[ToolInterruptConfig] = None,

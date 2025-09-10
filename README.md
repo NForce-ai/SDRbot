@@ -102,15 +102,26 @@ class SubAgent(TypedDict):
     prompt: str
     tools: NotRequired[list[str]]
     model_settings: NotRequired[dict[str, Any]]
+
+class CustomSubAgent(TypedDict):
+    name: str
+    description: str
+    graph: Runnable
 ```
 
+**SubAgent fields:**
 - **name**: This is the name of the subagent, and how the main agent will call the subagent
 - **description**: This is the description of the subagent that is shown to the main agent
 - **prompt**: This is the prompt used for the subagent
 - **tools**: This is the list of tools that the subagent has access to. By default will have access to all tools passed in, as well as all built-in tools.
 - **model_settings**: Optional dictionary for per-subagent model configuration (inherits the main model when omitted).
 
-To use it looks like:
+**CustomSubAgent fields:**
+- **name**: This is the name of the subagent, and how the main agent will call the subagent
+- **description**: This is the description of the subagent that is shown to the main agent  
+- **graph**: A pre-built LangGraph graph/agent that will be used as the subagent
+
+#### Using SubAgent
 
 ```python
 research_subagent = {
@@ -119,6 +130,35 @@ research_subagent = {
     "prompt": sub_research_prompt,
 }
 subagents = [research_subagent]
+agent = create_deep_agent(
+    tools,
+    prompt,
+    subagents=subagents
+)
+```
+
+#### Using CustomSubAgent
+
+For more complex use cases, you can provide your own pre-built LangGraph graph as a subagent:
+
+```python
+from langgraph.prebuilt import create_react_agent
+
+# Create a custom agent graph
+custom_graph = create_react_agent(
+    model=your_model,
+    tools=specialized_tools,
+    prompt="You are a specialized agent for data analysis..."
+)
+
+# Use it as a custom subagent
+custom_subagent = {
+    "name": "data-analyzer",
+    "description": "Specialized agent for complex data analysis tasks",
+    "graph": custom_graph
+}
+
+subagents = [custom_subagent]
 agent = create_deep_agent(
     tools,
     prompt,
