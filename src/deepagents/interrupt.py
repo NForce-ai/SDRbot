@@ -19,7 +19,8 @@ def create_interrupt_hook(
     """Create a post model hook that handles interrupts using native LangGraph schemas.
 
     Args:
-        tool_configs: Dict mapping tool names to HumanInterruptConfig objects
+        tool_configs: Dict mapping tool names to HumanInterruptConfig objects or boolean values.
+                     If True, uses default HumanInterruptConfig. If False, no interrupt.
         message_prefix: Optional message prefix for interrupt descriptions
     """
     # Right now we don't properly handle `ignore`
@@ -47,7 +48,7 @@ def create_interrupt_hook(
 
         for tool_call in last_message.tool_calls:
             tool_name = tool_call["name"]
-            if tool_name in tool_configs:
+            if tool_name in tool_configs and tool_configs[tool_name]:
                 interrupt_tool_calls.append(tool_call)
             else:
                 auto_approved_tool_calls.append(tool_call)
