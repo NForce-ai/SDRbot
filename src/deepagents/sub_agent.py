@@ -44,6 +44,7 @@ def _get_agents(
             tools=tools,
             checkpointer=False,
             post_model_hook=post_model_hook,
+            state_schema=state_schema,
         )
     }
     tools_by_name = {}
