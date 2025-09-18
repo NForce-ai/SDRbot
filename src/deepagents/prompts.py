@@ -374,6 +374,8 @@ It is critical that you mark todos as completed as soon as you are done with a s
 For simple objectives that only require a few steps, it is better to just complete the objective directly and NOT use this tool.
 Writing todos takes time and tokens, use it when it is helpful for managing complex many-step problems! But not for simple few-step requests.
 
+IMPORTANT: The `write_todos` tool should never be called multiple times in parallel.
+
 ## `task` (subagent spawner)
 
 You have access to a `task` tool to launch short-lived subagents that handle isolated tasks. These agents are ephemeral — they live only for the duration of the task and return a single result.
