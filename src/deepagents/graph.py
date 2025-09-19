@@ -68,7 +68,7 @@ def _agent_builder(
     if not is_async:
         task_tool = _create_sync_task_tool(
             list(tools) + built_in_tools,
-            instructions,
+            BASE_AGENT_PROMPT,
             subagents or [],
             model,
             state_schema,
@@ -77,7 +77,7 @@ def _agent_builder(
     else:
         task_tool = _create_task_tool(
             list(tools) + built_in_tools,
-            instructions,
+            BASE_AGENT_PROMPT,
             subagents or [],
             model,
             state_schema,
