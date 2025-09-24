@@ -24,7 +24,6 @@ pip install deepagents
 ```python
 import os
 from typing import Literal
-
 from tavily import TavilyClient
 from deepagents import create_deep_agent
 
@@ -73,7 +72,7 @@ in the same way you would any LangGraph agent.
 
 ## Creating a custom deep agent
 
-There are three parameters you can pass to `create_deep_agent` to create your own custom deep agent.
+There are several parameters you can pass to `create_deep_agent` to create your own custom deep agent.
 
 ### `tools` (Required)
 
@@ -85,7 +84,7 @@ The agent (and any subagents) will have access to these tools.
 
 The second argument to `create_deep_agent` is `instructions`.
 This will serve as part of the prompt of the deep agent.
-Note that there is a [built in system prompt](src/deepagents/prompts.py) as well, so this is not the *entire* prompt the agent will see.
+Note that our deep agent middleware appends further instructions to the deep agent regarding to-do list, filesystem, and subagent usage, so this is not the *entire* prompt the agent will see.
 
 ### `subagents` (Optional)
 
@@ -101,7 +100,8 @@ class SubAgent(TypedDict):
     description: str
     prompt: str
     tools: NotRequired[list[str]]
-    model_settings: NotRequired[dict[str, Any]]
+    model: NotRequired[Union[LanguageModelLike, dict[str, Any]]]
+    middleware: NotRequired[list[AgentMiddleware]]
 
 class CustomSubAgent(TypedDict):
     name: str
@@ -114,7 +114,8 @@ class CustomSubAgent(TypedDict):
 - **description**: This is the description of the subagent that is shown to the main agent
 - **prompt**: This is the prompt used for the subagent
 - **tools**: This is the list of tools that the subagent has access to. By default will have access to all tools passed in, as well as all built-in tools.
-- **model_settings**: Optional dictionary for per-subagent model configuration (inherits the main model when omitted).
+- **model**: Optional model instance OR dictionary for per-subagent model configuration (inherits the main model when omitted).
+- **middleware** Additional middleware to attach to the subagent. See [here](https://docs.langchain.com/oss/python/langchain/middleware) for an introduction into middleware and how it works with create_agent.
 
 **CustomSubAgent fields:**
 - **name**: This is the name of the subagent, and how the main agent will call the subagent
@@ -128,6 +129,7 @@ research_subagent = {
     "name": "research-agent",
     "description": "Used to research more in depth questions",
     "prompt": sub_research_prompt,
+    "tools": [internet_search]
 }
 subagents = [research_subagent]
 agent = create_deep_agent(
@@ -169,18 +171,6 @@ agent = create_deep_agent(
 ### `model` (Optional)
 
 By default, `deepagents` uses `"claude-sonnet-4-20250514"`. You can customize this by passing any [LangChain model object](https://python.langchain.com/docs/integrations/chat/).
-
-### `builtin_tools` (Optional)
-
-By default, a deep agent will have access to a number of [built-in tools](#builtintools--optional-).
-You can change this by specifying the tools (by name) that the agent should have access to with this parameter.
-
-Example:
-```python
-# Only give agent access to todo tool, none of the filesystem tools
-builtin_tools = ["write_todos"]
-agent = create_deep_agent(..., builtin_tools=builtin_tools, ...)
-```
 
 #### Example: Using a Custom Model
 
@@ -229,6 +219,15 @@ agent = create_deep_agent(
     subagents=[critique_sub_agent],
 )
 ```
+
+
+### `middleware` (Optional)
+Both the main agent and sub-agents can take additional custom AgentMiddleware. Middleware is the best supported approach for extending the state_schema, adding additional tools, and adding pre / post model hooks. See this [doc](https://docs.langchain.com/oss/python/langchain/middleware) to learn more about Middleware and how you can use it!
+
+### `tool_configs` (Optional)
+Tool configs are used to specify how to handle Human In The Loop interactions on certain tools that require additional human oversight. 
+
+These tool_configs are passed to our prebuilt [HITL middleware](https://docs.langchain.com/oss/python/langchain/middleware#human-in-the-loop) so that the agent pauses execution and waits for feedback from the user before executing configured tools.
 
 ## Deep Agent Details
 
@@ -291,25 +290,20 @@ By default, deep agents come with five built-in tools:
 - `ls`: Tool for listing files in the virtual filesystem
 - `edit_file`: Tool for editing a file in the virtual filesystem
 
-These can be disabled via the [`builtin_tools`](#builtintools--optional-) parameter.
+If you want to omit some deepagents functionality, use specific middleware components directly!
 
 ### Human-in-the-Loop
 
-`deepagents` supports human-in-the-loop approval for tool execution. You can configure specific tools to require human approval before execution using the `interrupt_config` parameter, which maps tool names to `HumanInterruptConfig`.
+`deepagents` supports human-in-the-loop approval for tool execution. You can configure specific tools to require human approval before execution using the `tool_configs` parameter, which maps tool names to a `HumanInTheLoopConfig`.
 
-`HumanInterruptConfig` is how you specify what type of human in the loop patterns are supported. 
+`HumanInTheLoopConfig` is how you specify what type of human in the loop patterns are supported. 
 It is a dictionary with four specific keys:
 
-- `allow_ignore`: Whether the user can skip the tool call
-- `allow_respond`: Whether the user can add a text response
-- `allow_edit`: Whether the user can edit the tool arguments
-- `allow_accept`: Whether the user can accept the tool call
+- `allow_accept`: Whether the human can approve the current action without changes
+- `allow_respond`: Whether the human can reject the current action with feedback
+- `allow_edit`: Whether the human can approve the current action with edited content
 
-Currently, `deepagents` does NOT support `allow_ignore`
-
-Currently, `deepagents` only support interrupting one tool at a time. If multiple tools are called in parallel, each requiring interrupts, then the agent will error.
-
-Instead of specifying a `HumanInterruptConfig` for a tool, you can also just set `True`. This will set `allow_ignore`, `allow_respond`, `allow_edit`, and `allow_accept` to be `True`.
+Instead of specifying a `HumanInTheLoopConfig` for a tool, you can also just set `True`. This will set `allow_ignore`, `allow_respond`, `allow_edit`, and `allow_accept` to be `True`.
 
 In order to use human in the loop, you need to have a checkpointer attached.
 Note: if you are using LangGraph Platform, this is automatically attached.
@@ -324,10 +318,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 agent = create_deep_agent(
     tools=[your_tools],
     instructions="Your instructions here",
-    interrupt_config={
+    tool_configs={
         # You can specify a dictionary for fine grained control over what interrupt options exist
         "tool_1": {
-            "allow_ignore": False,
             "allow_respond": True,
             "allow_edit": True,
             "allow_accept":True,
@@ -400,12 +393,12 @@ for s in agent.stream(Command(resume=[{"type": "response", "args": "..."}]), con
 ```
 ## Async
 
-If you are passing async tools to your agent, you will want to `from deepagents import async_create_deep_agent`
+If you are passing async tools to your agent, you will want to use `from deepagents import async_create_deep_agent`
 ## MCP
 
 The `deepagents` library can be ran with MCP tools. This can be achieved by using the [Langchain MCP Adapter library](https://github.com/langchain-ai/langchain-mcp-adapters).
 
-**NOTE:** will want to use `from deepagents import async_create_deep_agent` to use the async version of `deepagents`, since MCP tools are async
+**NOTE:** You will want to use `from deepagents import async_create_deep_agent` to use the async version of `deepagents`, since MCP tools are async
 
 (To run the example below, will need to `pip install langchain-mcp-adapters`)
 
@@ -432,27 +425,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-## Configurable Agent
-
-Configurable agents allow you to control the agent via a config passed in.
-
-```python
-from deepagents import create_configurable_agent
-
-agent_config = {"instructions": "foo", "subagents": []}
-
-build_agent = create_configurable_agent(
-    agent_config['instructions'],
-    agent_config['subagents'],
-    [],
-    agent_config={"recursion_limit": 1000}
-)
-```
-You can now use `build_agent` in your `langgraph.json` and deploy it with `langgraph dev`
-
-For async tools, you can use `from deepagents import async_create_configurable_agent`
-
 
 ## Roadmap
 - [ ] Allow users to customize full system prompt
