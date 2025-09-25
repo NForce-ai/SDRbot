@@ -36,18 +36,14 @@ def agent_builder(
         ),
         SummarizationMiddleware(
             model=model,
-            max_tokens_before_summary=150000,
+            max_tokens_before_summary=120000,
             messages_to_keep=20,
-        )
+        ),
+        AnthropicPromptCachingMiddleware(ttl="5m", unsupported_model_behavior="ignore")
     ]
     # Add tool interrupt config if provided
     if tool_configs is not None:
-        deepagent_middleware.append(HumanInTheLoopMiddleware(tool_configs=tool_configs))
-
-    # Add Anthropic prompt caching is model is Anthropic
-    # TODO: Add this back when fixed
-    # if isinstance(model, ChatAnthropic):
-    #     deepagent_middleware.append(AnthropicPromptCachingMiddleware(ttl="5m"))
+        deepagent_middleware.append(HumanInTheLoopMiddleware(interrupt_on=tool_configs))
 
     if middleware is not None:
         deepagent_middleware.extend(middleware)
