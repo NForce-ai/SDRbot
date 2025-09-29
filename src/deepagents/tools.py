@@ -1,7 +1,7 @@
 from langchain_core.tools import tool, InjectedToolCallId
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
-from langchain.agents.tool_node import InjectedState
+from langchain.tools.tool_node import InjectedState
 from typing import Annotated, Union
 from deepagents.state import Todo, FilesystemState
 from deepagents.prompts import (
