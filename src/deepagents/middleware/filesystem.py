@@ -2,7 +2,8 @@
 # ruff: noqa: E501
 
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Annotated, Any, NotRequired
+from typing import TYPE_CHECKING, Annotated, Any
+from typing_extensions import NotRequired
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
