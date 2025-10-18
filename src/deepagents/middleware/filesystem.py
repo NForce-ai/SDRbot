@@ -443,7 +443,7 @@ def _get_namespace() -> tuple[str] | tuple[str, str]:
     return (assistant_id, "filesystem")
 
 
-def _get_store(runtime: Runtime[Any]) -> BaseStore:
+def _get_store(runtime: ToolRuntime[None, FilesystemState]) -> BaseStore:
     """Get the store from the runtime, raising an error if unavailable.
 
     Args:
@@ -722,6 +722,9 @@ def _write_file_tool_generator(custom_description: str | None = None, *, long_te
             runtime: ToolRuntime[None, FilesystemState],
         ) -> Command | str:
             file_path = _validate_path(file_path)
+            if not runtime.tool_call_id:
+                value_error_msg = "Tool call ID is required for write_file invocation"
+                raise ValueError(value_error_msg)
             if _has_memories_prefix(file_path):
                 stripped_file_path = _strip_memories_prefix(file_path)
                 store = _get_store(runtime)
@@ -742,6 +745,9 @@ def _write_file_tool_generator(custom_description: str | None = None, *, long_te
             runtime: ToolRuntime[None, FilesystemState],
         ) -> Command | str:
             file_path = _validate_path(file_path)
+            if not runtime.tool_call_id:
+                value_error_msg = "Tool call ID is required for write_file invocation"
+                raise ValueError(value_error_msg)
             return _write_file_to_state(runtime.state, runtime.tool_call_id, file_path, content)
 
     return write_file
