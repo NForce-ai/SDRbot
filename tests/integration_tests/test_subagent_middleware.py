@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
 
 from deepagents.graph import create_agent
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.subagents import SubAgentMiddleware
 
 
@@ -216,3 +217,34 @@ class TestSubagentMiddleware:
             agent,
             {"messages": [HumanMessage(content="What is the weather in Tokyo?")]},
         )
+
+    def test_multiple_subagents_with_interrupt_on_no_middleware_accumulation(self):
+        agent = create_agent(
+            model="claude-sonnet-4-20250514",
+            system_prompt="Use the task tool to call subagents.",
+            middleware=[
+                SubAgentMiddleware(
+                    default_model="claude-sonnet-4-20250514",
+                    default_tools=[],
+                    default_middleware=[PatchToolCallsMiddleware()],
+                    subagents=[
+                        {
+                            "name": "subagent1",
+                            "description": "First subagent.",
+                            "system_prompt": "You are subagent 1.",
+                            "tools": [get_weather],
+                            "interrupt_on": {"get_weather": True},
+                        },
+                        {
+                            "name": "subagent2",
+                            "description": "Second subagent.",
+                            "system_prompt": "You are subagent 2.",
+                            "tools": [get_weather],
+                            "interrupt_on": {"get_weather": True},
+                        },
+                    ],
+                )
+            ],
+        )
+        # This would error if the default middleware was accumulated
+        assert True

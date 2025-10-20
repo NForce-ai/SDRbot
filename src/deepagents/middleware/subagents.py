@@ -262,7 +262,7 @@ def _get_subagents(
 
         subagent_model = agent_.get("model", default_model)
 
-        _middleware = [*default_subagent_middleware, *agent_["middleware"]] if "middleware" in agent_ else default_subagent_middleware
+        _middleware = [*default_subagent_middleware, *agent_["middleware"]] if "middleware" in agent_ else [*default_subagent_middleware]
 
         interrupt_on = agent_.get("interrupt_on", default_interrupt_on)
         if interrupt_on:
