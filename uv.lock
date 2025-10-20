@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11, <4.0"
 
 [[package]]
@@ -353,9 +353,9 @@ typing = [
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'" },
-    { name = "langchain", specifier = "==1.0.0" },
-    { name = "langchain-anthropic", specifier = "==1.0.0" },
-    { name = "langchain-core", specifier = "==1.0.0" },
+    { name = "langchain", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-anthropic", specifier = ">=1.0.0,<2.0.0" },
+    { name = "langchain-core", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-openai", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
