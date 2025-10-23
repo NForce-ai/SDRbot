@@ -16,6 +16,8 @@ from deepagents.middleware.filesystem import (
     FileData,
     FilesystemMiddleware,
     FilesystemState,
+    _create_file_data,
+    _update_file_data,
 )
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.subagents import DEFAULT_GENERAL_PURPOSE_DESCRIPTION, TASK_SYSTEM_PROMPT, TASK_TOOL_DESCRIPTION, SubAgentMiddleware
@@ -147,6 +149,41 @@ class TestFilesystemMiddleware:
         )
         assert "/pokemon/test2.txt" in result
         assert "/pokemon/charmander.txt" in result
+
+    def test_create_file_data_splits_long_lines(self):
+        long_line = "a" * 3500
+        short_line = "short line"
+        content = f"{short_line}\n{long_line}"
+
+        file_data = _create_file_data(content)
+
+        for line in file_data["content"]:
+            assert len(line) <= 2000
+
+        assert len(file_data["content"]) == 3
+        assert file_data["content"][0] == short_line
+        assert file_data["content"][1] == "a" * 2000
+        assert file_data["content"][2] == "a" * 1500
+
+    def test_update_file_data_splits_long_lines(self):
+        initial_file_data = _create_file_data("initial content")
+
+        long_line = "b" * 5000
+        short_line = "another short line"
+        new_content = f"{short_line}\n{long_line}"
+
+        updated_file_data = _update_file_data(initial_file_data, new_content)
+
+        for line in updated_file_data["content"]:
+            assert len(line) <= 2000
+
+        assert len(updated_file_data["content"]) == 4
+        assert updated_file_data["content"][0] == short_line
+        assert updated_file_data["content"][1] == "b" * 2000
+        assert updated_file_data["content"][2] == "b" * 2000
+        assert updated_file_data["content"][3] == "b" * 1000
+
+        assert updated_file_data["created_at"] == initial_file_data["created_at"]
 
 
 @pytest.mark.requires("langchain_openai")

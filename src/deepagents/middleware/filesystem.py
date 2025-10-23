@@ -207,6 +207,8 @@ def _create_file_data(
         ```
     """
     lines = content.split("\n") if isinstance(content, str) else content
+    # Split any lines exceeding MAX_LINE_LENGTH into chunks
+    lines = [line[i:i+MAX_LINE_LENGTH] for line in lines for i in range(0, len(line) or 1, MAX_LINE_LENGTH)]
     now = datetime.now(UTC).isoformat()
 
     return {
@@ -239,6 +241,8 @@ def _update_file_data(
         ```
     """
     lines = content.split("\n") if isinstance(content, str) else content
+    # Split any lines exceeding MAX_LINE_LENGTH into chunks
+    lines = [line[i:i+MAX_LINE_LENGTH] for line in lines for i in range(0, len(line) or 1, MAX_LINE_LENGTH)]
     now = datetime.now(UTC).isoformat()
 
     return {
