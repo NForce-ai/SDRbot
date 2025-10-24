@@ -935,7 +935,7 @@ class FilesystemMiddleware(AgentMiddleware):
 
     Args:
         long_term_memory: Whether to enable longterm memory support.
-        system_prompt_extension: Optional custom system prompt override.
+        system_prompt: Optional custom system prompt override.
         custom_tool_descriptions: Optional custom tool descriptions override.
 
     Raises:
