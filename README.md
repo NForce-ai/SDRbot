@@ -8,7 +8,7 @@ a **planning tool**, **sub agents**, access to a **file system**, and a **detail
 
 <img src="deep_agents.png" alt="deep agent" width="600"/>
 
-`deepagents` is a Python package that implements these in a general purpose way so that you can easily create a Deep Agent for your application.
+`deepagents` is a Python package that implements these in a general purpose way so that you can easily create a Deep Agent for your application. For a full overview and quickstart of `deepagents`, the best resource is our [docs](https://docs.langchain.com/oss/python/deepagents/overview).
 
 **Acknowledgements: This project was primarily inspired by Claude Code, and initially was largely an attempt to see what made Claude Code general purpose, and make it even more so.**
 
@@ -87,7 +87,7 @@ in the same way you would any LangGraph agent.
 
 **Context Management**
 
- File system tools (`ls`, `read_file`, `write_file`, `edit_file`) allow agents to offload large context to memory, preventing context window overflow and enabling work with variable-length tool results.
+ File system tools (`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`) allow agents to offload large context to memory, preventing context window overflow and enabling work with variable-length tool results.
 
 **Subagent Spawning**
 
