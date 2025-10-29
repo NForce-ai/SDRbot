@@ -341,3 +341,52 @@ def test_composite_backend_ls_trailing_slash(tmp_path: Path):
     listing1 = comp.ls_info("/store/")
     listing2 = comp.ls_info("/store")
     assert [fi["path"] for fi in listing1] == [fi["path"] for fi in listing2]
+
+
+def test_composite_backend_intercept_large_tool_result():
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain_core.messages import ToolMessage
+    from langgraph.types import Command
+
+    rt = make_runtime("t10")
+
+    middleware = FilesystemMiddleware(
+        backend=lambda r: build_composite_state_backend(r, routes={"/memories/": (lambda x: StoreBackend(x))}),
+        tool_token_limit_before_evict=1000
+    )
+    large_content = "z" * 5000
+    tool_message = ToolMessage(content=large_content, tool_call_id="test_789")
+    result = middleware._intercept_large_tool_result(tool_message, rt)
+
+    assert isinstance(result, Command)
+    assert "/large_tool_results/test_789" in result.update["files"]
+    assert result.update["files"]["/large_tool_results/test_789"]["content"] == [large_content]
+    assert "Tool result too large" in result.update["messages"][0].content
+
+
+def test_composite_backend_intercept_large_tool_result_routed_to_store():
+    """Test that large tool results can be routed to a specific backend like StoreBackend."""
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain_core.messages import ToolMessage
+
+    rt = make_runtime("t11")
+
+    middleware = FilesystemMiddleware(
+        backend=lambda r: build_composite_state_backend(
+            r,
+            routes={"/large_tool_results/": (lambda x: StoreBackend(x))}
+        ),
+        tool_token_limit_before_evict=1000
+    )
+
+    large_content = "w" * 5000
+    tool_message = ToolMessage(content=large_content, tool_call_id="test_routed_123")
+    result = middleware._intercept_large_tool_result(tool_message, rt)
+
+    assert isinstance(result, ToolMessage)
+    assert "Tool result too large" in result.content
+    assert "/large_tool_results/test_routed_123" in result.content
+
+    stored_item = rt.store.get(("filesystem",), "/test_routed_123")
+    assert stored_item is not None
+    assert stored_item.value["content"] == [large_content]

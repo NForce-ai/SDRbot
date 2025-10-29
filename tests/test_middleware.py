@@ -824,6 +824,113 @@ class TestFilesystemMiddleware:
         assert lines[1].count("m") == 2000
         assert "     4\tline4" in lines[2]
 
+    def test_intercept_short_toolmessage(self):
+        """Test that small ToolMessages pass through unchanged."""
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        small_content = "x" * 1000
+        tool_message = ToolMessage(content=small_content, tool_call_id="test_123")
+        result = middleware._intercept_large_tool_result(tool_message, runtime)
+
+        assert result == tool_message
+
+    def test_intercept_long_toolmessage(self):
+        """Test that large ToolMessages are intercepted and saved to filesystem."""
+        from langgraph.types import Command
+
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        large_content = "x" * 5000
+        tool_message = ToolMessage(content=large_content, tool_call_id="test_123")
+        result = middleware._intercept_large_tool_result(tool_message, runtime)
+
+        assert isinstance(result, Command)
+        assert "/large_tool_results/test_123" in result.update["files"]
+        assert "Tool result too large" in result.update["messages"][0].content
+
+    def test_intercept_command_with_short_toolmessage(self):
+        """Test that Commands with small messages pass through unchanged."""
+        from langgraph.types import Command
+
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        small_content = "x" * 1000
+        tool_message = ToolMessage(content=small_content, tool_call_id="test_123")
+        command = Command(update={"messages": [tool_message], "files": {}})
+        result = middleware._intercept_large_tool_result(command, runtime)
+
+        assert isinstance(result, Command)
+        assert result.update["messages"][0].content == small_content
+
+    def test_intercept_command_with_long_toolmessage(self):
+        """Test that Commands with large messages are intercepted."""
+        from langgraph.types import Command
+
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        large_content = "y" * 5000
+        tool_message = ToolMessage(content=large_content, tool_call_id="test_123")
+        command = Command(update={"messages": [tool_message], "files": {}})
+        result = middleware._intercept_large_tool_result(command, runtime)
+
+        assert isinstance(result, Command)
+        assert "/large_tool_results/test_123" in result.update["files"]
+        assert "Tool result too large" in result.update["messages"][0].content
+
+    def test_intercept_command_with_files_and_long_toolmessage(self):
+        """Test that file updates are properly merged with existing files and other keys preserved."""
+        from langgraph.types import Command
+
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        large_content = "z" * 5000
+        tool_message = ToolMessage(content=large_content, tool_call_id="test_123")
+        existing_file = FileData(content=["existing"], created_at="2021-01-01", modified_at="2021-01-01")
+        command = Command(update={
+            "messages": [tool_message],
+            "files": {"/existing.txt": existing_file},
+            "custom_key": "custom_value"
+        })
+        result = middleware._intercept_large_tool_result(command, runtime)
+
+        assert isinstance(result, Command)
+        assert "/existing.txt" in result.update["files"]
+        assert "/large_tool_results/test_123" in result.update["files"]
+        assert result.update["custom_key"] == "custom_value"
+
+    def test_sanitize_tool_call_id(self):
+        """Test that tool_call_id is sanitized to prevent path traversal."""
+        from deepagents.backends.utils import sanitize_tool_call_id
+
+        assert sanitize_tool_call_id("call_123") == "call_123"
+        assert sanitize_tool_call_id("call/123") == "call_123"
+        assert sanitize_tool_call_id("test.id") == "test_id"
+
+    def test_intercept_sanitizes_tool_call_id(self):
+        """Test that tool_call_id with dangerous characters is sanitized in file path."""
+        from langgraph.types import Command
+
+        middleware = FilesystemMiddleware(tool_token_limit_before_evict=1000)
+        state = FilesystemState(messages=[], files={})
+        runtime = ToolRuntime(state=state, context=None, tool_call_id="test_123", store=None, stream_writer=lambda _: None, config={})
+
+        large_content = "x" * 5000
+        tool_message = ToolMessage(content=large_content, tool_call_id="test/call.id")
+        result = middleware._intercept_large_tool_result(tool_message, runtime)
+
+        assert isinstance(result, Command)
+        assert "/large_tool_results/test_call_id" in result.update["files"]
+
 
 @pytest.mark.requires("langchain_openai")
 class TestSubagentMiddleware:

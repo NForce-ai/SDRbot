@@ -112,3 +112,27 @@ def test_store_backend_ls_trailing_slash():
     listing2 = be.ls_info("/dir")
     assert len(listing1) == len(listing2)
     assert [fi["path"] for fi in listing1] == [fi["path"] for fi in listing2]
+
+
+def test_store_backend_intercept_large_tool_result():
+    """Test that StoreBackend properly handles large tool result interception."""
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain_core.messages import ToolMessage
+
+    rt = make_runtime()
+    middleware = FilesystemMiddleware(
+        backend=lambda r: StoreBackend(r),
+        tool_token_limit_before_evict=1000
+    )
+
+    large_content = "y" * 5000
+    tool_message = ToolMessage(content=large_content, tool_call_id="test_456")
+    result = middleware._intercept_large_tool_result(tool_message, rt)
+
+    assert isinstance(result, ToolMessage)
+    assert "Tool result too large" in result.content
+    assert "/large_tool_results/test_456" in result.content
+
+    stored_content = rt.store.get(("filesystem",), "/large_tool_results/test_456")
+    assert stored_content is not None
+    assert stored_content.value["content"] == [large_content]

@@ -188,3 +188,36 @@ def test_filesystem_backend_ls_trailing_slash(tmp_path: Path):
 
     empty = be.ls_info("/nonexistent/")
     assert empty == []
+
+
+def test_filesystem_backend_intercept_large_tool_result(tmp_path: Path):
+    """Test that FilesystemBackend properly handles large tool result interception."""
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain.tools import ToolRuntime
+    from langchain_core.messages import ToolMessage
+
+    root = tmp_path
+    rt = ToolRuntime(
+        state={"messages": [], "files": {}},
+        context=None,
+        tool_call_id="test_fs",
+        store=None,
+        stream_writer=lambda _: None,
+        config={},
+    )
+
+    middleware = FilesystemMiddleware(
+        backend=lambda r: FilesystemBackend(root_dir=str(root), virtual_mode=True),
+        tool_token_limit_before_evict=1000
+    )
+
+    large_content = "f" * 5000
+    tool_message = ToolMessage(content=large_content, tool_call_id="test_fs_123")
+    result = middleware._intercept_large_tool_result(tool_message, rt)
+
+    assert isinstance(result, ToolMessage)
+    assert "Tool result too large" in result.content
+    assert "/large_tool_results/test_fs_123" in result.content
+    saved_file = root / "large_tool_results" / "test_fs_123"
+    assert saved_file.exists()
+    assert saved_file.read_text() == large_content

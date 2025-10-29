@@ -37,6 +37,15 @@ class GrepMatch(TypedDict):
     text: str
 
 
+def sanitize_tool_call_id(tool_call_id: str) -> str:
+    """Sanitize tool_call_id to prevent path traversal and separator issues. 
+    
+    Replaces dangerous characters (., /, \) with underscores.
+    """
+    sanitized = tool_call_id.replace(".", "_").replace("/", "_").replace("\\", "_")
+    return sanitized
+
+
 def format_content_with_line_numbers(
     content: str | list[str],
     start_line: int = 1,

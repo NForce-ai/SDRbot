@@ -141,3 +141,24 @@ def test_state_backend_ls_trailing_slash():
     listing_from_dir = be.ls_info("/dir/")
     assert len(listing_from_dir) == 1
     assert listing_from_dir[0]["path"] == "/dir/nested.txt"
+
+
+def test_state_backend_intercept_large_tool_result():
+    """Test that StateBackend properly handles large tool result interception."""
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langgraph.types import Command
+
+    rt = make_runtime()
+    middleware = FilesystemMiddleware(
+        backend=lambda r: StateBackend(r),
+        tool_token_limit_before_evict=1000
+    )
+
+    large_content = "x" * 5000
+    tool_message = ToolMessage(content=large_content, tool_call_id="test_123")
+    result = middleware._intercept_large_tool_result(tool_message, rt)
+
+    assert isinstance(result, Command)
+    assert "/large_tool_results/test_123" in result.update["files"]
+    assert result.update["files"]["/large_tool_results/test_123"]["content"] == [large_content]
+    assert "Tool result too large" in result.update["messages"][0].content
