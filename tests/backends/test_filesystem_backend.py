@@ -19,10 +19,12 @@ def test_filesystem_backend_normal_mode(tmp_path: Path):
 
     be = FilesystemBackend(root_dir=str(root), virtual_mode=False)
 
-    # ls_info absolute path
+    # ls_info absolute path - should only list files in root, not subdirectories
     infos = be.ls_info(str(root))
     paths = {i["path"] for i in infos}
-    assert str(f1) in paths and str(f2) in paths
+    assert str(f1) in paths  # File in root should be listed
+    assert str(f2) not in paths  # File in subdirectory should NOT be listed
+    assert (str(root) + "/dir/") in paths  # Directory should be listed
 
     # read, edit, write
     txt = be.read(str(f1))
@@ -50,10 +52,12 @@ def test_filesystem_backend_virtual_mode(tmp_path: Path):
 
     be = FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
-    # ls_info from virtual root
+    # ls_info from virtual root - should only list files in root, not subdirectories
     infos = be.ls_info("/")
     paths = {i["path"] for i in infos}
-    assert "/a.txt" in paths and "/dir/b.md" in paths
+    assert "/a.txt" in paths  # File in root should be listed
+    assert "/dir/b.md" not in paths  # File in subdirectory should NOT be listed
+    assert "/dir/" in paths  # Directory should be listed
 
     # read and edit via virtual path
     txt = be.read("/a.txt")
@@ -84,3 +88,103 @@ def test_filesystem_backend_virtual_mode(tmp_path: Path):
         assert False, "expected ValueError for traversal"
     except ValueError:
         pass
+
+
+def test_filesystem_backend_ls_nested_directories(tmp_path: Path):
+    root = tmp_path
+
+    files = {
+        root / "config.json": "config",
+        root / "src" / "main.py": "code",
+        root / "src" / "utils" / "helper.py": "utils code",
+        root / "src" / "utils" / "common.py": "common utils",
+        root / "docs" / "readme.md": "documentation",
+        root / "docs" / "api" / "reference.md": "api docs",
+    }
+
+    for path, content in files.items():
+        write_file(path, content)
+
+    be = FilesystemBackend(root_dir=str(root), virtual_mode=True)
+
+    root_listing = be.ls_info("/")
+    root_paths = [fi["path"] for fi in root_listing]
+    assert "/config.json" in root_paths
+    assert "/src/" in root_paths
+    assert "/docs/" in root_paths
+    assert "/src/main.py" not in root_paths
+    assert "/src/utils/helper.py" not in root_paths
+
+    src_listing = be.ls_info("/src/")
+    src_paths = [fi["path"] for fi in src_listing]
+    assert "/src/main.py" in src_paths
+    assert "/src/utils/" in src_paths
+    assert "/src/utils/helper.py" not in src_paths
+
+    utils_listing = be.ls_info("/src/utils/")
+    utils_paths = [fi["path"] for fi in utils_listing]
+    assert "/src/utils/helper.py" in utils_paths
+    assert "/src/utils/common.py" in utils_paths
+    assert len(utils_paths) == 2
+
+    empty_listing = be.ls_info("/nonexistent/")
+    assert empty_listing == []
+
+
+def test_filesystem_backend_ls_normal_mode_nested(tmp_path: Path):
+    """Test ls_info with nested directories in normal (non-virtual) mode."""
+    root = tmp_path
+
+    files = {
+        root / "file1.txt": "content1",
+        root / "subdir" / "file2.txt": "content2",
+        root / "subdir" / "nested" / "file3.txt": "content3",
+    }
+
+    for path, content in files.items():
+        write_file(path, content)
+
+    be = FilesystemBackend(root_dir=str(root), virtual_mode=False)
+
+    root_listing = be.ls_info(str(root))
+    root_paths = [fi["path"] for fi in root_listing]
+
+    assert str(root / "file1.txt") in root_paths
+    assert str(root / "subdir") + "/" in root_paths
+    assert str(root / "subdir" / "file2.txt") not in root_paths
+
+    subdir_listing = be.ls_info(str(root / "subdir"))
+    subdir_paths = [fi["path"] for fi in subdir_listing]
+    assert str(root / "subdir" / "file2.txt") in subdir_paths
+    assert str(root / "subdir" / "nested") + "/" in subdir_paths
+    assert str(root / "subdir" / "nested" / "file3.txt") not in subdir_paths
+
+
+def test_filesystem_backend_ls_trailing_slash(tmp_path: Path):
+    """Test ls_info edge cases for filesystem backend."""
+    root = tmp_path
+
+    files = {
+        root / "file.txt": "content",
+        root / "dir" / "nested.txt": "nested",
+    }
+
+    for path, content in files.items():
+        write_file(path, content)
+
+    be = FilesystemBackend(root_dir=str(root), virtual_mode=True)
+
+    listing_with_slash = be.ls_info("/")
+    assert len(listing_with_slash) > 0
+
+    listing = be.ls_info("/")
+    paths = [fi["path"] for fi in listing]
+    assert paths == sorted(paths)
+
+    listing1 = be.ls_info("/dir/")
+    listing2 = be.ls_info("/dir")
+    assert len(listing1) == len(listing2)
+    assert [fi["path"] for fi in listing1] == [fi["path"] for fi in listing2]
+
+    empty = be.ls_info("/nonexistent/")
+    assert empty == []

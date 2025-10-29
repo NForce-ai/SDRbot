@@ -47,7 +47,7 @@ def test_composite_state_backend_routes_and_search(tmp_path: Path):
     # ls_info at root returns both
     infos = be.ls_info("/")
     paths = {i["path"] for i in infos}
-    assert "/file.txt" in paths and "/memories/readme.md" in paths
+    assert "/file.txt" in paths and "/memories/" in paths
 
     # grep across both
     matches = be.grep_raw("alpha", path="/")
@@ -120,7 +120,7 @@ def test_composite_backend_store_to_store():
     infos = comp.ls_info("/")
     paths = {i["path"] for i in infos}
     assert "/notes.txt" in paths
-    assert "/memories/important.txt" in paths
+    assert "/memories/" in paths
 
     # grep across both stores
     matches = comp.grep_raw("default", path="/")
@@ -168,9 +168,9 @@ def test_composite_backend_multiple_routes():
     infos = comp.ls_info("/")
     paths = {i["path"] for i in infos}
     assert "/temp.txt" in paths
-    assert "/memories/important.md" in paths
-    assert "/archive/old.log" in paths
-    assert "/cache/session.json" in paths
+    assert "/memories/" in paths
+    assert "/archive/" in paths
+    assert "/cache/" in paths
 
     # ls_info at specific route
     mem_infos = comp.ls_info("/memories/")
@@ -198,3 +198,146 @@ def test_composite_backend_multiple_routes():
 
     updated_content = comp.read("/memories/important.md")
     assert "persistent memory" in updated_content
+
+
+def test_composite_backend_ls_nested_directories(tmp_path: Path):
+    rt = make_runtime("t7")
+    root = tmp_path
+
+    files = {
+        root / "local.txt": "local file",
+        root / "src" / "main.py": "code",
+        root / "src" / "utils" / "helper.py": "utils",
+    }
+
+    for path, content in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+    fs = FilesystemBackend(root_dir=str(root), virtual_mode=True)
+    store = StoreBackend(rt)
+
+    comp = CompositeBackend(default=fs, routes={"/memories/": store})
+
+    comp.write("/memories/note1.txt", "note 1")
+    comp.write("/memories/deep/note2.txt", "note 2")
+    comp.write("/memories/deep/nested/note3.txt", "note 3")
+
+    root_listing = comp.ls_info("/")
+    root_paths = [fi["path"] for fi in root_listing]
+    assert "/local.txt" in root_paths
+    assert "/src/" in root_paths
+    assert "/memories/" in root_paths
+    assert "/src/main.py" not in root_paths
+    assert "/memories/note1.txt" not in root_paths
+
+    src_listing = comp.ls_info("/src/")
+    src_paths = [fi["path"] for fi in src_listing]
+    assert "/src/main.py" in src_paths
+    assert "/src/utils/" in src_paths
+    assert "/src/utils/helper.py" not in src_paths
+
+    mem_listing = comp.ls_info("/memories/")
+    mem_paths = [fi["path"] for fi in mem_listing]
+    assert "/memories/note1.txt" in mem_paths
+    assert "/memories/deep/" in mem_paths
+    assert "/memories/deep/note2.txt" not in mem_paths
+
+    deep_listing = comp.ls_info("/memories/deep/")
+    deep_paths = [fi["path"] for fi in deep_listing]
+    assert "/memories/deep/note2.txt" in deep_paths
+    assert "/memories/deep/nested/" in deep_paths
+    assert "/memories/deep/nested/note3.txt" not in deep_paths
+
+
+def test_composite_backend_ls_multiple_routes_nested():
+    rt = make_runtime("t8")
+    comp = build_composite_state_backend(
+        rt,
+        routes={
+            "/memories/": (lambda r: StoreBackend(r)),
+            "/archive/": (lambda r: StoreBackend(r)),
+        }
+    )
+
+    state_files = {
+        "/temp.txt": "temp",
+        "/work/file1.txt": "work file 1",
+        "/work/projects/proj1.txt": "project 1",
+    }
+
+    for path, content in state_files.items():
+        res = comp.write(path, content)
+        if res.files_update:
+            rt.state["files"].update(res.files_update)
+
+    memory_files = {
+        "/memories/important.txt": "important",
+        "/memories/diary/entry1.txt": "diary entry",
+    }
+
+    for path, content in memory_files.items():
+        comp.write(path, content)
+
+    archive_files = {
+        "/archive/old.txt": "old",
+        "/archive/2023/log.txt": "2023 log",
+    }
+
+    for path, content in archive_files.items():
+        comp.write(path, content)
+
+    root_listing = comp.ls_info("/")
+    root_paths = [fi["path"] for fi in root_listing]
+    assert "/temp.txt" in root_paths
+    assert "/work/" in root_paths
+    assert "/memories/" in root_paths
+    assert "/archive/" in root_paths
+    assert "/work/file1.txt" not in root_paths
+    assert "/memories/important.txt" not in root_paths
+
+    work_listing = comp.ls_info("/work/")
+    work_paths = [fi["path"] for fi in work_listing]
+    assert "/work/file1.txt" in work_paths
+    assert "/work/projects/" in work_paths
+    assert "/work/projects/proj1.txt" not in work_paths
+
+    mem_listing = comp.ls_info("/memories/")
+    mem_paths = [fi["path"] for fi in mem_listing]
+    assert "/memories/important.txt" in mem_paths
+    assert "/memories/diary/" in mem_paths
+    assert "/memories/diary/entry1.txt" not in mem_paths
+
+    arch_listing = comp.ls_info("/archive/")
+    arch_paths = [fi["path"] for fi in arch_listing]
+    assert "/archive/old.txt" in arch_paths
+    assert "/archive/2023/" in arch_paths
+    assert "/archive/2023/log.txt" not in arch_paths
+
+
+def test_composite_backend_ls_trailing_slash(tmp_path: Path):
+    rt = make_runtime("t9")
+    root = tmp_path
+
+    (root / "file.txt").write_text("content")
+
+    fs = FilesystemBackend(root_dir=str(root), virtual_mode=True)
+    store = StoreBackend(rt)
+
+    comp = CompositeBackend(default=fs, routes={"/store/": store})
+
+    comp.write("/store/item.txt", "store content")
+
+    listing = comp.ls_info("/")
+    paths = [fi["path"] for fi in listing]
+    assert paths == sorted(paths)
+
+    empty_listing = comp.ls_info("/store/nonexistent/")
+    assert empty_listing == []
+
+    empty_listing2 = comp.ls_info("/nonexistent/")
+    assert empty_listing2 == []
+
+    listing1 = comp.ls_info("/store/")
+    listing2 = comp.ls_info("/store")
+    assert [fi["path"] for fi in listing1] == [fi["path"] for fi in listing2]

@@ -168,8 +168,55 @@ class TestFilesystemMiddleware:
                 "runtime": ToolRuntime(state=state, context=None, tool_call_id="", store=None, stream_writer=lambda _: None, config={}),
             }
         )
+        # ls should only return files directly in /pokemon/, not in subdirectories
         assert "/pokemon/test2.txt" in result
         assert "/pokemon/charmander.txt" in result
+        assert "/pokemon/water/squirtle.txt" not in result  # In subdirectory, should NOT be listed
+        # ls should also list subdirectories with trailing /
+        assert "/pokemon/water/" in result
+
+    def test_ls_shortterm_lists_directories(self):
+        """Test that ls lists directories with trailing / for traversal."""
+        state = FilesystemState(
+            messages=[],
+            files={
+                "/test.txt": FileData(
+                    content=["Hello world"],
+                    modified_at="2021-01-01",
+                    created_at="2021-01-01",
+                ),
+                "/pokemon/charmander.txt": FileData(
+                    content=["Ember"],
+                    modified_at="2021-01-01",
+                    created_at="2021-01-01",
+                ),
+                "/pokemon/water/squirtle.txt": FileData(
+                    content=["Water"],
+                    modified_at="2021-01-01",
+                    created_at="2021-01-01",
+                ),
+                "/docs/readme.md": FileData(
+                    content=["Documentation"],
+                    modified_at="2021-01-01",
+                    created_at="2021-01-01",
+                ),
+            },
+        )
+        middleware = FilesystemMiddleware()
+        ls_tool = next(tool for tool in middleware.tools if tool.name == "ls")
+        result = ls_tool.invoke(
+            {
+                "path": "/",
+                "runtime": ToolRuntime(state=state, context=None, tool_call_id="", store=None, stream_writer=lambda _: None, config={}),
+            }
+        )
+        # ls should list both files and directories at root level
+        assert "/test.txt" in result
+        assert "/pokemon/" in result
+        assert "/docs/" in result
+        # But NOT subdirectory files
+        assert "/pokemon/charmander.txt" not in result
+        assert "/pokemon/water/squirtle.txt" not in result
 
     def test_glob_search_shortterm_simple_pattern(self):
         state = FilesystemState(

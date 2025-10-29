@@ -40,19 +40,38 @@ class StateBackend:
         self.runtime = runtime
     
     def ls_info(self, path: str) -> list[FileInfo]:
-        """List files from state.
-        
+        """List files and directories in the specified directory (non-recursive).
+
         Args:
             path: Absolute path to directory.
-        
+
         Returns:
-            List of FileInfo-like dicts.
+            List of FileInfo-like dicts for files and directories directly in the directory.
+            Directories have a trailing / in their path and is_dir=True.
         """
         files = self.runtime.state.get("files", {})
         infos: list[FileInfo] = []
+        subdirs: set[str] = set()
+
+        # Normalize path to have trailing slash for proper prefix matching
+        normalized_path = path if path.endswith("/") else path + "/"
+
         for k, fd in files.items():
-            if not k.startswith(path):
+            # Check if file is in the specified directory or a subdirectory
+            if not k.startswith(normalized_path):
                 continue
+
+            # Get the relative path after the directory
+            relative = k[len(normalized_path):]
+
+            # If relative path contains '/', it's in a subdirectory
+            if "/" in relative:
+                # Extract the immediate subdirectory name
+                subdir_name = relative.split("/")[0]
+                subdirs.add(normalized_path + subdir_name + "/")
+                continue
+
+            # This is a file directly in the current directory
             size = len("\n".join(fd.get("content", [])))
             infos.append({
                 "path": k,
@@ -60,6 +79,16 @@ class StateBackend:
                 "size": int(size),
                 "modified_at": fd.get("modified_at", ""),
             })
+
+        # Add directories to the results
+        for subdir in sorted(subdirs):
+            infos.append({
+                "path": subdir,
+                "is_dir": True,
+                "size": 0,
+                "modified_at": "",
+            })
+
         infos.sort(key=lambda x: x.get("path", ""))
         return infos
 

@@ -47,3 +47,68 @@ def test_store_backend_crud_and_search():
 
     g2 = be.glob_info("**/*.md", path="/")
     assert any(i["path"] == "/docs/readme.md" for i in g2)
+
+
+def test_store_backend_ls_nested_directories():
+    rt = make_runtime()
+    be = StoreBackend(rt)
+
+    files = {
+        "/src/main.py": "main code",
+        "/src/utils/helper.py": "helper code",
+        "/src/utils/common.py": "common code",
+        "/docs/readme.md": "readme",
+        "/docs/api/reference.md": "api reference",
+        "/config.json": "config",
+    }
+
+    for path, content in files.items():
+        res = be.write(path, content)
+        assert res.error is None
+
+    root_listing = be.ls_info("/")
+    root_paths = [fi["path"] for fi in root_listing]
+    assert "/config.json" in root_paths
+    assert "/src/" in root_paths
+    assert "/docs/" in root_paths
+    assert "/src/main.py" not in root_paths
+    assert "/src/utils/helper.py" not in root_paths
+    assert "/docs/readme.md" not in root_paths
+    assert "/docs/api/reference.md" not in root_paths
+
+    src_listing = be.ls_info("/src/")
+    src_paths = [fi["path"] for fi in src_listing]
+    assert "/src/main.py" in src_paths
+    assert "/src/utils/" in src_paths
+    assert "/src/utils/helper.py" not in src_paths
+
+    utils_listing = be.ls_info("/src/utils/")
+    utils_paths = [fi["path"] for fi in utils_listing]
+    assert "/src/utils/helper.py" in utils_paths
+    assert "/src/utils/common.py" in utils_paths
+    assert len(utils_paths) == 2
+
+    empty_listing = be.ls_info("/nonexistent/")
+    assert empty_listing == []
+
+
+def test_store_backend_ls_trailing_slash():
+    rt = make_runtime()
+    be = StoreBackend(rt)
+
+    files = {
+        "/file.txt": "content",
+        "/dir/nested.txt": "nested",
+    }
+
+    for path, content in files.items():
+        res = be.write(path, content)
+        assert res.error is None
+
+    listing_from_root = be.ls_info("/")
+    assert len(listing_from_root) > 0
+
+    listing1 = be.ls_info("/dir/")
+    listing2 = be.ls_info("/dir")
+    assert len(listing1) == len(listing2)
+    assert [fi["path"] for fi in listing1] == [fi["path"] for fi in listing2]

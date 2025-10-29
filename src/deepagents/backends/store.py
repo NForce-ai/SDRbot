@@ -179,24 +179,43 @@ class StoreBackend:
         return all_items
     
     def ls_info(self, path: str) -> list[FileInfo]:
-        """List files from store.
-        
+        """List files and directories in the specified directory (non-recursive).
+
         Args:
             path: Absolute path to directory.
-        
+
         Returns:
-            List of FileInfo-like dicts.
+            List of FileInfo-like dicts for files and directories directly in the directory.
+            Directories have a trailing / in their path and is_dir=True.
         """
         store = self._get_store()
         namespace = self._get_namespace()
-        
+
         # Retrieve all items and filter by path prefix locally to avoid
         # coupling to store-specific filter semantics
         items = self._search_store_paginated(store, namespace)
         infos: list[FileInfo] = []
+        subdirs: set[str] = set()
+
+        # Normalize path to have trailing slash for proper prefix matching
+        normalized_path = path if path.endswith("/") else path + "/"
+
         for item in items:
-            if not str(item.key).startswith(path):
+            # Check if file is in the specified directory or a subdirectory
+            if not str(item.key).startswith(normalized_path):
                 continue
+
+            # Get the relative path after the directory
+            relative = str(item.key)[len(normalized_path):]
+
+            # If relative path contains '/', it's in a subdirectory
+            if "/" in relative:
+                # Extract the immediate subdirectory name
+                subdir_name = relative.split("/")[0]
+                subdirs.add(normalized_path + subdir_name + "/")
+                continue
+
+            # This is a file directly in the current directory
             try:
                 fd = self._convert_store_item_to_file_data(item)
             except ValueError:
@@ -208,6 +227,16 @@ class StoreBackend:
                 "size": int(size),
                 "modified_at": fd.get("modified_at", ""),
             })
+
+        # Add directories to the results
+        for subdir in sorted(subdirs):
+            infos.append({
+                "path": subdir,
+                "is_dir": True,
+                "size": 0,
+                "modified_at": "",
+            })
+
         infos.sort(key=lambda x: x.get("path", ""))
         return infos
 

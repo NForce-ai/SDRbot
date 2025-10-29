@@ -141,7 +141,7 @@ class TestFilesystem:
         config = {"configurable": {"thread_id": uuid.uuid4()}}
         response = agent.invoke(
             {
-                "messages": [HumanMessage(content="List all of your files")],
+                "messages": [HumanMessage(content="List your files in root")],
                 "files": {
                     "/pizza.txt": FileData(
                         content=["Hello world"],
@@ -160,9 +160,12 @@ class TestFilesystem:
         messages = response["messages"]
         ls_message = next(message for message in messages if message.type == "tool" and message.name == "ls")
         assert "/pizza.txt" in ls_message.text
-        assert "/pokemon/squirtle.txt" in ls_message.text
-        assert "/memories/test.txt" in ls_message.text
-        assert "/memories/pokemon/charmander.txt" in ls_message.text
+        assert "/pokemon/squirtle.txt" not in ls_message.text
+        assert "/memories/test.txt" not in ls_message.text
+        assert "/memories/pokemon/charmander.txt" not in ls_message.text
+        # Verify directories are listed with trailing /
+        assert "/pokemon/" in ls_message.text
+        assert "/memories/" in ls_message.text
 
     def test_ls_longterm_with_path(self):
         checkpointer = MemorySaver()

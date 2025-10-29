@@ -1,13 +1,10 @@
 """CompositeBackend: Route operations to different backends based on path prefix."""
 
-from typing import Any, Literal, Optional, TYPE_CHECKING
+from typing import Optional
 
-from langchain.tools import ToolRuntime
-
-from deepagents.backends.protocol import BackendProtocol, BackendFactory, WriteResult, EditResult
+from deepagents.backends.protocol import BackendProtocol, WriteResult, EditResult
 from deepagents.backends.state import StateBackend
 from deepagents.backends.utils import FileInfo, GrepMatch
-from deepagents.backends.protocol import BackendFactory
 
 
 class CompositeBackend:
@@ -48,13 +45,14 @@ class CompositeBackend:
         return self.default, key
     
     def ls_info(self, path: str) -> list[FileInfo]:
-        """List files from backends, with appropriate prefixes.
-        
+        """List files and directories in the specified directory (non-recursive).
+
         Args:
             path: Absolute path to directory.
-        
+
         Returns:
-            List of FileInfo-like dicts with route prefixes added.
+            List of FileInfo-like dicts with route prefixes added, for files and directories directly in the directory.
+            Directories have a trailing / in their path and is_dir=True.
         """
         # Check if path matches a specific route
         for route_prefix, backend in self.sorted_routes:
@@ -75,11 +73,14 @@ class CompositeBackend:
             results: list[FileInfo] = []
             results.extend(self.default.ls_info(path))
             for route_prefix, backend in self.sorted_routes:
-                infos = backend.ls_info("/")
-                for fi in infos:
-                    fi = dict(fi)
-                    fi["path"] = f"{route_prefix[:-1]}{fi['path']}"
-                    results.append(fi)
+                # Add the route itself as a directory (e.g., /memories/)
+                results.append({
+                    "path": route_prefix,
+                    "is_dir": True,
+                    "size": 0,
+                    "modified_at": "",
+                })
+
             results.sort(key=lambda x: x.get("path", ""))
             return results
 
