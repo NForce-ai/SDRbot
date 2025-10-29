@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict, List, Dict
 
 EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
-MAX_LINE_LENGTH = 2000
+MAX_LINE_LENGTH = 10000
 LINE_NUMBER_WIDTH = 6
 TOOL_RESULT_TOKEN_LIMIT = 20000  # Same threshold as eviction
 TRUNCATION_GUIDANCE = "... [results truncated, try being more specific with your parameters]"
@@ -42,13 +42,15 @@ def format_content_with_line_numbers(
     start_line: int = 1,
 ) -> str:
     """Format file content with line numbers (cat -n style).
-    
+
+    Chunks lines longer than MAX_LINE_LENGTH with continuation markers (e.g., 5.1, 5.2).
+
     Args:
         content: File content as string or list of lines
         start_line: Starting line number (default: 1)
-    
+
     Returns:
-        Formatted content with line numbers
+        Formatted content with line numbers and continuation markers
     """
     if isinstance(content, str):
         lines = content.split("\n")
@@ -56,11 +58,29 @@ def format_content_with_line_numbers(
             lines = lines[:-1]
     else:
         lines = content
-    
-    return "\n".join(
-        f"{i + start_line:{LINE_NUMBER_WIDTH}d}\t{line[:MAX_LINE_LENGTH]}" 
-        for i, line in enumerate(lines)
-    )
+
+    result_lines = []
+    for i, line in enumerate(lines):
+        line_num = i + start_line
+
+        if len(line) <= MAX_LINE_LENGTH:
+            result_lines.append(f"{line_num:{LINE_NUMBER_WIDTH}d}\t{line}")
+        else:
+            # Split long line into chunks with continuation markers
+            num_chunks = (len(line) + MAX_LINE_LENGTH - 1) // MAX_LINE_LENGTH
+            for chunk_idx in range(num_chunks):
+                start = chunk_idx * MAX_LINE_LENGTH
+                end = min(start + MAX_LINE_LENGTH, len(line))
+                chunk = line[start:end]
+                if chunk_idx == 0:
+                    # First chunk: use normal line number
+                    result_lines.append(f"{line_num:{LINE_NUMBER_WIDTH}d}\t{chunk}")
+                else:
+                    # Continuation chunks: use decimal notation (e.g., 5.1, 5.2)
+                    continuation_marker = f"{line_num}.{chunk_idx}"
+                    result_lines.append(f"{continuation_marker:>{LINE_NUMBER_WIDTH}}\t{chunk}")
+
+    return "\n".join(result_lines)
 
 
 def check_empty_content(content: str) -> str | None:
@@ -91,18 +111,17 @@ def file_data_to_string(file_data: dict[str, Any]) -> str:
 
 def create_file_data(content: str, created_at: str | None = None) -> dict[str, Any]:
     """Create a FileData object with timestamps.
-    
+
     Args:
         content: File content as string
         created_at: Optional creation timestamp (ISO format)
-    
+
     Returns:
         FileData dict with content and timestamps
     """
     lines = content.split("\n") if isinstance(content, str) else content
-    lines = [line[i:i+MAX_LINE_LENGTH] for line in lines for i in range(0, len(line) or 1, MAX_LINE_LENGTH)]
     now = datetime.now(UTC).isoformat()
-    
+
     return {
         "content": lines,
         "created_at": created_at or now,
@@ -112,18 +131,17 @@ def create_file_data(content: str, created_at: str | None = None) -> dict[str, A
 
 def update_file_data(file_data: dict[str, Any], content: str) -> dict[str, Any]:
     """Update FileData with new content, preserving creation timestamp.
-    
+
     Args:
         file_data: Existing FileData dict
         content: New content as string
-    
+
     Returns:
         Updated FileData dict
     """
     lines = content.split("\n") if isinstance(content, str) else content
-    lines = [line[i:i+MAX_LINE_LENGTH] for line in lines for i in range(0, len(line) or 1, MAX_LINE_LENGTH)]
     now = datetime.now(UTC).isoformat()
-    
+
     return {
         "content": lines,
         "created_at": file_data["created_at"],

@@ -696,22 +696,21 @@ class TestFilesystemMiddleware:
         keys = {item.key for item in result}
         assert keys == {f"/file{i}.txt" for i in range(55)}
 
-    def test_create_file_data_splits_long_lines(self):
+    def test_create_file_data_preserves_long_lines(self):
+        """Test that create_file_data stores long lines as-is without splitting."""
         long_line = "a" * 3500
         short_line = "short line"
         content = f"{short_line}\n{long_line}"
 
         file_data = create_file_data(content)
 
-        for line in file_data["content"]:
-            assert len(line) <= 2000
-
-        assert len(file_data["content"]) == 3
+        assert len(file_data["content"]) == 2
         assert file_data["content"][0] == short_line
-        assert file_data["content"][1] == "a" * 2000
-        assert file_data["content"][2] == "a" * 1500
+        assert file_data["content"][1] == long_line
+        assert len(file_data["content"][1]) == 3500
 
-    def test_update_file_data_splits_long_lines(self):
+    def test_update_file_data_preserves_long_lines(self):
+        """Test that update_file_data stores long lines as-is without splitting."""
         initial_file_data = create_file_data("initial content")
 
         long_line = "b" * 5000
@@ -720,16 +719,110 @@ class TestFilesystemMiddleware:
 
         updated_file_data = update_file_data(initial_file_data, new_content)
 
-        for line in updated_file_data["content"]:
-            assert len(line) <= 2000
-
-        assert len(updated_file_data["content"]) == 4
+        assert len(updated_file_data["content"]) == 2
         assert updated_file_data["content"][0] == short_line
-        assert updated_file_data["content"][1] == "b" * 2000
-        assert updated_file_data["content"][2] == "b" * 2000
-        assert updated_file_data["content"][3] == "b" * 1000
+        assert updated_file_data["content"][1] == long_line
+        assert len(updated_file_data["content"][1]) == 5000
 
         assert updated_file_data["created_at"] == initial_file_data["created_at"]
+
+    def test_format_content_with_line_numbers_short_lines(self):
+        """Test that short lines (<=10000 chars) are displayed normally."""
+        from deepagents.backends.utils import format_content_with_line_numbers
+
+        content = ["short line 1", "short line 2", "short line 3"]
+        result = format_content_with_line_numbers(content, start_line=1)
+
+        lines = result.split("\n")
+        assert len(lines) == 3
+        assert "     1\tshort line 1" in lines[0]
+        assert "     2\tshort line 2" in lines[1]
+        assert "     3\tshort line 3" in lines[2]
+
+    def test_format_content_with_line_numbers_long_line_with_continuation(self):
+        """Test that long lines (>10000 chars) are split with continuation markers."""
+        from deepagents.backends.utils import format_content_with_line_numbers
+
+        long_line = "a" * 25000
+        content = ["short line", long_line, "another short line"]
+        result = format_content_with_line_numbers(content, start_line=1)
+
+        lines = result.split("\n")
+        assert len(lines) == 5
+        assert "     1\tshort line" in lines[0]
+        assert "     2\t" in lines[1]
+        assert lines[1].count("a") == 10000
+        assert "   2.1\t" in lines[2]
+        assert lines[2].count("a") == 10000
+        assert "   2.2\t" in lines[3]
+        assert lines[3].count("a") == 5000
+        assert "     3\tanother short line" in lines[4]
+
+    def test_format_content_with_line_numbers_multiple_long_lines(self):
+        """Test multiple long lines in sequence with proper line numbering."""
+        from deepagents.backends.utils import format_content_with_line_numbers
+
+        long_line_1 = "x" * 15000
+        long_line_2 = "y" * 15000
+        content = [long_line_1, "middle", long_line_2]
+        result = format_content_with_line_numbers(content, start_line=5)
+        lines = result.split("\n")
+        assert len(lines) == 5
+        assert "     5\t" in lines[0]
+        assert lines[0].count("x") == 10000
+        assert "   5.1\t" in lines[1]
+        assert lines[1].count("x") == 5000
+        assert "     6\tmiddle" in lines[2]
+        assert "     7\t" in lines[3]
+        assert lines[3].count("y") == 10000
+        assert "   7.1\t" in lines[4]
+        assert lines[4].count("y") == 5000
+
+    def test_format_content_with_line_numbers_exact_limit(self):
+        """Test that a line exactly at the 10000 char limit is not split."""
+        from deepagents.backends.utils import format_content_with_line_numbers
+
+        exact_line = "b" * 10000
+        content = [exact_line]
+        result = format_content_with_line_numbers(content, start_line=1)
+
+        lines = result.split("\n")
+        assert len(lines) == 1
+        assert "     1\t" in lines[0]
+        assert lines[0].count("b") == 10000
+
+    def test_read_file_with_long_lines_shows_continuation_markers(self):
+        """Test that read_file displays long lines with continuation markers."""
+        from deepagents.backends.utils import format_read_response, create_file_data
+
+        long_line = "z" * 15000
+        content = f"first line\n{long_line}\nthird line"
+        file_data = create_file_data(content)
+        result = format_read_response(file_data, offset=0, limit=100)
+        lines = result.split("\n")
+        assert len(lines) == 4
+        assert "     1\tfirst line" in lines[0]
+        assert "     2\t" in lines[1]
+        assert lines[1].count("z") == 10000
+        assert "   2.1\t" in lines[2]
+        assert lines[2].count("z") == 5000
+        assert "     3\tthird line" in lines[3]
+
+    def test_read_file_with_offset_and_long_lines(self):
+        """Test that read_file with offset handles long lines correctly."""
+        from deepagents.backends.utils import format_read_response, create_file_data
+
+        long_line = "m" * 12000
+        content = f"line1\nline2\n{long_line}\nline4"
+        file_data = create_file_data(content)
+        result = format_read_response(file_data, offset=2, limit=10)
+        lines = result.split("\n")
+        assert len(lines) == 3
+        assert "     3\t" in lines[0]
+        assert lines[0].count("m") == 10000
+        assert "   3.1\t" in lines[1]
+        assert lines[1].count("m") == 2000
+        assert "     4\tline4" in lines[2]
 
 
 @pytest.mark.requires("langchain_openai")
