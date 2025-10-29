@@ -3,9 +3,9 @@
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, AgentState
-from langchain_core.messages import RemoveMessage, ToolMessage
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langchain_core.messages import ToolMessage
 from langgraph.runtime import Runtime
+from langgraph.types import Overwrite
 
 
 class PatchToolCallsMiddleware(AgentMiddleware):
@@ -41,4 +41,4 @@ class PatchToolCallsMiddleware(AgentMiddleware):
                             )
                         )
 
-        return {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *patched_messages]}
+        return {"messages": Overwrite(patched_messages)}
