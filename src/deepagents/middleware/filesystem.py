@@ -35,7 +35,7 @@ EMPTY_CONTENT_WARNING = "System reminder: File exists but has empty contents"
 MAX_LINE_LENGTH = 2000
 LINE_NUMBER_WIDTH = 6
 DEFAULT_READ_OFFSET = 0
-DEFAULT_READ_LIMIT = 2000
+DEFAULT_READ_LIMIT = 500
 BACKEND_TYPES = (
     BackendProtocol
     | BackendFactory
@@ -155,8 +155,12 @@ Assume this tool is able to read all files on the machine. If the User provides 
 
 Usage:
 - The file_path parameter must be an absolute path, not a relative path
-- By default, it reads up to 2000 lines starting from the beginning of the file
-- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
+- By default, it reads up to 500 lines starting from the beginning of the file
+- **IMPORTANT for large files and codebase exploration**: Use pagination with offset and limit parameters to avoid context overflow
+  - First scan: read_file(path, limit=100) to see file structure
+  - Read more sections: read_file(path, offset=100, limit=200) for next 200 lines
+  - Only omit limit (read full file) when necessary for editing
+- Specify offset and limit: read_file(path, offset=0, limit=100) reads first 100 lines
 - Any lines longer than 2000 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.

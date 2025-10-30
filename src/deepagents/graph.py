@@ -123,10 +123,10 @@ def create_deep_agent(
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
         PatchToolCallsMiddleware(),
     ]
+    if middleware:
+        deepagent_middleware.extend(middleware)
     if interrupt_on is not None:
         deepagent_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
-    if middleware is not None:
-        deepagent_middleware.extend(middleware)
 
     return create_agent(
         model,
