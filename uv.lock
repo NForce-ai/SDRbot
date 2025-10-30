@@ -360,7 +360,7 @@ wheels = [
 
 [[package]]
 name = "deepagents"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "langchain" },
@@ -406,7 +406,7 @@ typing = [{ name = "mypy", specifier = ">=1.18.1,<1.19.0" }]
 
 [[package]]
 name = "deepagents-cli"
-version = "0.0.4"
+version = "0.0.5"
 source = { editable = "libs/deepagents-cli" }
 dependencies = [
     { name = "deepagents" },

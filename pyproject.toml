@@ -1,6 +1,6 @@
 [project]
 name = "deepagents"
-version = "0.2.2"
+version = "0.2.3"
 description = "General purpose 'deep agent' with sub-agent spawning, todo list capabilities, and mock file system. Built on LangGraph."
 readme = "README.md"
 license = { text = "MIT" }
@@ -42,7 +42,7 @@ include = ["deepagents*"]
 "" = "src"
 
 [tool.setuptools.package-data]
-"*" = ["py.typed"]
+"*" = ["py.typed", "*.md"]
 
 [tool.ruff]
 line-length = 150
