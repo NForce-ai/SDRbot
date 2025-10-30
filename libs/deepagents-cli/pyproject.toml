@@ -1,52 +1,61 @@
 [project]
-name = "deepagents"
-version = "0.2.1"
-description = "General purpose 'deep agent' with sub-agent spawning, todo list capabilities, and mock file system. Built on LangGraph."
+name = "deepagents-cli"
+version = "0.0.1"
+description = "Deepagents CLI"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "langchain-anthropic>=1.0.0,<2.0.0",
-    "langchain>=1.0.2,<2.0.0",
-    "langchain-core>=1.0.0,<2.0.0",
-    "wcmatch"
+  "deepagents",
+  "requests",
+  "rich>=13.0.0",
+  "prompt-toolkit>=3.0.52",
+  "langchain-openai>=0.1.0",
+  "tavily-python",
+  "python-dotenv",
 ]
 
-[project.optional-dependencies]
+[project.scripts]
+deepagents = "deepagents_cli:cli_main"
+deepagents-cli = "deepagents_cli:cli_main"
+
+[tool.uv.sources]
+deepagents = { workspace = true }
+
+[dependency-groups]
+test = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.3",
+    "pytest-cov>=6.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-socket>=0.7.0",
+    "pytest-timeout>=2.3.1",
+    "ruff>=0.9.7",
+]
+
+
 dev = [
     "pytest",
     "pytest-cov",
     "build",
     "twine",
     "langchain-openai",
+    "pytest-timeout>=2.4.0",
+    "pytest-socket>=0.7.0",
+    "pytest-asyncio>=1.2.0",
 ]
 
-[dependency-groups]
 lint = [
-    "ruff>=0.12.2,<0.13.0",
-]
-typing = [
-    "mypy>=1.18.1,<1.19.0",
+    "ruff",
+    "mypy"
 ]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["deepagents*"]
-
-[tool.setuptools.package-dir]
-"" = "src"
-
-[tool.setuptools.package-data]
-"*" = ["py.typed"]
-
 [tool.ruff]
-line-length = 150
-# Exclude any files that shouldn't be linted
+line-length = 100
 exclude = []
 
 [tool.ruff.format]
@@ -79,11 +88,15 @@ convention = "google"  # Google-style docstrings
 ignore-var-parameters = true
 
 [tool.ruff.lint.per-file-ignores]
+"deepagents_cli/cli.py" = [
+    "T201",    # Allow print statements in CLI
+]
 "tests/*" = [
     "D1",      # Skip documentation rules in tests
     "S101",    # Allow asserts in tests
     "S311",    # Allow pseudo-random generators in tests
-    # Add more test-specific ignores
+    "ANN201",  # Missing return type annotation
+    "INP001",  # Implicit namespace package
 ]
 
 [tool.mypy]
@@ -93,8 +106,3 @@ enable_error_code = ["deprecated"]
 # Optional: reduce strictness if needed
 disallow_any_generics = false
 warn_return_any = false
-
-[tool.uv.workspace]
-members = [
-    "libs/deepagents-cli",
-]
