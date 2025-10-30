@@ -406,7 +406,7 @@ typing = [{ name = "mypy", specifier = ">=1.18.1,<1.19.0" }]
 
 [[package]]
 name = "deepagents-cli"
-version = "0.0.5"
+version = "0.0.6"
 source = { editable = "libs/deepagents-cli" }
 dependencies = [
     { name = "deepagents" },
