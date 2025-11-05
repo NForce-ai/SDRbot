@@ -330,6 +330,10 @@ async def execute_task(
                         tool_content = format_tool_message_content(message.content)
                         record = file_op_tracker.complete_with_message(message)
 
+                        # Reset spinner message after tool completes
+                        if spinner_active:
+                            status.update(f"[bold {COLORS['thinking']}]Agent is thinking...")
+
                         if tool_name == "shell" and tool_status != "success":
                             flush_text_buffer(final=True)
                             if tool_content:
@@ -483,9 +487,10 @@ async def execute_task(
                                 markup=False,
                             )
 
-                            if not spinner_active:
-                                status.start()
-                                spinner_active = True
+                            # Restart spinner with context about which tool is executing
+                            status.update(f"[bold {COLORS['thinking']}]Executing {display_str}...")
+                            status.start()
+                            spinner_active = True
 
                     if getattr(message, "chunk_position", None) == "last":
                         flush_text_buffer(final=True)
