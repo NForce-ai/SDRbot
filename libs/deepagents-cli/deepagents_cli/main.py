@@ -136,11 +136,14 @@ async def simple_cli(agent, assistant_id: str | None, session_state, baseline_to
     while True:
         try:
             user_input = await session.prompt_async()
+            if session_state.exit_hint_handle:
+                session_state.exit_hint_handle.cancel()
+                session_state.exit_hint_handle = None
+            session_state.exit_hint_until = None
             user_input = user_input.strip()
         except EOFError:
             break
         except KeyboardInterrupt:
-            # Ctrl+C at prompt - exit the program
             console.print("\nGoodbye!", style=COLORS["primary"])
             break
 
