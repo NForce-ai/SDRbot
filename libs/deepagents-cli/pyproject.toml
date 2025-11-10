@@ -13,6 +13,7 @@ dependencies = [
   "langchain-openai>=0.1.0",
   "tavily-python",
   "python-dotenv",
+  "markdownify>=0.13.0",
 ]
 
 [project.scripts]
@@ -30,6 +31,7 @@ test = [
     "pytest-mock>=3.14.0",
     "pytest-socket>=0.7.0",
     "pytest-timeout>=2.3.1",
+    "responses>=0.25.0",
     "ruff>=0.9.7",
 ]
 
