@@ -162,7 +162,8 @@ async def execute_task(
     assistant_id: str | None,
     session_state,
     token_tracker: TokenTracker | None = None,
-) -> None:
+    backend=None,
+):
     """Execute any task by passing it directly to the AI agent."""
     # Parse file mentions and inject content if any
     prompt_text, mentioned_files = parse_file_mentions(user_input)
@@ -207,13 +208,14 @@ async def execute_task(
         "glob": "🔍",
         "grep": "🔎",
         "shell": "⚡",
+        "execute": "🔧",
         "web_search": "🌐",
         "http_request": "🌍",
         "task": "🤖",
         "write_todos": "📋",
     }
 
-    file_op_tracker = FileOpTracker(assistant_id=assistant_id)
+    file_op_tracker = FileOpTracker(assistant_id=assistant_id, backend=backend)
 
     # Track which tool calls we've displayed to avoid duplicates
     displayed_tool_ids = set()
