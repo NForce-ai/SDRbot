@@ -6,7 +6,7 @@ Interactive command-line interface for DeepAgents - an AI coding assistant with 
 
 The CLI is organized into focused modules:
 
-```txt
+```
 cli/
 ├── __init__.py      # Package exports
 ├── __main__.py      # Entry point for `python -m deepagents.cli`
@@ -23,7 +23,6 @@ cli/
 ## Module Responsibilities
 
 ### `main.py` - Entry Point & Main Loop
-
 - **Purpose**: CLI entry point, argument parsing, main interactive loop
 - **Key Functions**:
   - `cli_main()` - Console script entry point (called when you run `deepagents`)
@@ -33,7 +32,6 @@ cli/
   - `check_cli_dependencies()` - Validates required packages are installed
 
 ### `config.py` - Configuration & Constants
-
 - **Purpose**: Centralized configuration, constants, and model creation
 - **Key Exports**:
   - `COLORS` - Color scheme for terminal output
@@ -44,7 +42,6 @@ cli/
   - `get_default_coding_instructions()` - Loads default agent prompt
 
 ### `tools.py` - Custom Agent Tools
-
 - **Purpose**: Additional tools for the agent beyond built-in filesystem operations
 - **Tools**:
   - `http_request()` - Make HTTP requests to APIs
@@ -52,7 +49,6 @@ cli/
   - `tavily_client` - Initialized Tavily client (if API key available)
 
 ### `ui.py` - Display & Rendering
-
 - **Purpose**: All UI rendering and display logic
 - **Key Components**:
   - `TokenTracker` - Track and display token usage across the session
@@ -63,7 +59,6 @@ cli/
   - `truncate_value()` - Truncate long values for readable display
 
 ### `input.py` - Input Handling
-
 - **Purpose**: User input, completers, and prompt session configuration
 - **Key Components**:
   - `FilePathCompleter` - Autocomplete for `@file` mentions
@@ -77,14 +72,12 @@ cli/
     - External editor support (Ctrl+E)
 
 ### `commands.py` - Command Handlers
-
 - **Purpose**: Handle slash commands (`/help`, `/clear`, etc.) and bash execution
 - **Key Functions**:
   - `handle_command()` - Route and execute slash commands
   - `execute_bash_command()` - Execute bash commands prefixed with `!`
 
 ### `execution.py` - Task Execution & Streaming
-
 - **Purpose**: Core execution logic, streaming responses, HITL (Human-in-the-Loop)
 - **Key Functions**:
   - `execute_task()` - Main execution function that:
@@ -102,7 +95,6 @@ cli/
   - Token tracking integration
 
 ### `agent.py` - Agent Management
-
 - **Purpose**: Agent creation, configuration, and management commands
 - **Key Functions**:
   - `create_agent_with_config()` - Create agent with:
@@ -115,7 +107,7 @@ cli/
 
 ## Data Flow
 
-```txt
+```
 User Input
     ↓
 main.py (simple_cli)
@@ -135,26 +127,21 @@ Display output via ui.py (TokenTracker, console)
 ## Key Features
 
 ### File Context Injection
-
 Type `@filename` and press Tab to autocomplete and inject file content into your prompt.
 
 ### Interactive Commands
-
 - `/help` - Show help
 - `/clear` - Clear screen and reset conversation
 - `/tokens` - Show token usage
 - `/quit` or `/exit` - Exit the CLI
 
 ### Bash Commands
-
 Type `!command` to execute bash commands directly (e.g., `!ls`, `!git status`)
 
 ### Todo List Tracking
-
 The agent can create and update a visual todo list for multi-step tasks.
 
 ### File Operation Summaries & Diff Viewer
-
 - File reads now show a concise summary with the number of lines streamed (e.g., `⏺ Read(example.py)` followed by `⎿  Read 44 lines (lines 1-44)`).
 - Writes and edits capture before/after snapshots, reporting lines added or removed plus bytes written.
 - A Rich-powered unified diff renders in-line with syntax highlighting so you can review every proposed change before confirming.
@@ -162,19 +149,16 @@ The agent can create and update a visual todo list for multi-step tasks.
 - When Human-in-the-Loop approval is required, the proposed diff is shown *before* you choose Approve/Reject.
 
 ### Human-in-the-Loop Shell Approval
-
 Shell commands require user approval with an interactive arrow-key menu.
 
 ### Multi-line Input
-
-- **⏎ Enter** - Submit (or accept completion if menu is open)
-- **⌥ Option + ⏎ Enter (macOS) / Alt + Enter** - Insert newline (or ESC then Enter)
-- **⌃E Ctrl + E** - Open in external editor (nano by default)
+- **Enter** - Submit (or accept completion if menu is open)
+- **Alt+Enter** - Insert newline (Option+Enter on Mac, or ESC then Enter)
+- **Ctrl+E** - Open in external editor (nano by default)
 
 ## Agent Storage
 
 Each agent stores its state in `~/.deepagents/AGENT_NAME/`:
-
 - `agent.md` - Agent's custom instructions (long-term memory)
 - `memories/` - Additional context files
 - `history` - Command history
@@ -204,10 +188,10 @@ deepagents
 ## Entry Point
 
 The CLI is registered in `pyproject.toml` as:
-
 ```toml
 [project.scripts]
 deepagents = "deepagents.cli:cli_main"
 ```
 
 This means when users install the package, they can run `deepagents` directly.
+==== BASE ====

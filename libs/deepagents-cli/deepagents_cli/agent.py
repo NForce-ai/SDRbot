@@ -230,21 +230,25 @@ def _format_fetch_url_description(tool_call: ToolCall, state: AgentState, runtim
 
 
 def _format_task_description(tool_call: ToolCall, state: AgentState, runtime: Runtime) -> str:
-    """Format task (subagent) tool call for approval prompt."""
+    """Format task (subagent) tool call for approval prompt.
+
+    The task tool signature is: task(description: str, subagent_type: str)
+    The description contains all instructions that will be sent to the subagent.
+    """
     args = tool_call["args"]
     description = args.get("description", "unknown")
-    prompt = args.get("prompt", "")
+    subagent_type = args.get("subagent_type", "unknown")
 
-    # Truncate prompt if too long
-    prompt_preview = prompt[:300]
-    if len(prompt) > 300:
-        prompt_preview += "..."
+    # Truncate description if too long for display
+    description_preview = description
+    if len(description) > 500:
+        description_preview = description[:500] + "..."
 
     return (
-        f"Task: {description}\n\n"
-        f"Instructions to subagent:\n"
+        f"Subagent Type: {subagent_type}\n\n"
+        f"Task Instructions:\n"
         f"{'─' * 40}\n"
-        f"{prompt_preview}\n"
+        f"{description_preview}\n"
         f"{'─' * 40}\n\n"
         f"⚠️  Subagent will have access to file operations and shell commands"
     )
@@ -293,9 +297,11 @@ def create_agent_with_config(
         source_content = get_default_coding_instructions()
         agent_md.write_text(source_content)
 
-    # Skills directory - per-agent
-    skills_dir = agent_dir / "skills"
-    skills_dir.mkdir(parents=True, exist_ok=True)
+    # Skills directory - per-agent (user-level)
+    skills_dir = settings.ensure_user_skills_dir(assistant_id)
+
+    # Project-level skills directory (if in a project)
+    project_skills_dir = settings.get_project_skills_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:
@@ -309,7 +315,11 @@ def create_agent_with_config(
         # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ResumableShellToolMiddleware
         agent_middleware = [
             AgentMemoryMiddleware(settings=settings, assistant_id=assistant_id),
-            SkillsMiddleware(skills_dir=skills_dir, assistant_id=assistant_id),
+            SkillsMiddleware(
+                skills_dir=skills_dir,
+                assistant_id=assistant_id,
+                project_skills_dir=project_skills_dir,
+            ),
             ResumableShellToolMiddleware(
                 workspace_root=os.getcwd(), execution_policy=HostExecutionPolicy()
             ),
@@ -327,7 +337,11 @@ def create_agent_with_config(
         # are automatically provided by create_deep_agent when backend is a SandboxBackend.
         agent_middleware = [
             AgentMemoryMiddleware(settings=settings, assistant_id=assistant_id),
-            SkillsMiddleware(skills_dir=skills_dir, assistant_id=assistant_id),
+            SkillsMiddleware(
+                skills_dir=skills_dir,
+                assistant_id=assistant_id,
+                project_skills_dir=project_skills_dir,
+            ),
         ]
 
     # Get the system prompt (sandbox-aware and with skills)
