@@ -25,6 +25,12 @@ from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
 
+import sdrbot_cli.auth.salesforce as sf_auth
+import sdrbot_cli.auth.hubspot as hs_auth
+import sdrbot_cli.auth.attio as attio_auth
+import sdrbot_cli.auth.lusha as lusha_auth
+import sdrbot_cli.auth.hunter as hunter_auth
+
 # Import Salesforce tools
 from sdrbot_cli.skills.salesforce.tools import (
     list_objects,
@@ -57,6 +63,13 @@ from sdrbot_cli.skills.lusha.tools import (
     lusha_enrich_person,
     lusha_enrich_company,
     lusha_prospect,
+)
+
+# Import Hunter tools
+from sdrbot_cli.skills.hunter.tools import (
+    hunter_domain_search,
+    hunter_email_finder,
+    hunter_email_verifier,
 )
 
 
@@ -259,6 +272,13 @@ Use Lusha to find and enrich contact data:
 1.  **Prospecting:** Use `lusha_prospect` to find new leads by criteria (e.g. `json.dumps({{"jobTitle": ["CTO"], "companyName": "Stripe"}})`).
 2.  **Enrichment:** Use `lusha_enrich_person` (via LinkedIn/Email) or `lusha_enrich_company` (via Domain) to get contact details and firmographics.
 3.  **Workflow:** Find -> Enrich -> Create in CRM.
+
+### Hunter.io Usage Guidelines
+
+Use Hunter.io to find and verify email addresses:
+1.  **Domain Search:** Use `hunter_domain_search(domain="stripe.com")` to find emails associated with a company.
+2.  **Email Finder:** Use `hunter_email_finder` to find a specific person's email if you know their name and company.
+3.  **Verify:** Use `hunter_email_verifier` to check if an email is deliverable before adding it to your CRM.
 """
     )
 
@@ -440,6 +460,20 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "description": lambda t, s, r: f"Lusha Prospect Search: {t['args'].get('filters_json')}",
     }
 
+    # Hunter interrupts
+    hunter_domain_search_interrupt: InterruptOnConfig = {
+        "allowed_decisions": ["approve", "reject"],
+        "description": lambda t, s, r: f"Hunter Domain Search: {t['args'].get('domain')}",
+    }
+    hunter_email_finder_interrupt: InterruptOnConfig = {
+        "allowed_decisions": ["approve", "reject"],
+        "description": lambda t, s, r: f"Hunter Email Finder: {t['args'].get('first_name')} {t['args'].get('last_name')} @ {t['args'].get('domain')}",
+    }
+    hunter_email_verifier_interrupt: InterruptOnConfig = {
+        "allowed_decisions": ["approve", "reject"],
+        "description": lambda t, s, r: f"Hunter Email Verifier: {t['args'].get('email')}",
+    }
+
     return {
         "shell": shell_interrupt_config,
         "execute": execute_interrupt_config,
@@ -460,6 +494,9 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "lusha_enrich_person": lusha_enrich_interrupt,
         "lusha_enrich_company": lusha_enrich_interrupt,
         "lusha_prospect": lusha_prospect_interrupt,
+        "hunter_domain_search": hunter_domain_search_interrupt,
+        "hunter_email_finder": hunter_email_finder_interrupt,
+        "hunter_email_verifier": hunter_email_verifier_interrupt,
     }
 
 
@@ -544,27 +581,63 @@ def create_agent_with_config(
 
     interrupt_on = _add_interrupt_on()
     
-    # Add Salesforce tools
-    tools.extend([
-        list_objects,
-        describe_object,
-        soql_query,
-        create_record,
-        update_record,
-        hubspot_list_object_types,
-        hubspot_describe_object,
-        hubspot_search_objects,
-        hubspot_create_object,
-        hubspot_update_object,
-        attio_list_objects,
-        attio_describe_object,
-        attio_query_records,
-        attio_create_record,
-        attio_update_record,
-        lusha_enrich_person,
-        lusha_enrich_company,
-        lusha_prospect,
-    ])
+    # Conditional Tool Registration
+    
+    # Salesforce
+    if sf_auth.is_configured():
+        tools.extend([
+            list_objects,
+            describe_object,
+            soql_query,
+            create_record,
+            update_record,
+        ])
+    else:
+        console.print(f"[{COLORS['dim']}]Skipping Salesforce tools (not configured)[/{COLORS['dim']}]")
+
+    # HubSpot
+    if hs_auth.is_configured():
+        tools.extend([
+            hubspot_list_object_types,
+            hubspot_describe_object,
+            hubspot_search_objects,
+            hubspot_create_object,
+            hubspot_update_object,
+        ])
+    else:
+        console.print(f"[{COLORS['dim']}]Skipping HubSpot tools (not configured)[/{COLORS['dim']}]")
+
+    # Attio
+    if attio_auth.is_configured():
+        tools.extend([
+            attio_list_objects,
+            attio_describe_object,
+            attio_query_records,
+            attio_create_record,
+            attio_update_record,
+        ])
+    else:
+        console.print(f"[{COLORS['dim']}]Skipping Attio tools (not configured)[/{COLORS['dim']}]")
+
+    # Lusha
+    if lusha_auth.is_configured():
+        tools.extend([
+            lusha_enrich_person,
+            lusha_enrich_company,
+            lusha_prospect,
+        ])
+    else:
+        console.print(f"[{COLORS['dim']}]Skipping Lusha tools (not configured)[/{COLORS['dim']}]")
+
+    # Hunter
+    if hunter_auth.is_configured():
+        tools.extend([
+            hunter_domain_search,
+            hunter_email_finder,
+            hunter_email_verifier,
+        ])
+    else:
+        console.print(f"[{COLORS['dim']}]Skipping Hunter.io tools (not configured)[/{COLORS['dim']}]")
 
     agent = create_deep_agent(
         model=model,

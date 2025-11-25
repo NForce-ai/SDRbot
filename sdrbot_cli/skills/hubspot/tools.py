@@ -3,7 +3,11 @@
 import json
 from typing import Optional, Dict, Any, List
 from langchain_core.tools import tool
-from hubspot.crm.objects import PublicObjectSearchRequest, SimplePublicObjectInput
+from hubspot.crm.objects import (
+    PublicObjectSearchRequest, 
+    SimplePublicObjectInput, 
+    SimplePublicObjectInputForCreate
+)
 from hubspot.crm.schemas import ObjectSchema
 
 from sdrbot_cli.auth.hubspot import get_client
@@ -136,11 +140,12 @@ def hubspot_create_object(object_type: str, properties_json: str) -> str:
     hs = get_hs()
     try:
         props = json.loads(properties_json)
-        simple_public_object_input = SimplePublicObjectInput(properties=props)
+        # Fix: Use SimplePublicObjectInputForCreate and correct argument name
+        simple_public_object_input_for_create = SimplePublicObjectInputForCreate(properties=props, associations=[])
         
         response = hs.crm.objects.basic_api.create(
             object_type=object_type,
-            simple_public_object_input=simple_public_object_input
+            simple_public_object_input_for_create=simple_public_object_input_for_create
         )
         
         return f"Successfully created {object_type} with ID: {response.id}\nProperties: {response.properties}"

@@ -33,6 +33,7 @@ It is built on top of [LangChain](https://langchain.com) and [DeepAgents](https:
 | **Attio** | API Key | Search, CRUD, Attribute Discovery |
 | **Lusha** | API Key | Prospecting, Person/Company Enrichment |
 | **Tavily** | API Key | General Web Search, News Retrieval |
+| **Hunter.io** | API Key | Email Search, Email Verification |
 
 ---
 
@@ -108,6 +109,7 @@ nano .env
 - **HubSpot:** `HUBSPOT_ACCESS_TOKEN` (Private App Token) **OR** `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` (OAuth)
 - **Attio:** `ATTIO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
+- **Hunter.io:** `HUNTER_API_KEY`
 
 ---
 

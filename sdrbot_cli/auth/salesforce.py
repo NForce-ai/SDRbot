@@ -22,6 +22,11 @@ CLIENT_SECRET = os.getenv("SF_CLIENT_SECRET")
 REDIRECT_URI = "http://localhost:8080/callback/salesforce"
 
 
+def is_configured() -> bool:
+    """Check if Salesforce is configured (Env vars)."""
+    return bool(CLIENT_ID and CLIENT_SECRET)
+
+
 class OAuthHandler(BaseHTTPRequestHandler):
     """Handle the OAuth callback."""
     

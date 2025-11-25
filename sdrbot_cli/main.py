@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -209,7 +210,13 @@ async def simple_cli(
         console.print("    OR export HUBSPOT_ACCESS_TOKEN=...", style=COLORS["dim"])
         console.print()
         
-    console.print("... Ready to prospect! What would you like to build?", style=COLORS["agent"])
+    greetings = [
+        "RevOps agent standing by. What's the mission?",
+        "Quotas don't hit themselves. Let's get to work.",
+        "Ready to hunt. Who are we targeting today?",
+        "Pipeline awaiting updates. How can I help?",
+    ]
+    console.print(random.choice(greetings), style=COLORS["agent"])
 
     if sandbox_type:
         working_dir = get_default_working_dir(sandbox_type)
@@ -269,6 +276,8 @@ async def simple_cli(
             if result == "exit":
                 console.print("\nGoodbye!", style=COLORS["primary"])
                 break
+            if result == "reload":
+                return "reload"
             if result:
                 # Command was handled, continue to next input
                 continue
@@ -325,16 +334,35 @@ async def _run_agent_session(
     system_prompt = get_system_prompt(assistant_id=assistant_id, sandbox_type=sandbox_type)
     baseline_tokens = calculate_baseline_tokens(model, agent_dir, system_prompt, assistant_id)
 
-    await simple_cli(
-        agent,
-        assistant_id,
-        session_state,
-        baseline_tokens,
-        backend=composite_backend,
-        sandbox_type=sandbox_type,
-        setup_script_path=setup_script_path,
-        no_splash=session_state.no_splash,
-    )
+    while True:
+        result = await simple_cli(
+            agent,
+            assistant_id,
+            session_state,
+            baseline_tokens,
+            backend=composite_backend,
+            sandbox_type=sandbox_type,
+            setup_script_path=setup_script_path,
+            no_splash=session_state.no_splash,
+        )
+        
+        if result == "reload":
+            # Re-create agent with new config
+            console.print("[dim]Re-initializing agent...[/dim]")
+            
+            # Re-evaluate tools
+            tools = [http_request, fetch_url]
+            if settings.has_tavily:
+                tools.append(web_search)
+                
+            agent, composite_backend = create_agent_with_config(
+                model, assistant_id, tools, sandbox=sandbox_backend, sandbox_type=sandbox_type
+            )
+            # Continue loop with new agent
+            continue
+        
+        # If not reload, break (exit was handled inside simple_cli)
+        break
 
 
 async def main(

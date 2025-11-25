@@ -20,6 +20,94 @@ def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False
             return Prompt.ask(f"  Please enter your {display_name}", password=is_secret, default=None)
     return None
 
+def save_env_vars(env_vars: dict) -> None:
+    """Save dictionary of env vars to .env file."""
+    project_root = Path.cwd()
+    env_file = project_root / ".env"
+    
+    current_env_content = ""
+    if env_file.exists():
+        current_env_content = env_file.read_text()
+
+    with open(env_file, "w") as f:
+        # Preserve existing comments and lines not being overwritten
+        for line in current_env_content.splitlines():
+            key_val = line.split('=', 1)
+            if len(key_val) == 2 and key_val[0] not in env_vars:
+                f.write(line + "\n")
+            elif not line.strip().startswith("#") and not line.strip() == "":
+                # Also write back non-comment, non-empty lines that aren't being overwritten
+                if key_val[0] not in env_vars:
+                    f.write(line + "\n")
+        
+        for key, value in env_vars.items():
+            # Only write if value is not None (user provided something)
+            if value is not None:
+                f.write(f"{key}=\"{value}\"\n")
+    
+    console.print(f"[{COLORS['dim']}]Credentials saved to {env_file}[/{COLORS['dim']}]")
+
+
+def setup_service(service_name: str, force: bool = False) -> bool:
+    """
+    Run setup for a specific service.
+    Returns True if configuration was updated.
+    """
+    env_vars = {}
+    
+    if service_name == "salesforce":
+        console.print(f"[{COLORS['primary']}]--- Salesforce Configuration ---[/{COLORS['primary']}]")
+        sf_client_id = _get_or_prompt("SF_CLIENT_ID", "Salesforce Client ID", required=True, force=force)
+        sf_client_secret = _get_or_prompt("SF_CLIENT_SECRET", "Salesforce Client Secret", is_secret=True, required=True, force=force)
+        if sf_client_id: env_vars["SF_CLIENT_ID"] = sf_client_id
+        if sf_client_secret: env_vars["SF_CLIENT_SECRET"] = sf_client_secret
+        
+    elif service_name == "hubspot":
+        console.print(f"[{COLORS['primary']}]--- HubSpot Configuration ---[/{COLORS['primary']}]")
+        hubspot_auth_choice = Prompt.ask(
+            f"  [{COLORS['primary']}]Choose HubSpot authentication method[/] (1: OAuth - Client ID/Secret, 2: Personal Access Token)",
+            choices=["1", "2"],
+            default="1"
+        )
+        if hubspot_auth_choice == "1":
+            hubspot_client_id = _get_or_prompt("HUBSPOT_CLIENT_ID", "HubSpot Client ID", required=True, force=force)
+            hubspot_client_secret = _get_or_prompt("HUBSPOT_CLIENT_SECRET", "HubSpot Client Secret", is_secret=True, required=True, force=force)
+            if hubspot_client_id: env_vars["HUBSPOT_CLIENT_ID"] = hubspot_client_id
+            if hubspot_client_secret: env_vars["HUBSPOT_CLIENT_SECRET"] = hubspot_client_secret
+        else:
+            hubspot_access_token = _get_or_prompt("HUBSPOT_ACCESS_TOKEN", "HubSpot Personal Access Token", is_secret=True, required=True, force=force)
+            if hubspot_access_token: env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
+            
+    elif service_name == "attio":
+        console.print(f"[{COLORS['primary']}]--- Attio Configuration ---[/{COLORS['primary']}]")
+        attio_key = _get_or_prompt("ATTIO_API_KEY", "Attio API Key", is_secret=True, required=True, force=force)
+        if attio_key: env_vars["ATTIO_API_KEY"] = attio_key
+        
+    elif service_name == "lusha":
+        console.print(f"[{COLORS['primary']}]--- Lusha Configuration ---[/{COLORS['primary']}]")
+        lusha_key = _get_or_prompt("LUSHA_API_KEY", "Lusha API Key", is_secret=True, required=True, force=force)
+        if lusha_key: env_vars["LUSHA_API_KEY"] = lusha_key
+        
+    elif service_name == "hunter":
+        console.print(f"[{COLORS['primary']}]--- Hunter.io Configuration ---[/{COLORS['primary']}]")
+        hunter_key = _get_or_prompt("HUNTER_API_KEY", "Hunter.io API Key", is_secret=True, required=True, force=force)
+        if hunter_key: env_vars["HUNTER_API_KEY"] = hunter_key
+        
+    elif service_name == "tavily":
+        console.print(f"[{COLORS['primary']}]--- Tavily Configuration ---[/{COLORS['primary']}]")
+        tavily_key = _get_or_prompt("TAVILY_API_KEY", "Tavily API Key", is_secret=True, required=True, force=force)
+        if tavily_key: env_vars["TAVILY_API_KEY"] = tavily_key
+        
+    else:
+        console.print(f"[red]Unknown service: {service_name}[/red]")
+        return False
+        
+    if env_vars:
+        save_env_vars(env_vars)
+        return True
+    return False
+
+
 def run_setup_wizard(force: bool = False) -> None:
     """
     Guides the user through setting up essential environment variables for SDRbot.
@@ -66,69 +154,31 @@ def run_setup_wizard(force: bool = False) -> None:
         if google_key:
             env_vars["GOOGLE_API_KEY"] = google_key
     
-    console.print("\n")
-
-    # Tavily
-    console.print(f"[{COLORS['primary']}]--- Web Search Configuration (Tavily) ---[/{COLORS['primary']}]")
-    tavily_key = _get_or_prompt("TAVILY_API_KEY", "Tavily API Key", is_secret=True, required=False, force=force)
-    if tavily_key:
-        env_vars["TAVILY_API_KEY"] = tavily_key
-    console.print("\n")
-
-    # Salesforce
-    console.print(f"[{COLORS['primary']}]--- Salesforce Configuration (Optional) ---[/{COLORS['primary']}]")
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Salesforce?[/", default=False):
-        sf_client_id = _get_or_prompt("SF_CLIENT_ID", "Salesforce Client ID", required=True, force=force)
-        sf_client_secret = _get_or_prompt("SF_CLIENT_SECRET", "Salesforce Client Secret", is_secret=True, required=True, force=force)
-        if sf_client_id: env_vars["SF_CLIENT_ID"] = sf_client_id
-        if sf_client_secret: env_vars["SF_CLIENT_SECRET"] = sf_client_secret
-    console.print("\n")
-
-    # HubSpot
-    console.print(f"[{COLORS['primary']}]--- HubSpot Configuration (Optional) ---[/{COLORS['primary']}]")
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure HubSpot?[/", default=False):
-        hubspot_auth_choice = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose HubSpot authentication method[/] (1: OAuth - Client ID/Secret, 2: Personal Access Token)",
-            choices=["1", "2"],
-            default="1"
-        )
-        if hubspot_auth_choice == "1":
-            hubspot_client_id = _get_or_prompt("HUBSPOT_CLIENT_ID", "HubSpot Client ID", required=True, force=force)
-            hubspot_client_secret = _get_or_prompt("HUBSPOT_CLIENT_SECRET", "HubSpot Client Secret", is_secret=True, required=True, force=force)
-            if hubspot_client_id: env_vars["HUBSPOT_CLIENT_ID"] = hubspot_client_id
-            if hubspot_client_secret: env_vars["HUBSPOT_CLIENT_SECRET"] = hubspot_client_secret
-        else:
-            hubspot_access_token = _get_or_prompt("HUBSPOT_ACCESS_TOKEN", "HubSpot Personal Access Token", is_secret=True, required=True, force=force)
-            if hubspot_access_token: env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
-    console.print("\n")
-
-    # Save to .env
-    # Use current working directory for .env file
-    project_root = Path.cwd()
-    env_file = project_root / ".env"
+    if env_vars:
+        save_env_vars(env_vars)
+        env_vars = {} # Clear for next steps
     
-    current_env_content = ""
-    if env_file.exists():
-        current_env_content = env_file.read_text()
+    console.print("\n")
 
-    with open(env_file, "w") as f:
-        # Preserve existing comments and lines not being overwritten
-        for line in current_env_content.splitlines():
-            key_val = line.split('=', 1)
-            if len(key_val) == 2 and key_val[0] not in env_vars:
-                f.write(line + "\n")
-            elif not line.strip().startswith("#") and not line.strip() == "":
-                # Also write back non-comment, non-empty lines that aren't being overwritten
-                if key_val[0] not in env_vars:
-                    f.write(line + "\n")
-        
-        for key, value in env_vars.items():
-            # Only write if value is not None (user provided something)
-            if value is not None:
-                f.write(f"{key}=\"{value}\"\n")
+    # Optional services
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Tavily (Web Search)?[/", default=False):
+        setup_service("tavily", force)
+    console.print("\n")
+
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Salesforce?[/", default=False):
+        setup_service("salesforce", force)
+    console.print("\n")
+
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure HubSpot?[/", default=False):
+        setup_service("hubspot", force)
+    console.print("\n")
+
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Hunter.io?[/", default=False):
+        setup_service("hunter", force)
+    console.print("\n")
+
     
     console.print(f"[{COLORS['primary']}][bold]Setup Complete![/bold][/]")
-    console.print(f"[{COLORS['dim']}]Your credentials have been saved to {env_file}[/{COLORS['dim']}]")
     console.print(f"[{COLORS['dim']}]You can now run SDRbot.[/]{COLORS['dim']}\n")
 
 if __name__ == "__main__":

@@ -3,20 +3,73 @@
 import subprocess
 import dotenv
 from pathlib import Path
+from rich.table import Table
 
 from langgraph.checkpoint.memory import InMemorySaver
 
 from .config import COLORS, DEEP_AGENTS_ASCII, console, settings
 from .ui import TokenTracker, show_interactive_help
-from .setup_wizard import run_setup_wizard
+from .setup_wizard import run_setup_wizard, setup_service
+import sdrbot_cli.auth.salesforce as sf_auth
+import sdrbot_cli.auth.hubspot as hs_auth
+import sdrbot_cli.auth.attio as attio_auth
+import sdrbot_cli.auth.lusha as lusha_auth
+import sdrbot_cli.auth.hunter as hunter_auth
 
 
 def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bool:
-    """Handle slash commands. Returns 'exit' to exit, True if handled, False to pass to agent."""
-    cmd = command.lower().strip().lstrip("/")
+    """
+    Handle slash commands. 
+    Returns:
+    - 'exit': to exit the CLI
+    - 'reload': to re-initialize the agent
+    - True: if command handled
+    - False: if not handled (pass to agent)
+    """
+    cmd_parts = command.strip().lstrip("/").split()
+    cmd = cmd_parts[0].lower()
+    args = cmd_parts[1:] if len(cmd_parts) > 1 else []
 
     if cmd in ["quit", "exit", "q"]:
         return "exit"
+        
+    if cmd == "services":
+        if not args:
+            # List status
+            table = Table(title="Connected Services")
+            table.add_column("Service", style="cyan")
+            table.add_column("Status", style="green")
+            
+            services = [
+                ("Salesforce", sf_auth.is_configured()),
+                ("HubSpot", hs_auth.is_configured()),
+                ("Attio", attio_auth.is_configured()),
+                ("Lusha", lusha_auth.is_configured()),
+                ("Hunter.io", hunter_auth.is_configured()),
+                ("Tavily", settings.has_tavily),
+            ]
+            
+            for name, active in services:
+                status = "[green]Active[/green]" if active else "[dim]Not Configured[/dim]"
+                table.add_row(name, status)
+                
+            console.print(table)
+            console.print("[dim]Use /services enable <name> to configure a service.[/dim]\n")
+            return True
+            
+        action = args[0].lower()
+        if action == "enable" and len(args) > 1:
+            service_name = args[1].lower()
+            if setup_service(service_name, force=True):
+                # Reload env and settings immediately
+                dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+                settings.reload()
+                console.print(f"[green]Enabled {service_name}! Reloading agent...[/green]\n")
+                return "reload"
+            return True
+            
+        console.print("[red]Usage: /services [enable <name>][/red]")
+        return True
 
     if cmd == "clear":
         # Reset agent conversation state

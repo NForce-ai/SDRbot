@@ -33,6 +33,18 @@ SCOPES = [
     # Add more as needed or make configurable
 ]
 
+
+def is_configured() -> bool:
+    """Check if HubSpot is configured (Env vars)."""
+    # Check for PAT
+    if os.getenv("HUBSPOT_ACCESS_TOKEN"):
+        return True
+    # Check for OAuth
+    if CLIENT_ID and CLIENT_SECRET:
+        return True
+    return False
+
+
 class OAuthHandler(BaseHTTPRequestHandler):
     """Handle the OAuth callback."""
     

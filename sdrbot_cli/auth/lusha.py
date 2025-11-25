@@ -11,6 +11,14 @@ from sdrbot_cli.config import console, COLORS
 SERVICE_NAME = "sdrbot_lusha"
 TOKEN_KEY = "api_key"
 
+def is_configured() -> bool:
+    """Check if Lusha is configured (Env or Keyring)."""
+    if os.getenv("LUSHA_API_KEY"):
+        return True
+    if keyring.get_password(SERVICE_NAME, TOKEN_KEY):
+        return True
+    return False
+
 def get_api_key() -> Optional[str]:
     """Get Lusha API Key from Env, Keyring, or Prompt."""
     # 1. Check Environment
