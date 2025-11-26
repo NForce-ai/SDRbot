@@ -24,99 +24,50 @@ from sdrbot_cli.config import COLORS, config, console, get_default_coding_instru
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
-
-import sdrbot_cli.auth.salesforce as sf_auth
-import sdrbot_cli.auth.hubspot as hs_auth
-import sdrbot_cli.auth.attio as attio_auth
-import sdrbot_cli.auth.lusha as lusha_auth
-import sdrbot_cli.auth.hunter as hunter_auth
-
-# Import Salesforce tools
-from sdrbot_cli.skills.salesforce.tools import (
-    list_objects,
-    describe_object,
-    soql_query,
-    create_record,
-    update_record,
-)
-
-# Import HubSpot tools
-from sdrbot_cli.skills.hubspot.tools import (
-    hubspot_list_object_types,
-    hubspot_describe_object,
-    hubspot_search_objects,
-    hubspot_create_object,
-    hubspot_update_object,
-)
-
-# Import Attio tools
-from sdrbot_cli.skills.attio.tools import (
-    attio_list_objects,
-    attio_describe_object,
-    attio_query_records,
-    attio_create_record,
-    attio_update_record,
-)
-
-# Import Lusha tools
-from sdrbot_cli.skills.lusha.tools import (
-    lusha_enrich_person,
-    lusha_enrich_company,
-    lusha_prospect,
-)
-
-# Import Hunter tools
-from sdrbot_cli.skills.hunter.tools import (
-    hunter_domain_search,
-    hunter_email_finder,
-    hunter_email_verifier,
-)
+from sdrbot_cli.services import get_enabled_tools
 
 
 def list_agents() -> None:
     """List all available agents."""
-    agents_dir = settings.user_deepagents_dir
+    agents_dir = settings.agents_dir
 
-    if not agents_dir.exists() or not any(agents_dir.iterdir()):
+    if not agents_dir.exists():
         console.print("[yellow]No agents found.[/yellow]")
         console.print(
-            "[dim]Agents will be created in ~/.deepagents/ when you first use them.[/dim]",
+            "[dim]Agents will be created in ./agents/ when you first use them.[/dim]",
+            style=COLORS["dim"],
+        )
+        return
+
+    agent_files = list(agents_dir.glob("*.md"))
+    if not agent_files:
+        console.print("[yellow]No agents found.[/yellow]")
+        console.print(
+            "[dim]Agents will be created in ./agents/ when you first use them.[/dim]",
             style=COLORS["dim"],
         )
         return
 
     console.print("\n[bold]Available Agents:[/bold]\n", style=COLORS["primary"])
 
-    for agent_path in sorted(agents_dir.iterdir()):
-        if agent_path.is_dir():
-            agent_name = agent_path.name
-            agent_md = agent_path / "agent.md"
-
-            if agent_md.exists():
-                console.print(f"  • [bold]{agent_name}[/bold]", style=COLORS["primary"])
-                console.print(f"    {agent_path}", style=COLORS["dim"])
-            else:
-                console.print(
-                    f"  • [bold]{agent_name}[/bold] [dim](incomplete)[/dim]", style=COLORS["tool"]
-                )
-                console.print(f"    {agent_path}", style=COLORS["dim"])
+    for agent_path in sorted(agent_files):
+        agent_name = agent_path.stem  # filename without .md
+        display_name = "default" if agent_name == "agent" else agent_name
+        console.print(f"  • [bold]{display_name}[/bold]", style=COLORS["primary"])
+        console.print(f"    {agent_path}", style=COLORS["dim"])
 
     console.print()
 
 
 def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
     """Reset an agent to default or copy from another agent."""
-    agents_dir = settings.user_deepagents_dir
-    agent_dir = agents_dir / agent_name
-
     if source_agent:
-        source_dir = agents_dir / source_agent
-        source_md = source_dir / "agent.md"
+        source_md = settings.get_agent_md_path(source_agent)
 
         if not source_md.exists():
             console.print(
                 f"[bold red]Error:[/bold red] Source agent '{source_agent}' not found "
-                "or has no agent.md"
+                f"at {source_md}"
             )
             return
 
@@ -126,16 +77,12 @@ def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
         source_content = get_default_coding_instructions()
         action_desc = "default"
 
-    if agent_dir.exists():
-        shutil.rmtree(agent_dir)
-        console.print(f"Removed existing agent directory: {agent_dir}", style=COLORS["tool"])
-
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    agent_md = agent_dir / "agent.md"
+    agent_md = settings.get_agent_md_path(agent_name)
+    settings.agents_dir.mkdir(parents=True, exist_ok=True)
     agent_md.write_text(source_content)
 
     console.print(f"✓ Agent '{agent_name}' reset to {action_desc}", style=COLORS["primary"])
-    console.print(f"Location: {agent_dir}\n", style=COLORS["dim"])
+    console.print(f"Location: {agent_md}\n", style=COLORS["dim"])
 
 
 def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str:
@@ -149,7 +96,7 @@ def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str
     Returns:
         The system prompt string (without agent.md content)
     """
-    agent_dir_path = f"~/.deepagents/{assistant_id}"
+    skills_dir = settings.get_skills_dir()
 
     if sandbox_type:
         # Get provider-specific working directory
@@ -191,9 +138,9 @@ The filesystem backend is currently operating in: `{cwd}`
         working_dir_section
         + f"""### Skills Directory
 
-Your skills are stored at: `{agent_dir_path}/skills/`
+Skills are stored at: `{skills_dir}/`
 Skills may contain scripts or supporting files. When executing skill scripts with bash, use the real filesystem path:
-Example: `bash python {agent_dir_path}/skills/web-research/script.py`
+Example: `bash python {skills_dir}/web-research/script.py`
 
 ### Human-in-the-Loop Tool Approval
 
@@ -218,69 +165,61 @@ When you use the web_search tool:
 The user only sees your text responses - not tool results. Always provide a complete, natural language answer after using web_search.
 
 ### Todo List Management
-                                                                                                                                            
-When using the write_todos tool:                                                                                                            
-1. Keep the todo list MINIMAL - aim for 3-6 items maximum                                                                                   
-2. Only create todos for complex, multi-step tasks that truly need tracking                                                                 
-3. Break down work into clear, actionable items without over-fragmenting                                                                    
-4. For simple tasks (1-2 steps), just do them directly without creating todos                                                               
-5. When first creating a todo list for a task, ALWAYS ask the user if the plan looks good before starting work                              
-   - Create the todos, let them render, then ask: "Does this plan look good?" or similar                                                    
-   - Wait for the user's response before marking the first todo as in_progress                                                              
-   - If they want changes, adjust the plan accordingly                                                                                      
-6. Update todo status promptly as you complete each item                                                                                    
-                                                                                                                                            
-The todo list is a planning tool - use it judiciously to avoid overwhelming the user with excessive task tracking.
 
-### Salesforce Usage Guidelines
+Only use todos for genuinely complex operations (5+ steps). For most tasks, just execute directly.
 
-You are an expert Salesforce administrator and RevOps agent. You do not know the specific schema of the user's Salesforce instance ahead of time, so you must use **Dynamic Discovery**:
+If you do use todos:
+1. Keep it minimal - 3-6 items max
+2. Start working immediately - don't ask for plan approval
+3. Update status as you complete each item
 
-1.  **Search First:** When asked to work with an object (e.g., "Commissions"), use `list_objects(query="Commission")` to find the correct API name (e.g., `Commission__c`).
-2.  **Describe Always:** Before creating or updating a record, you MUST use `describe_object(object_name)` to understand the field names, types, and required fields. **Do not guess field names.**
-3.  **Query for IDs:** If you need to link records (e.g., assign a Commission to a Contact), use `soql_query` to find the target record's ID first.
-4.  **Act:** Only after you have the API name, the schema, and necessary IDs, should you call `create_record` or `update_record`.
-
-Example Workflow:
-- User: "Add a commission for John Doe."
-- You: `list_objects("Commission")` -> Found `Sales_Commission__c`.
-- You: `describe_object("Sales_Commission__c")` -> Found fields `Amount__c`, `Payee__c` (Contact lookup).
-- You: `soql_query("SELECT Id FROM Contact WHERE Name = 'John Doe'")` -> Found ID `003...`.
-- You: `create_record("Sales_Commission__c", json.dumps({{"Amount__c": 100, "Payee__c": "003..."}}))`.
-
-### HubSpot Usage Guidelines
-
-Similar to Salesforce, use **Dynamic Discovery** for HubSpot:
-1.  **List:** Use `hubspot_list_object_types()` to find internal names (e.g., standard 'contacts' or custom '2-1234').
-2.  **Describe:** Use `hubspot_describe_object(object_type)` to check properties. Note that HubSpot properties are lowercase (e.g., `firstname`, not `FirstName`).
-3.  **Search:** Use `hubspot_search_objects(object_type, query_string="...")` to find records.
-4.  **Act:** Use `hubspot_create_object` or `hubspot_update_object`.
-
-### Attio Usage Guidelines
-
-For Attio CRM (v2 API):
-1.  **List:** Use `attio_list_objects()` to find object slugs (e.g. `people`, `companies`, `dealflow`).
-2.  **Describe:** Use `attio_describe_object(object_slug)` to see attributes.
-    - **Important:** Attio values are often nested. Check the type!
-    - Example: `email_addresses` is a list of objects `[{{"email_address": "..."}}]`.
-3.  **Search:** Use `attio_query_records(object_slug, filter_json=...)`.
-4.  **Act:** Use `attio_create_record` or `attio_update_record`.
-
-### Lusha Prospecting Guidelines
-
-Use Lusha to find and enrich contact data:
-1.  **Prospecting:** Use `lusha_prospect` to find new leads by criteria (e.g. `json.dumps({{"jobTitle": ["CTO"], "companyName": "Stripe"}})`).
-2.  **Enrichment:** Use `lusha_enrich_person` (via LinkedIn/Email) or `lusha_enrich_company` (via Domain) to get contact details and firmographics.
-3.  **Workflow:** Find -> Enrich -> Create in CRM.
-
-### Hunter.io Usage Guidelines
-
-Use Hunter.io to find and verify email addresses:
-1.  **Domain Search:** Use `hunter_domain_search(domain="stripe.com")` to find emails associated with a company.
-2.  **Email Finder:** Use `hunter_email_finder` to find a specific person's email if you know their name and company.
-3.  **Verify:** Use `hunter_email_verifier` to check if an email is deliverable before adding it to your CRM.
 """
+        + _get_enabled_services_prompt()
     )
+
+
+def _get_enabled_services_prompt() -> str:
+    """Generate runtime prompt section for enabled services."""
+    from sdrbot_cli.services.registry import load_config
+
+    config = load_config()
+    enabled = [s for s in ["hubspot", "salesforce", "attio", "lusha", "hunter"] if config.is_enabled(s)]
+
+    if not enabled:
+        return """### Services
+
+No CRM services are enabled. Use `/services enable <name>` to enable a service.
+"""
+
+    # Build the services section dynamically
+    lines = ["### Enabled Services\n"]
+
+    # Count CRMs for the single-CRM rule
+    crm_services = [s for s in enabled if s in ["hubspot", "salesforce", "attio"]]
+
+    if len(crm_services) == 1:
+        lines.append(f"**CRM:** {crm_services[0].title()} (use this for all CRM operations - don't ask which CRM)\n")
+    elif len(crm_services) > 1:
+        lines.append(f"**CRMs:** {', '.join(s.title() for s in crm_services)}\n")
+
+    # Add enrichment services
+    enrichment = [s for s in enabled if s in ["lusha", "hunter"]]
+    if enrichment:
+        lines.append(f"**Enrichment:** {', '.join(s.title() for s in enrichment)}\n")
+
+    lines.append("\nUse the available tools directly. Each tool's docstring shows exact field names and types.")
+
+    # Add service-specific tips
+    if "salesforce" in enabled:
+        lines.append("\n**Salesforce tip:** Use `salesforce_soql_query` for complex queries.")
+    if "hubspot" in enabled:
+        lines.append("\n**HubSpot tip:** Use `hubspot_create_association` to link records between objects.")
+    if "lusha" in enabled:
+        lines.append("\n**Lusha tip:** Find -> Enrich -> Create in CRM workflow.")
+    if "hunter" in enabled:
+        lines.append("\n**Hunter tip:** Verify emails with `hunter_email_verifier` before adding to CRM.")
+
+    return "\n".join(lines)
 
 def _format_write_file_description(
     tool_call: ToolCall, _state: AgentState, _runtime: Runtime
@@ -407,72 +346,9 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "allowed_decisions": ["approve", "reject"],
         "description": _format_task_description,
     }
-    
-    # Salesforce interrupts
-    create_record_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Create Record ({t['args'].get('object_name')}): {t['args'].get('data')[:100]}...",
-    }
-    update_record_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Update Record ({t['args'].get('object_name')} - {t['args'].get('record_id')}): {t['args'].get('data')[:100]}...",
-    }
-    soql_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Run SOQL: {t['args'].get('query')}",
-    }
 
-    # HubSpot interrupts
-    hs_create_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"HubSpot Create ({t['args'].get('object_type')}): {t['args'].get('properties_json')[:100]}...",
-    }
-    hs_update_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"HubSpot Update ({t['args'].get('object_type')} - {t['args'].get('object_id')}): {t['args'].get('properties_json')[:100]}...",
-    }
-    hs_search_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"HubSpot Search ({t['args'].get('object_type')})",
-    }
-
-    # Attio interrupts
-    attio_create_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Attio Create ({t['args'].get('object_slug')}): {t['args'].get('values_json')[:100]}...",
-    }
-    attio_update_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Attio Update ({t['args'].get('object_slug')}): {t['args'].get('values_json')[:100]}...",
-    }
-    attio_query_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Attio Query ({t['args'].get('object_slug')}): {t['args'].get('filter_json')}",
-    }
-
-    # Lusha interrupts (Costly operations)
-    lusha_enrich_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Lusha Enrich: {t['args'].get('email') or t['args'].get('linkedin_url') or t['args'].get('domain')}",
-    }
-    lusha_prospect_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Lusha Prospect Search: {t['args'].get('filters_json')}",
-    }
-
-    # Hunter interrupts
-    hunter_domain_search_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Hunter Domain Search: {t['args'].get('domain')}",
-    }
-    hunter_email_finder_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Hunter Email Finder: {t['args'].get('first_name')} {t['args'].get('last_name')} @ {t['args'].get('domain')}",
-    }
-    hunter_email_verifier_interrupt: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": lambda t, s, r: f"Hunter Email Verifier: {t['args'].get('email')}",
-    }
+    # Note: Service tool interrupts are dynamically registered in create_agent_with_config()
+    # based on the tools returned by get_enabled_tools()
 
     return {
         "shell": shell_interrupt_config,
@@ -482,21 +358,6 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "web_search": web_search_interrupt_config,
         "fetch_url": fetch_url_interrupt_config,
         "task": task_interrupt_config,
-        "create_record": create_record_interrupt,
-        "update_record": update_record_interrupt,
-        "soql_query": soql_interrupt,
-        "hubspot_create_object": hs_create_interrupt,
-        "hubspot_update_object": hs_update_interrupt,
-        "hubspot_search_objects": hs_search_interrupt,
-        "attio_create_record": attio_create_interrupt,
-        "attio_update_record": attio_update_interrupt,
-        "attio_query_records": attio_query_interrupt,
-        "lusha_enrich_person": lusha_enrich_interrupt,
-        "lusha_enrich_company": lusha_enrich_interrupt,
-        "lusha_prospect": lusha_prospect_interrupt,
-        "hunter_domain_search": hunter_domain_search_interrupt,
-        "hunter_email_finder": hunter_email_finder_interrupt,
-        "hunter_email_verifier": hunter_email_verifier_interrupt,
     }
 
 
@@ -521,18 +382,12 @@ def create_agent_with_config(
     Returns:
         2-tuple of graph and backend
     """
-    # Setup agent directory for persistent memory (same for both local and remote modes)
-    agent_dir = settings.ensure_agent_dir(assistant_id)
-    agent_md = agent_dir / "agent.md"
-    if not agent_md.exists():
-        source_content = get_default_coding_instructions()
-        agent_md.write_text(source_content)
+    # Setup agent markdown file (creates ./agents/ and {agent}.md if needed)
+    default_content = get_default_coding_instructions()
+    agent_md = settings.ensure_agent_md(assistant_id, default_content)
 
-    # Skills directory - per-agent (user-level)
-    skills_dir = settings.ensure_user_skills_dir(assistant_id)
-
-    # Project-level skills directory (if in a project)
-    project_skills_dir = settings.get_project_skills_dir()
+    # Shared skills directory
+    skills_dir = settings.ensure_skills_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:
@@ -549,7 +404,6 @@ def create_agent_with_config(
             SkillsMiddleware(
                 skills_dir=skills_dir,
                 assistant_id=assistant_id,
-                project_skills_dir=project_skills_dir,
             ),
             ShellMiddleware(
                 workspace_root=str(Path.cwd()),
@@ -572,7 +426,6 @@ def create_agent_with_config(
             SkillsMiddleware(
                 skills_dir=skills_dir,
                 assistant_id=assistant_id,
-                project_skills_dir=project_skills_dir,
             ),
         ]
 
@@ -580,64 +433,37 @@ def create_agent_with_config(
     system_prompt = get_system_prompt(assistant_id=assistant_id, sandbox_type=sandbox_type)
 
     interrupt_on = _add_interrupt_on()
-    
-    # Conditional Tool Registration
-    
-    # Salesforce
-    if sf_auth.is_configured():
-        tools.extend([
-            list_objects,
-            describe_object,
-            soql_query,
-            create_record,
-            update_record,
-        ])
-    else:
-        console.print(f"[{COLORS['dim']}]Skipping Salesforce tools (not configured)[/{COLORS['dim']}]")
 
-    # HubSpot
-    if hs_auth.is_configured():
-        tools.extend([
-            hubspot_list_object_types,
-            hubspot_describe_object,
-            hubspot_search_objects,
-            hubspot_create_object,
-            hubspot_update_object,
-        ])
-    else:
-        console.print(f"[{COLORS['dim']}]Skipping HubSpot tools (not configured)[/{COLORS['dim']}]")
+    # Load tools from enabled services
+    service_tools = get_enabled_tools()
+    tools.extend(service_tools)
 
-    # Attio
-    if attio_auth.is_configured():
-        tools.extend([
-            attio_list_objects,
-            attio_describe_object,
-            attio_query_records,
-            attio_create_record,
-            attio_update_record,
-        ])
-    else:
-        console.print(f"[{COLORS['dim']}]Skipping Attio tools (not configured)[/{COLORS['dim']}]")
-
-    # Lusha
-    if lusha_auth.is_configured():
-        tools.extend([
-            lusha_enrich_person,
-            lusha_enrich_company,
-            lusha_prospect,
-        ])
-    else:
-        console.print(f"[{COLORS['dim']}]Skipping Lusha tools (not configured)[/{COLORS['dim']}]")
-
-    # Hunter
-    if hunter_auth.is_configured():
-        tools.extend([
-            hunter_domain_search,
-            hunter_email_finder,
-            hunter_email_verifier,
-        ])
-    else:
-        console.print(f"[{COLORS['dim']}]Skipping Hunter.io tools (not configured)[/{COLORS['dim']}]")
+    # Register interrupt configs for dynamically-loaded service tools
+    for tool in service_tools:
+        tool_name = tool.name
+        if tool_name not in interrupt_on:
+            # Add interrupt config for service tools based on their type
+            if "_create_" in tool_name or "_update_" in tool_name:
+                interrupt_on[tool_name] = {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                }
+            elif "_delete_" in tool_name:
+                interrupt_on[tool_name] = {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": lambda t, s, r, name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
+                }
+            elif "_search_" in tool_name or "_query_" in tool_name or "_soql_" in tool_name or "_sosl_" in tool_name:
+                interrupt_on[tool_name] = {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                }
+            elif "lusha_" in tool_name or "hunter_" in tool_name:
+                # Lusha and Hunter tools use credits - always require approval
+                interrupt_on[tool_name] = {
+                    "allowed_decisions": ["approve", "reject"],
+                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                }
 
     agent = create_deep_agent(
         model=model,

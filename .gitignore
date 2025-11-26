@@ -137,5 +137,10 @@ cython_debug/
 *.swo
 
 # Project specific
-.deepagents/
 .DS_Store
+
+# SDRbot local data (agents, services config, generated tools)
+agents/
+.sdrbot/
+*_generated.py
+exports/

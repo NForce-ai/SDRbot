@@ -228,19 +228,12 @@ class AgentMemoryMiddleware(AgentMiddleware):
         """
         result: AgentMemoryStateUpdate = {}
 
-        # Load user memory if not already in state
+        # Load agent memory (from ./agents/{name}.md)
         if "user_memory" not in state:
-            user_path = self.settings.get_user_agent_md_path(self.assistant_id)
-            if user_path.exists():
+            agent_md_path = self.settings.get_agent_md_path(self.assistant_id)
+            if agent_md_path.exists():
                 with contextlib.suppress(OSError, UnicodeDecodeError):
-                    result["user_memory"] = user_path.read_text()
-
-        # Load project memory if not already in state
-        if "project_memory" not in state:
-            project_path = self.settings.get_project_agent_md_path()
-            if project_path and project_path.exists():
-                with contextlib.suppress(OSError, UnicodeDecodeError):
-                    result["project_memory"] = project_path.read_text()
+                    result["user_memory"] = agent_md_path.read_text()
 
         return result
 

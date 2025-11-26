@@ -535,6 +535,16 @@ def show_interactive_help() -> None:
     )
     console.print()
 
+    console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /services list              List all services and status", style=COLORS["dim"])
+    console.print("  /services enable <name>     Enable a service (auto-syncs)", style=COLORS["dim"])
+    console.print("  /services disable <name>    Disable a service", style=COLORS["dim"])
+    console.print("  /services sync <name>       Re-sync service schema", style=COLORS["dim"])
+    console.print("  /services status <name>     Show detailed status", style=COLORS["dim"])
+    console.print()
+    console.print("  Services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"])
+    console.print()
+
 
 def show_help() -> None:
     """Show help information."""
@@ -636,4 +646,14 @@ def show_help() -> None:
     console.print(
         "  quit, exit, q   Exit the session (just type and press Enter)", style=COLORS["dim"]
     )
+    console.print()
+
+    console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /services list              List all services and their status", style=COLORS["dim"])
+    console.print("  /services enable <name>     Enable a service (auto-syncs if needed)", style=COLORS["dim"])
+    console.print("  /services disable <name>    Disable a service", style=COLORS["dim"])
+    console.print("  /services sync <name>       Re-sync service schema", style=COLORS["dim"])
+    console.print("  /services status <name>     Show detailed service status", style=COLORS["dim"])
+    console.print()
+    console.print("  Available services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"])
     console.print()

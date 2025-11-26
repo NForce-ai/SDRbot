@@ -84,33 +84,23 @@ def get_memory_system_prompt(
 
     Args:
         assistant_id: The agent identifier for path references
-        project_root: Path to the detected project root (if any)
-        has_project_memory: Whether project memory was loaded
+        project_root: Unused, kept for backwards compatibility
+        has_project_memory: Unused, kept for backwards compatibility
     """
     # Import from agent_memory middleware
     from .agent_memory import LONGTERM_MEMORY_SYSTEM_PROMPT
 
+    agent_md_path = settings.get_agent_md_path(assistant_id)
     agent_dir = settings.get_agent_dir(assistant_id)
     agent_dir_absolute = str(agent_dir)
-    agent_dir_display = f"~/.deepagents/{assistant_id}"
+    agent_md_display = f"./agents/{assistant_id}.md"
 
-    # Build project memory info
-    if project_root and has_project_memory:
-        project_memory_info = f"`{project_root}` (detected)"
-    elif project_root:
-        project_memory_info = f"`{project_root}` (no agent.md found)"
-    else:
-        project_memory_info = "None (not in a git project)"
-
-    # Build project deepagents directory path
-    if project_root:
-        project_deepagents_dir = f"{project_root}/.deepagents"
-    else:
-        project_deepagents_dir = "[project-root]/.deepagents (not in a project)"
+    # Build project memory info (simplified - just agent.md now)
+    project_memory_info = f"`{agent_md_path}`"
 
     return LONGTERM_MEMORY_SYSTEM_PROMPT.format(
         agent_dir_absolute=agent_dir_absolute,
-        agent_dir_display=agent_dir_display,
+        agent_dir_display=agent_md_display,
         project_memory_info=project_memory_info,
-        project_deepagents_dir=project_deepagents_dir,
+        project_deepagents_dir=str(settings.agents_dir),
     )

@@ -177,39 +177,13 @@ async def simple_cli(
                 f"[green]✓ Setup script ({setup_script_path}) completed successfully[/green]"
             )
         console.print()
-
-    if not settings.has_tavily:
-        console.print(
-            "[yellow]⚠ Web search disabled:[/yellow] TAVILY_API_KEY not found.",
-            style=COLORS["dim"],
-        )
-        console.print("  To enable web search, set your Tavily API key:", style=COLORS["dim"])
-        console.print("    export TAVILY_API_KEY=your_api_key_here", style=COLORS["dim"])
-        console.print(
-            "  Or add it to your .env file. Get your key at: https://tavily.com",
-            style=COLORS["dim"],
-        )
-        console.print()
-
-    if not settings.sf_client_id or not settings.sf_client_secret:
-        console.print(
-            "[yellow]⚠ Salesforce integration disabled:[/yellow] SF_CLIENT_ID/SECRET not found.",
-            style=COLORS["dim"],
-        )
-        console.print("  To enable Salesforce, set your Connected App credentials:", style=COLORS["dim"])
-        console.print("    export SF_CLIENT_ID=... SF_CLIENT_SECRET=...", style=COLORS["dim"])
-        console.print()
-
-    if not settings.hubspot_access_token and (not settings.hubspot_client_id or not settings.hubspot_client_secret):
-        console.print(
-            "[yellow]⚠ HubSpot integration disabled:[/yellow] HUBSPOT_CLIENT_ID/SECRET not found.",
-            style=COLORS["dim"],
-        )
-        console.print("  To enable HubSpot, set your App credentials:", style=COLORS["dim"])
-        console.print("    export HUBSPOT_CLIENT_ID=... HUBSPOT_CLIENT_SECRET=...", style=COLORS["dim"])
-        console.print("    OR export HUBSPOT_ACCESS_TOKEN=...", style=COLORS["dim"])
-        console.print()
         
+    # Show active agent
+    agent_name = assistant_id or "agent"
+    agent_display = "default" if agent_name == "agent" else agent_name
+    console.print(f"[dim]Agent:[/dim] [cyan]{agent_display}[/cyan] [dim](./agents/{agent_name}.md)[/dim]")
+    console.print()
+
     greetings = [
         "RevOps agent standing by. What's the mission?",
         "Quotas don't hit themselves. Let's get to work.",
@@ -217,13 +191,6 @@ async def simple_cli(
         "Pipeline awaiting updates. How can I help?",
     ]
     console.print(random.choice(greetings), style=COLORS["agent"])
-
-    if sandbox_type:
-        working_dir = get_default_working_dir(sandbox_type)
-        console.print(f"  [dim]Local CLI directory: {Path.cwd()}[/dim]")
-        console.print(f"  [dim]Code execution: Remote sandbox ({working_dir})[/dim]")
-    else:
-        console.print(f"  [dim]Working directory: {Path.cwd()}[/dim]")
 
     console.print()
 
@@ -236,13 +203,23 @@ async def simple_cli(
     # Localize modifier names and show key symbols (macOS vs others)
     if sys.platform == "darwin":
         tips = (
-            "  Tips: ⏎ Enter to submit, ⌥ Option + ⏎ Enter for newline (or Esc+Enter), "
-            "⌃E to open editor, ⌃T to toggle auto-approve, ⌃C to interrupt"
+            "Tips:\n"
+            "  - ⏎ Enter to submit\n"
+            "  - ⌥ Option + ⏎ Enter (or Esc+Enter) for newline\n"
+            "  - ⌃E to open editor\n"
+            "  - ⌃T to toggle auto-approve\n"
+            "  - ⌃C to interrupt\n"
+            "  - /help to list commands\n"
         )
     else:
         tips = (
-            "  Tips: Enter to submit, Alt+Enter (or Esc+Enter) for newline, "
-            "Ctrl+E to open editor, Ctrl+T to toggle auto-approve, Ctrl+C to interrupt"
+            "Tips:\n"
+            "  - Enter to submit\n"
+            "  - Alt+Enter (or Esc+Enter) for newline\n"
+            "  - Ctrl+E to open editor\n"
+            "  - Ctrl+T to toggle auto-approve\n"
+            "  - Ctrl+C to interrupt\n"
+            "  - /help to list commands\n"
         )
     console.print(tips, style=f"dim {COLORS['dim']}")
 

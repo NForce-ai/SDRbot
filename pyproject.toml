@@ -79,6 +79,9 @@ ignore-var-parameters = true
 
 [tool.pytest.ini_options]
 timeout = 10  # Default timeout for all tests (can be overridden per-test)
+markers = [
+    "integration: marks tests that hit real external APIs (deselect with '-m \"not integration\"')",
+]
 
 [tool.mypy]
 strict = true

@@ -147,7 +147,7 @@ def get_client() -> Optional[HubSpot]:
     # 1. Check for Personal Access Token (PAT)
     pat = os.getenv("HUBSPOT_ACCESS_TOKEN")
     if pat:
-        console.print(f"[{COLORS['primary']}]Using HubSpot Personal Access Token (PAT).[/]{COLORS['primary']}")
+        console.print(f"[{COLORS['primary']}]Using HubSpot Personal Access Token (PAT).[/{COLORS['primary']}]")
         return HubSpot(access_token=pat)
 
     # 2. Fallback to OAuth if Client ID/Secret are available

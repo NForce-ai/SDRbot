@@ -143,6 +143,15 @@ class Settings:
     hubspot_client_secret: str | None
     hubspot_access_token: str | None
 
+    # Attio Config
+    attio_api_key: str | None
+
+    # Lusha Config
+    lusha_api_key: str | None
+
+    # Hunter Config
+    hunter_api_key: str | None
+
     # Project information
     project_root: Path | None
 
@@ -169,6 +178,10 @@ class Settings:
         hubspot_client_secret = os.environ.get("HUBSPOT_CLIENT_SECRET")
         hubspot_access_token = os.environ.get("HUBSPOT_ACCESS_TOKEN")
 
+        attio_api_key = os.environ.get("ATTIO_API_KEY")
+        lusha_api_key = os.environ.get("LUSHA_API_KEY")
+        hunter_api_key = os.environ.get("HUNTER_API_KEY")
+
         # Detect project
         project_root = _find_project_root(start_path)
 
@@ -182,6 +195,9 @@ class Settings:
             hubspot_client_id=hubspot_client_id,
             hubspot_client_secret=hubspot_client_secret,
             hubspot_access_token=hubspot_access_token,
+            attio_api_key=attio_api_key,
+            lusha_api_key=lusha_api_key,
+            hunter_api_key=hunter_api_key,
             project_root=project_root,
         )
 
@@ -197,6 +213,9 @@ class Settings:
         self.hubspot_client_id = new_settings.hubspot_client_id
         self.hubspot_client_secret = new_settings.hubspot_client_secret
         self.hubspot_access_token = new_settings.hubspot_access_token
+        self.attio_api_key = new_settings.attio_api_key
+        self.lusha_api_key = new_settings.lusha_api_key
+        self.hunter_api_key = new_settings.hunter_api_key
         self.project_root = new_settings.project_root
 
     @property
@@ -220,43 +239,61 @@ class Settings:
         return self.tavily_api_key is not None
 
     @property
+    def has_salesforce(self) -> bool:
+        """Check if Salesforce credentials are configured."""
+        return self.sf_client_id is not None
+
+    @property
+    def has_hubspot(self) -> bool:
+        """Check if HubSpot credentials are configured."""
+        return self.hubspot_access_token is not None or self.hubspot_client_id is not None
+
+    @property
+    def has_attio(self) -> bool:
+        """Check if Attio API key is configured."""
+        return self.attio_api_key is not None
+
+    @property
+    def has_lusha(self) -> bool:
+        """Check if Lusha API key is configured."""
+        return self.lusha_api_key is not None
+
+    @property
+    def has_hunter(self) -> bool:
+        """Check if Hunter API key is configured."""
+        return self.hunter_api_key is not None
+
+    def has_service_credentials(self, service_name: str) -> bool:
+        """Check if credentials exist for a specific service.
+
+        Args:
+            service_name: Name of the service to check.
+
+        Returns:
+            True if credentials are configured for the service.
+        """
+        checks = {
+            "hubspot": self.has_hubspot,
+            "salesforce": self.has_salesforce,
+            "attio": self.has_attio,
+            "lusha": self.has_lusha,
+            "hunter": self.has_hunter,
+        }
+        return checks.get(service_name, False)
+
+    @property
     def has_project(self) -> bool:
         """Check if currently in a git project."""
         return self.project_root is not None
 
     @property
-    def user_deepagents_dir(self) -> Path:
-        """Get the base user-level .deepagents directory.
+    def agents_dir(self) -> Path:
+        """Get the agents directory in current working directory.
 
         Returns:
-            Path to ~/.deepagents
+            Path to ./agents/
         """
-        return Path.home() / ".deepagents"
-
-    def get_user_agent_md_path(self, agent_name: str) -> Path:
-        """Get user-level agent.md path for a specific agent.
-
-        Returns path regardless of whether the file exists.
-
-        Args:
-            agent_name: Name of the agent
-
-        Returns:
-            Path to ~/.deepagents/{agent_name}/agent.md
-        """
-        return Path.home() / ".deepagents" / agent_name / "agent.md"
-
-    def get_project_agent_md_path(self) -> Path | None:
-        """Get project-level agent.md path.
-
-        Returns path regardless of whether the file exists.
-
-        Returns:
-            Path to {project_root}/.deepagents/agent.md, or None if not in a project
-        """
-        if not self.project_root:
-            return None
-        return self.project_root / ".deepagents" / "agent.md"
+        return Path.cwd() / "agents"
 
     @staticmethod
     def _is_valid_agent_name(agent_name: str) -> bool:
@@ -266,14 +303,14 @@ class Settings:
         # Allow only alphanumeric, hyphens, underscores, and whitespace
         return bool(re.match(r"^[a-zA-Z0-9_\-\s]+$", agent_name))
 
-    def get_agent_dir(self, agent_name: str) -> Path:
-        """Get the global agent directory path.
+    def get_agent_md_path(self, agent_name: str) -> Path:
+        """Get the path to an agent's markdown file.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.deepagents/{agent_name}
+            Path to ./agents/{agent_name}.md
         """
         if not self._is_valid_agent_name(agent_name):
             msg = (
@@ -281,61 +318,71 @@ class Settings:
                 "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
             )
             raise ValueError(msg)
-        return Path.home() / ".deepagents" / agent_name
+        return self.agents_dir / f"{agent_name}.md"
+
+    def get_agent_dir(self, agent_name: str) -> Path:
+        """Get the data directory for an agent (for memory, tokens, etc.).
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Path to ./.sdrbot/{agent_name}/
+        """
+        if not self._is_valid_agent_name(agent_name):
+            msg = (
+                f"Invalid agent name: {agent_name!r}. "
+                "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
+            )
+            raise ValueError(msg)
+        return Path.cwd() / ".sdrbot" / agent_name
 
     def ensure_agent_dir(self, agent_name: str) -> Path:
-        """Ensure the global agent directory exists and return its path.
+        """Ensure agent data directory exists.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ~/.deepagents/{agent_name}
+            Path to ./.sdrbot/{agent_name}/
         """
-        if not self._is_valid_agent_name(agent_name):
-            msg = (
-                f"Invalid agent name: {agent_name!r}. "
-                "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
-            )
-            raise ValueError(msg)
         agent_dir = self.get_agent_dir(agent_name)
         agent_dir.mkdir(parents=True, exist_ok=True)
         return agent_dir
 
-    def ensure_project_deepagents_dir(self) -> Path | None:
-        """Ensure the project .deepagents directory exists and return its path.
+    def ensure_agent_md(self, agent_name: str, default_content: str) -> Path:
+        """Ensure agent markdown file exists, creating with default content if needed.
 
-        Returns:
-            Path to project .deepagents directory, or None if not in a project
-        """
-        if not self.project_root:
-            return None
-
-        project_deepagents_dir = self.project_root / ".deepagents"
-        project_deepagents_dir.mkdir(parents=True, exist_ok=True)
-        return project_deepagents_dir
-
-    def get_user_skills_dir(self, agent_name: str) -> Path:
-        """Get user-level skills directory path for a specific agent.
+        Creates ./agents/ directory and {agent_name}.md if they don't exist.
 
         Args:
             agent_name: Name of the agent
+            default_content: Content to write if file doesn't exist
 
         Returns:
-            Path to ~/.deepagents/{agent_name}/skills/
+            Path to ./agents/{agent_name}.md
         """
-        return self.get_agent_dir(agent_name) / "skills"
+        agent_md = self.get_agent_md_path(agent_name)
+        self.agents_dir.mkdir(parents=True, exist_ok=True)
+        if not agent_md.exists():
+            agent_md.write_text(default_content)
+        return agent_md
 
-    def ensure_user_skills_dir(self, agent_name: str) -> Path:
-        """Ensure user-level skills directory exists and return its path.
-
-        Args:
-            agent_name: Name of the agent
+    def get_skills_dir(self) -> Path:
+        """Get shared skills directory path.
 
         Returns:
-            Path to ~/.deepagents/{agent_name}/skills/
+            Path to ./skills/
         """
-        skills_dir = self.get_user_skills_dir(agent_name)
+        return Path.cwd() / "skills"
+
+    def ensure_skills_dir(self) -> Path:
+        """Ensure shared skills directory exists.
+
+        Returns:
+            Path to ./skills/
+        """
+        skills_dir = self.get_skills_dir()
         skills_dir.mkdir(parents=True, exist_ok=True)
         return skills_dir
 
