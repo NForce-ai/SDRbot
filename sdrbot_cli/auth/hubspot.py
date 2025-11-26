@@ -23,14 +23,21 @@ REDIRECT_URI = "http://localhost:8080/callback/hubspot"
 # Scopes required for dynamic discovery and manipulation
 # We request broad access to standard objects and schemas
 SCOPES = [
+    # Core CRM objects
     "crm.objects.contacts.read",
     "crm.objects.contacts.write",
     "crm.objects.companies.read",
     "crm.objects.companies.write",
     "crm.objects.deals.read",
     "crm.objects.deals.write",
+    # Additional objects
+    "tickets",  # For tickets read/write
+    "e-commerce",  # For line_items, products, quotes
+    # Schema and configuration
+    "crm.schemas.contacts.read",
+    "crm.schemas.companies.read",
+    "crm.schemas.deals.read",
     "crm.schemas.custom.read",
-    # Add more as needed or make configurable
 ]
 
 

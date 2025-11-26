@@ -116,10 +116,76 @@ nano .env
 
 **CRM & Tools (Fill only what you use):**
 - **Salesforce:** `SF_CLIENT_ID`, `SF_CLIENT_SECRET` (Requires a Connected App)
-- **HubSpot:** `HUBSPOT_ACCESS_TOKEN` (Private App Token) **OR** `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` (OAuth)
+- **HubSpot:** `HUBSPOT_ACCESS_TOKEN` (Legacy App Token) **OR** `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` (OAuth)
 - **Attio:** `ATTIO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
+
+---
+
+## 🔐 OAuth Setup Guide
+
+SDRbot uses OAuth 2.0 to securely connect to Salesforce and HubSpot. You'll need to create your own app credentials in each platform.
+
+### Salesforce Connected App
+
+Salesforce requires OAuth - there's no API key alternative.
+
+1. **Log in to Salesforce** and go to **Setup**
+2. Search for **App Manager** in the Quick Find box
+3. Click **New Connected App**
+4. Fill in the basic information:
+   - **Connected App Name:** `SDRbot` (or any name you prefer)
+   - **API Name:** `SDRbot`
+   - **Contact Email:** Your email
+5. Under **API (Enable OAuth Settings)**:
+   - Check **Enable OAuth Settings**
+   - **Callback URL:** `http://localhost:8080/callback/salesforce`
+   - **Selected OAuth Scopes:** Add these scopes:
+     - `Full access (full)`
+     - Or more granular: `Manage user data via APIs (api)`, `Perform requests at any time (refresh_token, offline_access)`
+6. Click **Save** (it may take 2-10 minutes to activate)
+7. Go back to your Connected App and click **Manage Consumer Details**
+8. Copy the **Consumer Key** → This is your `SF_CLIENT_ID`
+9. Copy the **Consumer Secret** → This is your `SF_CLIENT_SECRET`
+
+**Important:** If using a Salesforce Sandbox, set `SF_LOGIN_URL=https://test.salesforce.com` in your `.env`.
+
+### HubSpot Authentication
+
+HubSpot offers two options:
+
+#### Option 1: Legacy App (Recommended)
+
+This is the simplest method - no OAuth callback server needed.
+
+1. **Log in to HubSpot** and go to **Settings** (gear icon)
+2. Navigate to **Integrations → Legacy Apps**
+3. Click **Create a legacy app**
+4. Give it a name (e.g., `SDRbot`)
+5. Go to the **Scopes** tab and add:
+   - `crm.objects.contacts.read` / `write`
+   - `crm.objects.companies.read` / `write`
+   - `crm.objects.deals.read` / `write`
+   - `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read`
+   - `crm.schemas.custom.read` (for custom objects)
+   - `tickets` (for ticket access)
+   - `e-commerce` (for line items, products, quotes)
+6. Click **Create app**
+7. Copy the **Access token** → This is your `HUBSPOT_ACCESS_TOKEN`
+
+#### Option 2: OAuth App
+
+Use this if you need refresh tokens or plan to distribute SDRbot to others.
+
+1. **Log in to HubSpot** and go to **Settings** (gear icon)
+2. Go to developers.hubspot.com and create a developer account (or sign in to your existine one)
+3. Create a new app and fill in the details
+4. Go to the **Auth** tab:
+   - **Redirect URL:** `http://localhost:8080/callback/hubspot`
+   - Add the same scopes as above
+5. Copy the **Client ID** → This is your `HUBSPOT_CLIENT_ID`
+6. Copy the **Client Secret** → This is your `HUBSPOT_CLIENT_SECRET`
 
 ---
 
@@ -134,7 +200,7 @@ sdrbot
 ### Authentication Flows
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
-- **Attio / Lusha:** Uses the API Keys defined in your `.env`.
+- **Attio / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 
 ### Example Prompts
 

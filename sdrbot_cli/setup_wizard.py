@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from rich.prompt import Prompt, Confirm
+from dotenv import load_dotenv
 from sdrbot_cli.config import console, COLORS
 
 def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False, required: bool = False, force: bool = False) -> str | None:
@@ -61,22 +62,60 @@ def setup_service(service_name: str, force: bool = False) -> bool:
         sf_client_secret = _get_or_prompt("SF_CLIENT_SECRET", "Salesforce Client Secret", is_secret=True, required=True, force=force)
         if sf_client_id: env_vars["SF_CLIENT_ID"] = sf_client_id
         if sf_client_secret: env_vars["SF_CLIENT_SECRET"] = sf_client_secret
+
+        # Trigger OAuth flow if we have credentials
+        if sf_client_id and sf_client_secret:
+            save_env_vars(env_vars)
+            # Reload env vars so the auth module picks them up
+            load_dotenv(override=True)
+
+            if Confirm.ask(f"[{COLORS['primary']}]Do you want to authenticate with Salesforce now?[/]", default=True):
+                try:
+                    # Import here to pick up fresh env vars
+                    import importlib
+                    import sdrbot_cli.auth.salesforce as sf_auth
+                    importlib.reload(sf_auth)
+                    sf_auth.login()
+                    console.print(f"[{COLORS['primary']}]Salesforce authentication complete![/{COLORS['primary']}]")
+                except Exception as e:
+                    console.print(f"[red]Salesforce authentication failed: {e}[/red]")
+                    console.print(f"[{COLORS['dim']}]You can authenticate later when you first use Salesforce.[/{COLORS['dim']}]")
+            return True
         
     elif service_name == "hubspot":
         console.print(f"[{COLORS['primary']}]--- HubSpot Configuration ---[/{COLORS['primary']}]")
         hubspot_auth_choice = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose HubSpot authentication method[/] (1: OAuth - Client ID/Secret, 2: Personal Access Token)",
+            f"  [{COLORS['primary']}]Choose HubSpot authentication method[/] (1: Personal Access Token, 2: OAuth - Client ID/Secret)",
             choices=["1", "2"],
             default="1"
         )
         if hubspot_auth_choice == "1":
+            hubspot_access_token = _get_or_prompt("HUBSPOT_ACCESS_TOKEN", "HubSpot Personal Access Token", is_secret=True, required=True, force=force)
+            if hubspot_access_token: env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
+        else:
             hubspot_client_id = _get_or_prompt("HUBSPOT_CLIENT_ID", "HubSpot Client ID", required=True, force=force)
             hubspot_client_secret = _get_or_prompt("HUBSPOT_CLIENT_SECRET", "HubSpot Client Secret", is_secret=True, required=True, force=force)
             if hubspot_client_id: env_vars["HUBSPOT_CLIENT_ID"] = hubspot_client_id
             if hubspot_client_secret: env_vars["HUBSPOT_CLIENT_SECRET"] = hubspot_client_secret
-        else:
-            hubspot_access_token = _get_or_prompt("HUBSPOT_ACCESS_TOKEN", "HubSpot Personal Access Token", is_secret=True, required=True, force=force)
-            if hubspot_access_token: env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
+
+            # Trigger OAuth flow if we have credentials
+            if hubspot_client_id and hubspot_client_secret:
+                save_env_vars(env_vars)
+                # Reload env vars so the auth module picks them up
+                load_dotenv(override=True)
+
+                if Confirm.ask(f"[{COLORS['primary']}]Do you want to authenticate with HubSpot now?[/]", default=True):
+                    try:
+                        # Import here to pick up fresh env vars
+                        import importlib
+                        import sdrbot_cli.auth.hubspot as hs_auth
+                        importlib.reload(hs_auth)
+                        hs_auth.login()
+                        console.print(f"[{COLORS['primary']}]HubSpot authentication complete![/{COLORS['primary']}]")
+                    except Exception as e:
+                        console.print(f"[red]HubSpot authentication failed: {e}[/red]")
+                        console.print(f"[{COLORS['dim']}]You can authenticate later when you first use HubSpot.[/{COLORS['dim']}]")
+                return True
             
     elif service_name == "attio":
         console.print(f"[{COLORS['primary']}]--- Attio Configuration ---[/{COLORS['primary']}]")
@@ -129,7 +168,7 @@ def run_setup_wizard(force: bool = False) -> None:
 
     console.print(f"[{COLORS['primary']}][bold]SDRbot Setup Wizard[/bold][/{COLORS['primary']}]")
     console.print(f"[{COLORS['dim']}]This wizard will help you configure your API keys and credentials.[/]{COLORS['dim']}]")
-    console.print(f"[{COLORS['dim']}]Values will be saved to your project's .env file.[/]{COLORS['dim']}\n")
+    console.print(f"[{COLORS['dim']}]Values will be saved to your working folders .env file.[/]{COLORS['dim']}\n")
 
     env_vars = {}
 
@@ -177,7 +216,14 @@ def run_setup_wizard(force: bool = False) -> None:
         setup_service("hunter", force)
     console.print("\n")
 
-    
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Lusha?[/", default=False):
+        setup_service("lusha", force)
+    console.print("\n")
+
+    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Attio?[/", default=False):
+        setup_service("attio", force)
+    console.print("\n")
+
     console.print(f"[{COLORS['primary']}][bold]Setup Complete![/bold][/]")
     console.print(f"[{COLORS['dim']}]You can now run SDRbot.[/]{COLORS['dim']}\n")
 
