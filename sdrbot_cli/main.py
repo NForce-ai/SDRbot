@@ -153,7 +153,6 @@ async def simple_cli(
     """
     # Only show splash on first run, not after reloads
     if first_run:
-        console.clear()
         if not session_state.no_splash:
             console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
             console.print()
@@ -355,6 +354,9 @@ async def main(
         sandbox_id: Optional existing sandbox ID to reuse
         setup_script_path: Optional path to setup script to run in sandbox
     """
+    # Clear terminal at startup
+    console.clear()
+
     run_setup_wizard()
 
     # Reload environment to pick up changes from setup wizard
