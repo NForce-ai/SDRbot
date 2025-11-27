@@ -10,6 +10,7 @@ from .config import COLORS, DEEP_AGENTS_ASCII, console, settings
 from .ui import TokenTracker, show_interactive_help
 from .setup_wizard import run_setup_wizard
 from .services.commands import handle_services_command
+from .models_commands import handle_models_command
 
 
 def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bool:
@@ -36,6 +37,14 @@ def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bo
             settings.reload()
         return result
 
+    if cmd == "models":
+        result = handle_models_command(args)
+        if result == "reload":
+            dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+            settings.reload()
+            return "reload"
+        return True
+
     if cmd == "clear":
         # Reset agent conversation state
         agent.checkpointer = InMemorySaver()
@@ -61,7 +70,7 @@ def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bo
         token_tracker.display_session()
         return True
 
-    if cmd == "reconfigure":
+    if cmd == "setup":
         run_setup_wizard(force=True)
         # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)

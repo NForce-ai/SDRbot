@@ -1,11 +1,13 @@
 """Configuration, constants, and model creation for the CLI."""
 
+import json
 import os
 import re
 import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict, Optional
 
 import dotenv
 from langchain_core.language_models import BaseChatModel
@@ -43,7 +45,9 @@ COMMANDS = {
     "tokens": "Show token usage for current session",
     "quit": "Exit the CLI",
     "exit": "Exit the CLI",
-    "reconfigure": "Re-run setup wizard to update API keys",
+    "setup": "Re-run full setup wizard",
+    "models": "Manage LLM providers and models (list, switch, update)",
+    "services": "Manage external services (enable, disable, update, sync, status)",
 }
 
 
@@ -55,6 +59,42 @@ config = {"recursion_limit": 1000}
 
 # Rich console instance
 console = Console(highlight=False)
+
+
+class ModelConfig(TypedDict):
+    """Structure for the active model configuration file."""
+    provider: str
+    model_name: str
+    api_base: Optional[str]
+
+
+def get_config_dir() -> Path:
+    """Get the configuration directory path."""
+    config_dir = Path.cwd() / ".sdrbot"
+    config_dir.mkdir(exist_ok=True)
+    return config_dir
+
+
+def load_model_config() -> Optional[ModelConfig]:
+    """Load the active model configuration from .sdrbot/model.json."""
+    config_file = get_config_dir() / "model.json"
+    if not config_file.exists():
+        return None
+    try:
+        return json.loads(config_file.read_text())
+    except Exception:
+        return None
+
+
+def save_model_config(provider: str, model_name: str, api_base: Optional[str] = None) -> None:
+    """Save the active model configuration."""
+    config: ModelConfig = {
+        "provider": provider,
+        "model_name": model_name,
+        "api_base": api_base
+    }
+    config_file = get_config_dir() / "model.json"
+    config_file.write_text(json.dumps(config, indent=2))
 
 
 def _find_project_root(start_path: Path | None = None) -> Path | None:
@@ -152,6 +192,11 @@ class Settings:
     # Hunter Config
     hunter_api_key: str | None
 
+    # Custom Model Config
+    custom_api_base: str | None
+    custom_api_key: str | None
+    custom_model_name: str | None
+
     # Project information
     project_root: Path | None
 
@@ -170,6 +215,11 @@ class Settings:
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
         google_key = os.environ.get("GOOGLE_API_KEY")
         tavily_key = os.environ.get("TAVILY_API_KEY")
+        
+        # Custom Model Config
+        custom_base = os.environ.get("CUSTOM_API_BASE")
+        custom_key = os.environ.get("CUSTOM_API_KEY")
+        custom_model = os.environ.get("CUSTOM_MODEL_NAME")
         
         sf_client_id = os.environ.get("SF_CLIENT_ID")
         sf_client_secret = os.environ.get("SF_CLIENT_SECRET")
@@ -198,6 +248,9 @@ class Settings:
             attio_api_key=attio_api_key,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
+            custom_api_base=custom_base,
+            custom_api_key=custom_key,
+            custom_model_name=custom_model,
             project_root=project_root,
         )
 
@@ -216,6 +269,9 @@ class Settings:
         self.attio_api_key = new_settings.attio_api_key
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
+        self.custom_api_base = new_settings.custom_api_base
+        self.custom_api_key = new_settings.custom_api_key
+        self.custom_model_name = new_settings.custom_model_name
         self.project_root = new_settings.project_root
 
     @property
@@ -232,6 +288,11 @@ class Settings:
     def has_google(self) -> bool:
         """Check if Google API key is configured."""
         return self.google_api_key is not None
+        
+    @property
+    def has_custom(self) -> bool:
+        """Check if Custom Model is configured."""
+        return self.custom_api_base is not None and self.custom_model_name is not None
 
     @property
     def has_tavily(self) -> bool:
@@ -450,6 +511,62 @@ def create_model() -> BaseChatModel:
     Raises:
         SystemExit if no API key is configured
     """
+    # 1. Try to load explicit configuration from model.json
+    model_config = load_model_config()
+    
+    if model_config:
+        provider = model_config["provider"]
+        model_name = model_config["model_name"]
+        
+        if provider == "custom":
+            from langchain_openai import ChatOpenAI
+            console.print(f"[dim]Using Custom Endpoint: {model_name}[/dim]")
+            return ChatOpenAI(
+                base_url=model_config.get("api_base"),
+                api_key=settings.custom_api_key or "dummy",
+                model=model_name,
+            )
+            
+        if provider == "openai":
+            if not settings.has_openai:
+                console.print("[bold red]Error:[/bold red] OpenAI selected but OPENAI_API_KEY missing in .env")
+                sys.exit(1)
+            from langchain_openai import ChatOpenAI
+            console.print(f"[dim]Using OpenAI model: {model_name}[/dim]")
+            return ChatOpenAI(model=model_name)
+
+        if provider == "anthropic":
+            if not settings.has_anthropic:
+                console.print("[bold red]Error:[/bold red] Anthropic selected but ANTHROPIC_API_KEY missing in .env")
+                sys.exit(1)
+            from langchain_anthropic import ChatAnthropic
+            console.print(f"[dim]Using Anthropic model: {model_name}[/dim]")
+            return ChatAnthropic(
+                model_name=model_name,
+                max_tokens=20_000,  # type: ignore[arg-type]
+            )
+
+        if provider == "google":
+            if not settings.has_google:
+                console.print("[bold red]Error:[/bold red] Google selected but GOOGLE_API_KEY missing in .env")
+                sys.exit(1)
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            console.print(f"[dim]Using Google Gemini model: {model_name}[/dim]")
+            return ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=0,
+                max_tokens=None,
+            )
+
+    # 2. Fallback: Legacy/Implicit detection based on env vars
+    if settings.has_custom:
+        from langchain_openai import ChatOpenAI
+        console.print(f"[dim]Using Custom Endpoint: {settings.custom_model_name}[/dim]")
+        return ChatOpenAI(
+            base_url=settings.custom_api_base,
+            api_key=settings.custom_api_key or "dummy",
+            model=settings.custom_model_name,
+        )
     if settings.has_openai:
         from langchain_openai import ChatOpenAI
 
@@ -472,7 +589,7 @@ def create_model() -> BaseChatModel:
     if settings.has_google:
         from langchain_google_genai import ChatGoogleGenerativeAI
 
-        model_name = os.environ.get("GOOGLE_MODEL", "gemini-3-pro-preview")
+        model_name = os.environ.get("GOOGLE_MODEL", "gemini-2.5-pro")
         console.print(f"[dim]Using Google Gemini model: {model_name}[/dim]")
         return ChatGoogleGenerativeAI(
             model=model_name,

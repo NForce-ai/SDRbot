@@ -101,6 +101,13 @@ Just run the bot! The first time you launch `sdrbot`, it will detect missing con
 sdrbot
 ```
 
+You can also reconfigure specific settings at any time:
+- `/setup`: Re-run the full setup wizard.
+- `/models list`: List all available LLM providers and highlight the active one.
+- `/models switch <provider>`: Switch your LLM provider (OpenAI, Anthropic, Google, Custom).
+- `/models update <provider>`: Reconfigure a specific LLM provider's settings.
+- `/services update <name>`: Reconfigure a specific service's credentials (e.g., `/services update salesforce`).
+
 **Option 2: Manual Configuration (.env)**
 
 If you prefer to configure it manually, copy the example environment file and fill in your keys:

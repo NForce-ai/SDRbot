@@ -68,17 +68,46 @@ def handle_services_command(args: list[str]) -> str | bool:
         _show_status(service_name)
         return True
 
+    if action == "update" and len(args) > 1:
+        service_name = args[1].lower()
+        return _update_service(service_name)
+
     # Show usage
     console.print()
     console.print("[yellow]Usage:[/yellow]")
     console.print("  /services              - List all services")
     console.print("  /services enable <name>  - Enable a service")
     console.print("  /services disable <name> - Disable a service")
+    console.print("  /services update <name>  - Reconfigure service credentials")
     console.print("  /services sync <name>    - Re-sync service schema")
     console.print("  /services status <name>  - Show service details")
     console.print()
     console.print(f"[dim]Available services: {', '.join(SERVICES)}[/dim]")
     console.print()
+    return True
+
+
+def _update_service(service_name: str) -> str | bool:
+    """Reconfigure a service.
+
+    Args:
+        service_name: Name of the service to update.
+    """
+    if service_name not in SERVICES:
+        console.print(f"[red]Unknown service: {service_name}[/red]")
+        return True
+
+    # Lazy import to avoid circular dependencies
+    from sdrbot_cli.setup_wizard import setup_service
+    
+    # force=True ensures prompt even if keys exist
+    if setup_service(service_name, force=True):
+        console.print(f"[green]✓ {service_name} configuration updated[/green]")
+        # Reload env vars
+        dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+        settings.reload()
+        return True
+    
     return True
 
 

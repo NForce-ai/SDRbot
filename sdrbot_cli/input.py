@@ -231,8 +231,9 @@ def create_prompt_session(_assistant_id: str, session_state: SessionState) -> Pr
     # Bind regular Enter to submit (intuitive behavior)
     @kb.add("enter")
     def _(event) -> None:
-        """Enter submits the input, unless completion menu is active."""
+        """Enter submits the input. If completion didn't change text, submit."""
         buffer = event.current_buffer
+        text_before = buffer.text
 
         # If completion menu is showing, apply the current completion
         if buffer.complete_state:
@@ -251,11 +252,14 @@ def create_prompt_session(_assistant_id: str, session_state: SessionState) -> Pr
             else:
                 # No completions available, close menu
                 buffer.complete_state = None
-        # Don't submit if buffer is empty or only whitespace
-        elif buffer.text.strip():
-            # Normal submit
-            buffer.validate_and_handle()
-            # If empty, do nothing (don't submit)
+
+        # Submit if:
+        # 1. Text is not empty
+        # 2. AND (Completion menu wasn't active OR Completion didn't change the text)
+        if buffer.text.strip():
+            # If text is same as before (e.g. user typed full command), submit
+            if buffer.text == text_before:
+                buffer.validate_and_handle()
 
     # Alt+Enter for newlines (press ESC then Enter, or Option+Enter on Mac)
     @kb.add("escape", "enter")

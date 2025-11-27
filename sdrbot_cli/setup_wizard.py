@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 from rich.prompt import Prompt, Confirm
 from dotenv import load_dotenv
-from sdrbot_cli.config import console, COLORS
+from sdrbot_cli.config import console, COLORS, save_model_config
 
-def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False, required: bool = False, force: bool = False) -> str | None:
+def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False, required: bool = False, force: bool = False, default: str | None = None) -> str | None:
     """Gets an environment variable or prompts the user for it."""
     # If force is True, ignore existing env var and prompt anyway
     if not force:
@@ -15,10 +15,10 @@ def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False
     
     if required:
         console.print(f"[{COLORS['primary']}]Missing {display_name}.[/]")
-        return Prompt.ask(f"  Please enter your {display_name}", password=is_secret, default=None)
+        return Prompt.ask(f"  Please enter your {display_name}", password=is_secret, default=default)
     else:
         if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure {display_name}?[/", default=False):
-            return Prompt.ask(f"  Please enter your {display_name}", password=is_secret, default=None)
+            return Prompt.ask(f"  Please enter your {display_name}", password=is_secret, default=default)
     return None
 
 def save_env_vars(env_vars: dict) -> None:
@@ -147,6 +147,109 @@ def setup_service(service_name: str, force: bool = False) -> bool:
     return False
 
 
+MODEL_CHOICES = {
+    "openai": [
+        ("ChatGPT 5 Mini", "gpt-5-mini"),
+        ("ChatGPT 5", "gpt-5"),
+        ("ChatGPT 5.1", "gpt-5.1"),
+    ],
+    "anthropic": [
+        ("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929"),
+        ("Claude Opus 4.5", "claude-opus-4-5-20251101"),
+    ],
+    "google": [
+        ("Gemini 2.5 Pro", "gemini-2.5-pro"),
+        ("Gemini 3 Pro", "gemini-3-pro-preview"),
+    ]
+}
+
+def setup_llm(force: bool = False) -> bool:
+    """
+    Run setup for LLM configuration.
+    Returns True if configuration was updated.
+    """
+    console.print(f"[{COLORS['primary']}]--- Large Language Model (LLM) Configuration ---[/{COLORS['primary']}]")
+    llm_choice = Prompt.ask(
+        f"[{COLORS['primary']}]Choose your LLM provider[/] (openai/anthropic/google/custom)",
+        choices=["openai", "anthropic", "google", "custom"],
+        default="openai"
+    )
+
+    env_vars = {}
+    if llm_choice == "openai":
+        openai_key = _get_or_prompt("OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=force)
+        if openai_key:
+            env_vars["OPENAI_API_KEY"] = openai_key
+            
+        # Select Model
+        choices = [label for label, _ in MODEL_CHOICES["openai"]]
+        model_label = Prompt.ask(
+            f"  [{COLORS['primary']}]Choose OpenAI Model[/]",
+            choices=choices,
+            default=choices[0]
+        )
+        # Find the API value for the selected label
+        model_value = next(val for label, val in MODEL_CHOICES["openai"] if label == model_label)
+        save_model_config("openai", model_value)
+
+    elif llm_choice == "anthropic":
+        anthropic_key = _get_or_prompt("ANTHROPIC_API_KEY", "Anthropic API Key", is_secret=True, required=True, force=force)
+        if anthropic_key:
+            env_vars["ANTHROPIC_API_KEY"] = anthropic_key
+            
+        # Select Model
+        choices = [label for label, _ in MODEL_CHOICES["anthropic"]]
+        model_label = Prompt.ask(
+            f"  [{COLORS['primary']}]Choose Anthropic Model[/]",
+            choices=choices,
+            default=choices[0]
+        )
+        # Find the API value for the selected label
+        model_value = next(val for label, val in MODEL_CHOICES["anthropic"] if label == model_label)
+        save_model_config("anthropic", model_value)
+
+    elif llm_choice == "google":
+        google_key = _get_or_prompt("GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=force)
+        if google_key:
+            env_vars["GOOGLE_API_KEY"] = google_key
+
+        # Select Model
+        choices = [label for label, _ in MODEL_CHOICES["google"]]
+        model_label = Prompt.ask(
+            f"  [{COLORS['primary']}]Choose Google Gemini Model[/]",
+            choices=choices,
+            default=choices[0]
+        )
+        # Find the API value for the selected label
+        model_value = next(val for label, val in MODEL_CHOICES["google"] if label == model_label)
+        save_model_config("google", model_value)
+
+    elif llm_choice == "custom":
+        console.print(f"[{COLORS['dim']}]Configure a custom OpenAI-compatible endpoint (e.g., local Ollama, vLLM).[/]")
+        
+        api_base = _get_or_prompt("CUSTOM_API_BASE", "API Base URL", required=True, force=force, default="http://localhost:11434/v1")
+        # Don't save base to env, saving to model config instead
+        
+        model_name = _get_or_prompt("CUSTOM_MODEL_NAME", "Model Name", required=True, force=force)
+        # Don't save model name to env, saving to model config instead
+            
+        # Optional API Key for custom provider
+        api_key = _get_or_prompt("CUSTOM_API_KEY", "API Key (Optional)", is_secret=True, required=False, force=force)
+        if api_key:
+            env_vars["CUSTOM_API_KEY"] = api_key
+
+        if api_base and model_name:
+            save_model_config("custom", model_name, api_base)
+
+    if env_vars:
+        save_env_vars(env_vars)
+        return True
+    
+    # Return True if we saved model config even if no env vars changed
+    # (e.g. just switched model but kept same key)
+    return True
+
+
 def run_setup_wizard(force: bool = False) -> None:
     """
     Guides the user through setting up essential environment variables for SDRbot.
@@ -170,32 +273,8 @@ def run_setup_wizard(force: bool = False) -> None:
     console.print(f"[{COLORS['dim']}]This wizard will help you configure your API keys and credentials.[/]{COLORS['dim']}]")
     console.print(f"[{COLORS['dim']}]Values will be saved to your working folders .env file.[/]{COLORS['dim']}\n")
 
-    env_vars = {}
-
     # LLM Provider
-    console.print(f"[{COLORS['primary']}]--- Large Language Model (LLM) Configuration ---[/{COLORS['primary']}]")
-    llm_choice = Prompt.ask(
-        f"[{COLORS['primary']}]Choose your LLM provider[/] (openai/anthropic/google)",
-        choices=["openai", "anthropic", "google"],
-        default="openai"
-    )
-
-    if llm_choice == "openai":
-        openai_key = _get_or_prompt("OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=force)
-        if openai_key:
-            env_vars["OPENAI_API_KEY"] = openai_key
-    elif llm_choice == "anthropic":
-        anthropic_key = _get_or_prompt("ANTHROPIC_API_KEY", "Anthropic API Key", is_secret=True, required=True, force=force)
-        if anthropic_key:
-            env_vars["ANTHROPIC_API_KEY"] = anthropic_key
-    elif llm_choice == "google":
-        google_key = _get_or_prompt("GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=force)
-        if google_key:
-            env_vars["GOOGLE_API_KEY"] = google_key
-    
-    if env_vars:
-        save_env_vars(env_vars)
-        env_vars = {} # Clear for next steps
+    setup_llm(force=force)
     
     console.print("\n")
 
