@@ -195,10 +195,9 @@ def setup_service(service_name: str, force: bool = False) -> bool:
         load_dotenv(override=True)
         from sdrbot_cli.config import settings
         settings.reload()
-        # Enable and sync the service (tavily is not a "service" in our registry)
-        if service_name != "tavily":
-            from sdrbot_cli.services import enable_service
-            enable_service(service_name, sync=True, verbose=True)
+        # Enable and sync the service
+        from sdrbot_cli.services import enable_service
+        enable_service(service_name, sync=True, verbose=True)
         return True
     return False
 

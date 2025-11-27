@@ -339,6 +339,7 @@ class Settings:
             "attio": self.has_attio,
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
+            "tavily": self.has_tavily,
         }
         return checks.get(service_name, False)
 

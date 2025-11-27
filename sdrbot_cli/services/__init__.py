@@ -12,7 +12,7 @@ from langchain_core.tools import BaseTool
 from rich.console import Console
 
 # All available services
-SERVICES = ["hubspot", "salesforce", "attio", "lusha", "hunter"]
+SERVICES = ["hubspot", "salesforce", "attio", "lusha", "hunter", "tavily"]
 
 # Services that require schema sync (have user-specific schemas)
 SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio"]
