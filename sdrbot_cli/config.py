@@ -437,6 +437,20 @@ class Settings:
         """
         return Path.cwd() / "skills"
 
+    def get_user_skills_dir(self, agent: str | None = None) -> Path:
+        """Get user skills directory path.
+
+        For SDRbot, user skills are stored in ./skills/ (same as shared skills).
+        The agent parameter is accepted for API compatibility but ignored.
+
+        Args:
+            agent: Agent identifier (ignored, kept for API compatibility)
+
+        Returns:
+            Path to ./skills/
+        """
+        return self.get_skills_dir()
+
     def ensure_skills_dir(self) -> Path:
         """Ensure shared skills directory exists.
 
@@ -475,7 +489,7 @@ settings = Settings.from_environment()
 
 
 class SessionState:
-    """Holds mutable session state (auto-approve mode, etc)."""
+    """Holds mutable session state (auto-approve mode, agent, etc)."""
 
     def __init__(self, auto_approve: bool = False, no_splash: bool = False) -> None:
         self.auto_approve = auto_approve
@@ -483,11 +497,31 @@ class SessionState:
         self.exit_hint_until: float | None = None
         self.exit_hint_handle = None
         self.thread_id = str(uuid.uuid4())
+        # Agent and backend can be swapped at runtime for hot-reloading
+        self.agent = None
+        self.backend = None
+        # Reload callback - set by main.py to allow commands to trigger agent reload
+        self._reload_callback = None
 
     def toggle_auto_approve(self) -> bool:
         """Toggle auto-approve and return new state."""
         self.auto_approve = not self.auto_approve
         return self.auto_approve
+
+    def set_reload_callback(self, callback) -> None:
+        """Set the callback function for reloading the agent."""
+        self._reload_callback = callback
+
+    def reload_agent(self) -> bool:
+        """Reload the agent with updated tools/config.
+
+        Returns:
+            True if reload succeeded, False if no callback set.
+        """
+        if self._reload_callback:
+            self._reload_callback()
+            return True
+        return False
 
 
 def get_default_coding_instructions() -> str:

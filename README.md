@@ -274,6 +274,22 @@ agents/
 └── support.md    # custom agent for support tasks
 ```
 
+### Agent Commands
+
+```bash
+# Start with a specific agent
+sdrbot --agent sales
+
+# List all available agents
+sdrbot list
+
+# Reset an agent to the default prompt
+sdrbot reset --agent agent
+
+# Copy one agent's prompt to another
+sdrbot reset --agent mybot --target sales
+```
+
 ### Editing the Agent Prompt
 
 To customize how the agent behaves, edit `./agents/agent.md`. This file controls the agent's personality, guidelines, and operational rules.
@@ -289,23 +305,42 @@ sdrbot --agent support    # Uses ./agents/support.md
 
 If the agent file doesn't exist, it will be created with the default prompt.
 
-### Resetting to Defaults
-
-To restore the default agent prompt (e.g., after an update):
-
-```bash
-sdrbot reset --agent agent
-```
-
 ### Local Data Folders
 
 SDRbot creates these folders in your working directory (all gitignored):
 
 | Folder | Purpose |
 |--------|---------|
-| `agents/` | Agent prompt files (`{name}.md`) |
-| `skills/` | Shared skill scripts and workflows |
+| `agents/` | Agent prompt files (`{name}.md`) - created on first run |
+| `skills/` | Custom skill scripts and workflows - created when you add skills |
 | `.sdrbot/` | Service configuration (`services.json`) |
+
+---
+
+## 🎯 Custom Skills
+
+Skills are reusable workflows or scripts that extend the agent's capabilities. They live in the `./skills/` folder.
+
+### Managing Skills
+
+```bash
+# List available skills
+sdrbot skills list
+
+# Create a new skill
+sdrbot skills create my-workflow
+
+# View skill details
+sdrbot skills info my-workflow
+```
+
+### Skill Structure
+
+Each skill is a folder containing:
+- `skill.md` - Instructions and description for the agent
+- Optional scripts, templates, or data files
+
+The agent can invoke skills during conversations to perform specialized tasks.
 
 ---
 

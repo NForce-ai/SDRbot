@@ -133,97 +133,100 @@ def parse_args():
 
 
 async def simple_cli(
-    agent,
     assistant_id: str | None,
     session_state,
     baseline_tokens: int = 0,
-    backend=None,
     sandbox_type: str | None = None,
     setup_script_path: str | None = None,
-    no_splash: bool = False,
+    first_run: bool = True,
 ) -> None:
     """Main CLI loop.
 
     Args:
-        backend: Backend for file operations (CompositeBackend)
+        assistant_id: Agent identifier for memory storage
+        session_state: SessionState object containing agent, backend, and settings
+        baseline_tokens: Baseline token count for tracking
         sandbox_type: Type of sandbox being used (e.g., "modal", "runloop", "daytona").
                      If None, running in local mode.
-        sandbox_id: ID of the active sandbox
         setup_script_path: Path to setup script that was run (if any)
-        no_splash: If True, skip displaying the startup splash screen
+        first_run: If True, show splash screen and greeting (default True)
     """
-    console.clear()
-    if not no_splash:
-        console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
+    # Only show splash on first run, not after reloads
+    if first_run:
+        console.clear()
+        if not session_state.no_splash:
+            console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
+            console.print()
+
+    # Only show full UI on first run
+    if first_run:
+        # Extract sandbox ID from backend if using sandbox mode
+        sandbox_id: str | None = None
+        if session_state.backend:
+            from deepagents.backends.composite import CompositeBackend
+
+            # Check if it's a CompositeBackend with a sandbox default backend
+            if isinstance(session_state.backend, CompositeBackend):
+                if isinstance(session_state.backend.default, SandboxBackendProtocol):
+                    sandbox_id = session_state.backend.default.id
+            elif isinstance(session_state.backend, SandboxBackendProtocol):
+                sandbox_id = session_state.backend.id
+
+        # Display sandbox info persistently (survives console.clear())
+        if sandbox_type and sandbox_id:
+            console.print(f"[yellow]⚡ {sandbox_type.capitalize()} sandbox: {sandbox_id}[/yellow]")
+            if setup_script_path:
+                console.print(
+                    f"[green]✓ Setup script ({setup_script_path}) completed successfully[/green]"
+                )
+            console.print()
+
+        # Show active agent
+        agent_name = assistant_id or "agent"
+        agent_display = "default" if agent_name == "agent" else agent_name
+        console.print(f"[dim]Agent:[/dim] [cyan]{agent_display}[/cyan] [dim](./agents/{agent_name}.md)[/dim]")
         console.print()
 
-    # Extract sandbox ID from backend if using sandbox mode
-    sandbox_id: str | None = None
-    if backend:
-        from deepagents.backends.composite import CompositeBackend
+        greetings = [
+            "RevOps agent standing by. What's the mission?",
+            "Quotas don't hit themselves. Let's get to work.",
+            "Ready to hunt. Who are we targeting today?",
+            "Pipeline awaiting updates. How can I help?",
+        ]
+        console.print(random.choice(greetings), style=COLORS["agent"])
 
-        # Check if it's a CompositeBackend with a sandbox default backend
-        if isinstance(backend, CompositeBackend):
-            if isinstance(backend.default, SandboxBackendProtocol):
-                sandbox_id = backend.default.id
-        elif isinstance(backend, SandboxBackendProtocol):
-            sandbox_id = backend.id
+        console.print()
 
-    # Display sandbox info persistently (survives console.clear())
-    if sandbox_type and sandbox_id:
-        console.print(f"[yellow]⚡ {sandbox_type.capitalize()} sandbox: {sandbox_id}[/yellow]")
-        if setup_script_path:
+        if session_state.auto_approve:
             console.print(
-                f"[green]✓ Setup script ({setup_script_path}) completed successfully[/green]"
+                "  [yellow]⚡ Auto-approve: ON[/yellow] [dim](tools run without confirmation)[/dim]"
             )
+            console.print()
+
+        # Localize modifier names and show key symbols (macOS vs others)
+        if sys.platform == "darwin":
+            tips = (
+                "Tips:\n"
+                "  - ⏎ Enter to submit\n"
+                "  - ⌥ Option + ⏎ Enter (or Esc+Enter) for newline\n"
+                "  - ⌃E to open editor\n"
+                "  - ⌃T to toggle auto-approve\n"
+                "  - ⌃C to interrupt\n"
+                "  - /help to list commands\n"
+            )
+        else:
+            tips = (
+                "Tips:\n"
+                "  - Enter to submit\n"
+                "  - Alt+Enter (or Esc+Enter) for newline\n"
+                "  - Ctrl+E to open editor\n"
+                "  - Ctrl+T to toggle auto-approve\n"
+                "  - Ctrl+C to interrupt\n"
+                "  - /help to list commands\n"
+            )
+        console.print(tips, style=f"dim {COLORS['dim']}")
+
         console.print()
-        
-    # Show active agent
-    agent_name = assistant_id or "agent"
-    agent_display = "default" if agent_name == "agent" else agent_name
-    console.print(f"[dim]Agent:[/dim] [cyan]{agent_display}[/cyan] [dim](./agents/{agent_name}.md)[/dim]")
-    console.print()
-
-    greetings = [
-        "RevOps agent standing by. What's the mission?",
-        "Quotas don't hit themselves. Let's get to work.",
-        "Ready to hunt. Who are we targeting today?",
-        "Pipeline awaiting updates. How can I help?",
-    ]
-    console.print(random.choice(greetings), style=COLORS["agent"])
-
-    console.print()
-
-    if session_state.auto_approve:
-        console.print(
-            "  [yellow]⚡ Auto-approve: ON[/yellow] [dim](tools run without confirmation)[/dim]"
-        )
-        console.print()
-
-    # Localize modifier names and show key symbols (macOS vs others)
-    if sys.platform == "darwin":
-        tips = (
-            "Tips:\n"
-            "  - ⏎ Enter to submit\n"
-            "  - ⌥ Option + ⏎ Enter (or Esc+Enter) for newline\n"
-            "  - ⌃E to open editor\n"
-            "  - ⌃T to toggle auto-approve\n"
-            "  - ⌃C to interrupt\n"
-            "  - /help to list commands\n"
-        )
-    else:
-        tips = (
-            "Tips:\n"
-            "  - Enter to submit\n"
-            "  - Alt+Enter (or Esc+Enter) for newline\n"
-            "  - Ctrl+E to open editor\n"
-            "  - Ctrl+T to toggle auto-approve\n"
-            "  - Ctrl+C to interrupt\n"
-            "  - /help to list commands\n"
-        )
-    console.print(tips, style=f"dim {COLORS['dim']}")
-
-    console.print()
 
     # Create prompt session and token tracker
     session = create_prompt_session(assistant_id, session_state)
@@ -249,12 +252,10 @@ async def simple_cli(
 
         # Check for slash commands first
         if user_input.startswith("/"):
-            result = handle_command(user_input, agent, token_tracker)
+            result = handle_command(user_input, session_state, token_tracker)
             if result == "exit":
                 console.print("\nGoodbye!", style=COLORS["primary"])
                 break
-            if result == "reload":
-                return "reload"
             if result:
                 # Command was handled, continue to next input
                 continue
@@ -270,7 +271,7 @@ async def simple_cli(
             break
 
         await execute_task(
-            user_input, agent, assistant_id, session_state, token_tracker, backend=backend
+            user_input, session_state.agent, assistant_id, session_state, token_tracker, backend=session_state.backend
         )
 
 
@@ -294,14 +295,30 @@ async def _run_agent_session(
         sandbox_type: Type of sandbox being used
         setup_script_path: Path to setup script that was run (if any)
     """
-    # Create agent with conditional tools
-    tools = [http_request, fetch_url]
-    if settings.has_tavily:
-        tools.append(web_search)
+    # Helper function to create/recreate the agent
+    def create_agent():
+        tools = [http_request, fetch_url]
+        if settings.has_tavily:
+            tools.append(web_search)
+        return create_agent_with_config(
+            model, assistant_id, tools, sandbox=sandbox_backend, sandbox_type=sandbox_type
+        )
 
-    agent, composite_backend = create_agent_with_config(
-        model, assistant_id, tools, sandbox=sandbox_backend, sandbox_type=sandbox_type
-    )
+    # Create initial agent
+    agent, composite_backend = create_agent()
+    session_state.agent = agent
+    session_state.backend = composite_backend
+
+    # Set up reload callback so commands can trigger agent reload
+    def reload_agent():
+        console.print("[dim]Reloading agent...[/dim]")
+        new_agent, new_backend = create_agent()
+        session_state.agent = new_agent
+        session_state.backend = new_backend
+        console.print("[green]✓ Agent reloaded with updated tools[/green]")
+        console.print()
+
+    session_state.set_reload_callback(reload_agent)
 
     # Calculate baseline token count for accurate token tracking
     from .agent import get_system_prompt
@@ -311,35 +328,15 @@ async def _run_agent_session(
     system_prompt = get_system_prompt(assistant_id=assistant_id, sandbox_type=sandbox_type)
     baseline_tokens = calculate_baseline_tokens(model, agent_dir, system_prompt, assistant_id)
 
-    while True:
-        result = await simple_cli(
-            agent,
-            assistant_id,
-            session_state,
-            baseline_tokens,
-            backend=composite_backend,
-            sandbox_type=sandbox_type,
-            setup_script_path=setup_script_path,
-            no_splash=session_state.no_splash,
-        )
-        
-        if result == "reload":
-            # Re-create agent with new config
-            console.print("[dim]Re-initializing agent...[/dim]")
-            
-            # Re-evaluate tools
-            tools = [http_request, fetch_url]
-            if settings.has_tavily:
-                tools.append(web_search)
-                
-            agent, composite_backend = create_agent_with_config(
-                model, assistant_id, tools, sandbox=sandbox_backend, sandbox_type=sandbox_type
-            )
-            # Continue loop with new agent
-            continue
-        
-        # If not reload, break (exit was handled inside simple_cli)
-        break
+    # Run the CLI loop (no more reload return - reloads happen in-place)
+    await simple_cli(
+        assistant_id,
+        session_state,
+        baseline_tokens,
+        sandbox_type=sandbox_type,
+        setup_script_path=setup_script_path,
+        first_run=True,
+    )
 
 
 async def main(
@@ -359,13 +356,15 @@ async def main(
         setup_script_path: Optional path to setup script to run in sandbox
     """
     run_setup_wizard()
-    
+
     # Reload environment to pick up changes from setup wizard
     import dotenv
     dotenv.load_dotenv(Path.cwd() / ".env", override=True)
     settings.reload()
 
-    # Ensure all required API keys are configured
+    # Sync any enabled services that haven't been synced yet
+    from sdrbot_cli.services import sync_enabled_services_if_needed
+    sync_enabled_services_if_needed()
 
     model = create_model()
 

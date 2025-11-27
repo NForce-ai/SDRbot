@@ -1,9 +1,9 @@
 """CLI commands for skill management.
 
 These commands are registered with the CLI via cli.py:
-- deepagents skills list --agent <agent> [--project]
-- deepagents skills create <name>
-- deepagents skills info <name>
+- sdrbot skills list [--project]
+- sdrbot skills create <name>
+- sdrbot skills info <name>
 """
 
 import argparse
@@ -108,7 +108,7 @@ def _list(agent: str, *, project: bool = False) -> None:
                 style=COLORS["dim"],
             )
             console.print(
-                "\n[dim]Create a project skill:\n  deepagents skills create my-skill --project[/dim]",
+                "\n[dim]Create a project skill:\n  sdrbot skills create my-skill --project[/dim]",
                 style=COLORS["dim"],
             )
             return
@@ -122,11 +122,11 @@ def _list(agent: str, *, project: bool = False) -> None:
         if not skills:
             console.print("[yellow]No skills found.[/yellow]")
             console.print(
-                "[dim]Skills will be created in ~/.deepagents/agent/skills/ when you add them.[/dim]",
+                "[dim]Skills will be created in ./skills/ when you add them.[/dim]",
                 style=COLORS["dim"],
             )
             console.print(
-                "\n[dim]Create your first skill:\n  deepagents skills create my-skill[/dim]",
+                "\n[dim]Create your first skill:\n  sdrbot skills create my-skill[/dim]",
                 style=COLORS["dim"],
             )
             return
@@ -292,11 +292,10 @@ This skill directory can include supporting files referenced in the instructions
         "\n"
         f"  nano {skill_md}\n"
         "\n"
-        "💡 See examples/skills/ in the deepagents repo for example skills:\n"
-        "   - web-research: Structured research workflow\n"
-        "   - langgraph-docs: LangGraph documentation lookup\n"
-        "\n"
-        "   Copy an example: cp -r examples/skills/web-research ~/.deepagents/agent/skills/\n",
+        "💡 Skill structure:\n"
+        "   ./skills/my-skill/\n"
+        "   └── skill.md    # Instructions for the agent\n"
+        "   └── script.py   # Optional supporting scripts\n",
         style=COLORS["dim"],
     )
 
@@ -454,17 +453,17 @@ def execute_skills_command(args: argparse.Namespace) -> None:
         # No subcommand provided, show help
         console.print("[yellow]Please specify a skills subcommand: list, create, or info[/yellow]")
         console.print("\n[bold]Usage:[/bold]", style=COLORS["primary"])
-        console.print("  deepagents skills <command> [options]\n")
+        console.print("  sdrbot skills <command> [options]\n")
         console.print("[bold]Available commands:[/bold]", style=COLORS["primary"])
         console.print("  list              List all available skills")
         console.print("  create <name>     Create a new skill")
         console.print("  info <name>       Show detailed information about a skill")
         console.print("\n[bold]Examples:[/bold]", style=COLORS["primary"])
-        console.print("  deepagents skills list")
-        console.print("  deepagents skills create web-research")
-        console.print("  deepagents skills info web-research")
+        console.print("  sdrbot skills list")
+        console.print("  sdrbot skills create web-research")
+        console.print("  sdrbot skills info web-research")
         console.print("\n[dim]For more help on a specific command:[/dim]", style=COLORS["dim"])
-        console.print("  deepagents skills <command> --help", style=COLORS["dim"])
+        console.print("  sdrbot skills <command> --help", style=COLORS["dim"])
 
 
 __all__ = [

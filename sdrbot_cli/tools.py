@@ -8,8 +8,16 @@ from tavily import TavilyClient
 
 from sdrbot_cli.config import settings
 
-# Initialize Tavily client if API key is available
-tavily_client = TavilyClient(api_key=settings.tavily_api_key) if settings.has_tavily else None
+# Tavily client - lazily initialized to allow .env to be loaded first
+_tavily_client: TavilyClient | None = None
+
+
+def _get_tavily_client() -> TavilyClient | None:
+    """Get or create the Tavily client (lazy initialization)."""
+    global _tavily_client
+    if _tavily_client is None and settings.has_tavily:
+        _tavily_client = TavilyClient(api_key=settings.tavily_api_key)
+    return _tavily_client
 
 
 def http_request(
@@ -120,14 +128,15 @@ def web_search(
     4. Cite sources by mentioning the page titles or URLs
     5. NEVER show the raw JSON to the user - always provide a formatted response
     """
-    if tavily_client is None:
+    client = _get_tavily_client()
+    if client is None:
         return {
             "error": "Tavily API key not configured. Please set TAVILY_API_KEY environment variable.",
             "query": query,
         }
 
     try:
-        return tavily_client.search(
+        return client.search(
             query,
             max_results=max_results,
             include_raw_content=include_raw_content,

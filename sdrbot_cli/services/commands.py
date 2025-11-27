@@ -15,26 +15,27 @@ from rich.console import Console
 from rich.table import Table
 
 from sdrbot_cli.config import settings
-from sdrbot_cli.services import SERVICES, SYNCABLE_SERVICES
-from sdrbot_cli.services.registry import (
-    load_config,
-    save_config,
-    clear_config_cache,
+from sdrbot_cli.services import (
+    SERVICES,
+    SYNCABLE_SERVICES,
+    enable_service,
+    disable_service,
+    resync_service,
 )
+from sdrbot_cli.services.registry import load_config
 
 console = Console(highlight=False)
 
 
-def handle_services_command(args: list[str]) -> str | bool:
+def handle_services_command(args: list[str], session_state=None) -> bool:
     """Handle /services commands.
 
     Args:
         args: Command arguments (e.g., ["enable", "hubspot"])
+        session_state: SessionState object for triggering agent reload (optional)
 
     Returns:
-        - "reload": Agent needs to be reloaded
-        - True: Command was handled
-        - False: Command was not handled
+        True: Command was handled
     """
     if not args:
         _list_services()
@@ -48,14 +49,14 @@ def handle_services_command(args: list[str]) -> str | bool:
 
     if action == "enable" and len(args) > 1:
         service_name = args[1].lower()
-        result = _enable_service(service_name)
-        if result == "reload":
-            return "reload"
+        if _enable_service(service_name) and session_state:
+            session_state.reload_agent()
         return True
 
     if action == "disable" and len(args) > 1:
         service_name = args[1].lower()
-        _disable_service(service_name)
+        if _disable_service(service_name) and session_state:
+            session_state.reload_agent()
         return True
 
     if action == "sync" and len(args) > 1:
@@ -70,7 +71,9 @@ def handle_services_command(args: list[str]) -> str | bool:
 
     if action == "update" and len(args) > 1:
         service_name = args[1].lower()
-        return _update_service(service_name)
+        if _update_service(service_name) and session_state:
+            session_state.reload_agent()
+        return True
 
     # Show usage
     console.print()
@@ -87,19 +90,22 @@ def handle_services_command(args: list[str]) -> str | bool:
     return True
 
 
-def _update_service(service_name: str) -> str | bool:
+def _update_service(service_name: str) -> bool:
     """Reconfigure a service.
 
     Args:
         service_name: Name of the service to update.
+
+    Returns:
+        True if service was updated and agent should reload, False otherwise.
     """
     if service_name not in SERVICES:
         console.print(f"[red]Unknown service: {service_name}[/red]")
-        return True
+        return False
 
     # Lazy import to avoid circular dependencies
     from sdrbot_cli.setup_wizard import setup_service
-    
+
     # force=True ensures prompt even if keys exist
     if setup_service(service_name, force=True):
         console.print(f"[green]✓ {service_name} configuration updated[/green]")
@@ -107,8 +113,8 @@ def _update_service(service_name: str) -> str | bool:
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
         return True
-    
-    return True
+
+    return False
 
 
 def _list_services() -> None:
@@ -165,30 +171,30 @@ def _list_services() -> None:
     console.print()
 
 
-def _enable_service(service_name: str) -> str | bool:
+def _enable_service(service_name: str) -> bool:
     """Enable a service, syncing if required.
 
     Args:
         service_name: Name of the service to enable.
 
     Returns:
-        "reload" if agent needs to be reloaded, True otherwise.
+        True if service was enabled and agent should reload, False otherwise.
     """
     if service_name not in SERVICES:
         console.print(f"[red]Unknown service: {service_name}[/red]")
         console.print(f"[dim]Available services: {', '.join(SERVICES)}[/dim]")
-        return True
+        return False
 
     # Check for credentials
     if not settings.has_service_credentials(service_name):
         console.print(f"[red]No credentials found for {service_name}[/red]")
         console.print()
         console.print("Configure credentials using the setup wizard:")
-        console.print("  /reconfigure")
+        console.print("  /setup")
         console.print()
         console.print("Or add to your .env file:")
         _show_credential_help(service_name)
-        return True
+        return False
 
     config = load_config()
 
@@ -199,55 +205,23 @@ def _enable_service(service_name: str) -> str | bool:
         # Offer to re-sync if syncable
         if service_name in SYNCABLE_SERVICES:
             console.print("[dim]Use /services sync to re-sync the schema.[/dim]")
-        return True
+        return False
 
-    # Enable the service
-    config.enable(service_name)
-
-    # Auto-sync if this service requires it
-    if service_name in SYNCABLE_SERVICES:
-        console.print(f"[cyan]Syncing {service_name} schema...[/cyan]")
-        try:
-            result = _run_sync(service_name)
-            config.mark_synced(service_name, result["schema_hash"], result["objects"])
-            console.print(f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]")
-        except Exception as e:
-            console.print(f"[red]Sync failed: {e}[/red]")
-            console.print("[yellow]Service enabled but tools may be limited.[/yellow]")
-
-    save_config(config)
-    clear_config_cache()
-
-    console.print(f"[green]✓ {service_name} enabled![/green]")
-    console.print("[dim]Reloading agent to load new tools...[/dim]")
-    console.print()
-
-    return "reload"
+    # Use centralized enable function - returns True if successful
+    return enable_service(service_name, sync=True, verbose=True)
 
 
-def _disable_service(service_name: str) -> None:
+def _disable_service(service_name: str) -> bool:
     """Disable a service.
 
     Args:
         service_name: Name of the service to disable.
+
+    Returns:
+        True if service was disabled and agent should reload, False otherwise.
     """
-    if service_name not in SERVICES:
-        console.print(f"[red]Unknown service: {service_name}[/red]")
-        return
-
-    config = load_config()
-
-    if not config.is_enabled(service_name):
-        console.print(f"[yellow]{service_name} is not enabled[/yellow]")
-        return
-
-    config.disable(service_name)
-    save_config(config)
-    clear_config_cache()
-
-    console.print(f"[yellow]✗ {service_name} disabled[/yellow]")
-    console.print("[dim]Restart the agent to unload tools.[/dim]")
-    console.print()
+    # Use centralized disable function - returns True if successful
+    return disable_service(service_name, verbose=True)
 
 
 def _sync_service(service_name: str) -> None:
@@ -256,48 +230,9 @@ def _sync_service(service_name: str) -> None:
     Args:
         service_name: Name of the service to sync.
     """
-    if service_name not in SERVICES:
-        console.print(f"[red]Unknown service: {service_name}[/red]")
-        return
-
-    if service_name not in SYNCABLE_SERVICES:
-        console.print(f"[yellow]{service_name} does not require sync[/yellow]")
-        console.print("[dim]This service has static tools that don't depend on your schema.[/dim]")
-        return
-
-    config = load_config()
-
-    if not config.is_enabled(service_name):
-        console.print(f"[red]{service_name} is not enabled[/red]")
-        console.print(f"[dim]Use /services enable {service_name} first.[/dim]")
-        return
-
-    # Check credentials
-    if not settings.has_service_credentials(service_name):
-        console.print(f"[red]No credentials found for {service_name}[/red]")
-        return
-
-    console.print(f"[cyan]Syncing {service_name} schema...[/cyan]")
-
-    try:
-        result = _run_sync(service_name)
-
-        old_hash = config.get_state(service_name).schema_hash
-        if old_hash and old_hash == result["schema_hash"]:
-            console.print("[yellow]Schema unchanged since last sync[/yellow]")
-        else:
-            console.print(f"[green]✓ Schema updated[/green]")
-
-        config.mark_synced(service_name, result["schema_hash"], result["objects"])
-        save_config(config)
-        clear_config_cache()
-
-        console.print(f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]")
+    # Use centralized resync function
+    if resync_service(service_name, verbose=True):
         console.print("[dim]Restart the agent to load updated tools.[/dim]")
-        console.print()
-
-    except Exception as e:
-        console.print(f"[red]Sync failed: {e}[/red]")
         console.print()
 
 
@@ -347,34 +282,13 @@ def _show_status(service_name: str) -> None:
 
     # Show helpful actions
     if not has_creds:
-        console.print("[dim]→ Configure credentials with /reconfigure[/dim]")
+        console.print("[dim]→ Configure credentials with /setup[/dim]")
     elif not state.enabled:
         console.print(f"[dim]→ Enable with /services enable {service_name}[/dim]")
     elif is_syncable and not state.synced_at:
         console.print(f"[dim]→ Sync schema with /services sync {service_name}[/dim]")
 
     console.print()
-
-
-def _run_sync(service_name: str) -> dict:
-    """Run the sync function for a service.
-
-    Args:
-        service_name: Name of the service to sync.
-
-    Returns:
-        Dict with "schema_hash" and "objects" keys.
-
-    Raises:
-        ImportError: If sync module not found.
-        Exception: If sync fails.
-    """
-    # Import and run the service-specific sync
-    sync_module = __import__(
-        f"sdrbot_cli.services.{service_name}.sync",
-        fromlist=["sync_schema"]
-    )
-    return sync_module.sync_schema()
 
 
 def _show_credential_help(service_name: str) -> None:

@@ -535,6 +535,14 @@ def show_interactive_help() -> None:
     )
     console.print()
 
+    console.print("[bold]Model Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /models                     List active and available models", style=COLORS["dim"])
+    console.print("  /models switch              Switch to a different provider/model", style=COLORS["dim"])
+    console.print("  /models configure <name>    Reconfigure API key and model", style=COLORS["dim"])
+    console.print()
+    console.print("  Providers: openai, anthropic, google, custom", style=COLORS["dim"])
+    console.print()
+
     console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
     console.print("  /services list              List all services and status", style=COLORS["dim"])
     console.print("  /services enable <name>     Enable a service (auto-syncs)", style=COLORS["dim"])
@@ -543,6 +551,24 @@ def show_interactive_help() -> None:
     console.print("  /services status <name>     Show detailed status", style=COLORS["dim"])
     console.print()
     console.print("  Services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Agent Commands:[/bold]", style=COLORS["primary"])
+    console.print("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
+    console.print("  sdrbot list                 List all available agents", style=COLORS["dim"])
+    console.print("  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Skills Commands:[/bold]", style=COLORS["primary"])
+    console.print("  sdrbot skills list          List available skills", style=COLORS["dim"])
+    console.print("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
+    console.print("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Local Data Folders:[/bold]", style=COLORS["primary"])
+    console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
+    console.print("  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"])
+    console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
     console.print()
 
 
@@ -648,6 +674,14 @@ def show_help() -> None:
     )
     console.print()
 
+    console.print("[bold]Model Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /models                     List active and available models", style=COLORS["dim"])
+    console.print("  /models switch              Switch to a different provider/model", style=COLORS["dim"])
+    console.print("  /models configure <name>    Reconfigure API key and model", style=COLORS["dim"])
+    console.print()
+    console.print("  Providers: openai, anthropic, google, custom", style=COLORS["dim"])
+    console.print()
+
     console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
     console.print("  /services list              List all services and their status", style=COLORS["dim"])
     console.print("  /services enable <name>     Enable a service (auto-syncs if needed)", style=COLORS["dim"])
@@ -656,4 +690,22 @@ def show_help() -> None:
     console.print("  /services status <name>     Show detailed service status", style=COLORS["dim"])
     console.print()
     console.print("  Available services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Agent Commands:[/bold]", style=COLORS["primary"])
+    console.print("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
+    console.print("  sdrbot list                 List all available agents", style=COLORS["dim"])
+    console.print("  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Skills Commands:[/bold]", style=COLORS["primary"])
+    console.print("  sdrbot skills list          List available skills", style=COLORS["dim"])
+    console.print("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
+    console.print("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
+    console.print()
+
+    console.print("[bold]Local Data Folders:[/bold]", style=COLORS["primary"])
+    console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
+    console.print("  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"])
+    console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
     console.print()

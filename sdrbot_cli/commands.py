@@ -6,19 +6,18 @@ from pathlib import Path
 
 from langgraph.checkpoint.memory import InMemorySaver
 
-from .config import COLORS, DEEP_AGENTS_ASCII, console, settings
+from .config import COLORS, DEEP_AGENTS_ASCII, console, settings, SessionState
 from .ui import TokenTracker, show_interactive_help
 from .setup_wizard import run_setup_wizard
 from .services.commands import handle_services_command
 from .models_commands import handle_models_command
 
 
-def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bool:
+def handle_command(command: str, session_state: SessionState, token_tracker: TokenTracker) -> str | bool:
     """
-    Handle slash commands. 
+    Handle slash commands.
     Returns:
     - 'exit': to exit the CLI
-    - 'reload': to re-initialize the agent
     - True: if command handled
     - False: if not handled (pass to agent)
     """
@@ -30,24 +29,22 @@ def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bo
         return "exit"
 
     if cmd == "services":
-        result = handle_services_command(args)
-        if result == "reload":
-            # Reload env and settings
-            dotenv.load_dotenv(Path.cwd() / ".env", override=True)
-            settings.reload()
-        return result
+        if handle_services_command(args, session_state):
+            return True
+        return True
 
     if cmd == "models":
         result = handle_models_command(args)
         if result == "reload":
             dotenv.load_dotenv(Path.cwd() / ".env", override=True)
             settings.reload()
-            return "reload"
+            session_state.reload_agent()
         return True
 
     if cmd == "clear":
         # Reset agent conversation state
-        agent.checkpointer = InMemorySaver()
+        if session_state.agent:
+            session_state.agent.checkpointer = InMemorySaver()
 
         # Reset token tracking to baseline
         token_tracker.reset()
@@ -75,7 +72,8 @@ def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bo
         # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
-        console.print("[green]Configuration reloaded successfully![/green]\n")
+        # Reload agent to pick up any new services
+        session_state.reload_agent()
         return True
 
     console.print()
@@ -83,8 +81,6 @@ def handle_command(command: str, agent, token_tracker: TokenTracker) -> str | bo
     console.print("[dim]Type /help for available commands.[/dim]")
     console.print()
     return True
-
-    return False
 
 
 def execute_bash_command(command: str) -> bool:

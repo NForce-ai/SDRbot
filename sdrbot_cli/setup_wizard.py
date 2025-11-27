@@ -4,6 +4,42 @@ from rich.prompt import Prompt, Confirm
 from dotenv import load_dotenv
 from sdrbot_cli.config import console, COLORS, save_model_config
 
+
+def _prompt_numbered_choice(prompt_text: str, choices: list[tuple[str, str]], default: int = 1) -> str:
+    """Display numbered choices and return the selected value.
+
+    Args:
+        prompt_text: Text to display before the choices
+        choices: List of (label, value) tuples
+        default: Default choice number (1-indexed)
+
+    Returns:
+        The value (second element) of the selected choice
+    """
+    console.print()
+    console.print(f"  [{COLORS['primary']}]{prompt_text}:[/{COLORS['primary']}]")
+    for i, (label, value) in enumerate(choices, 1):
+        if value and value != label:
+            console.print(f"    [{COLORS['primary']}]{i}[/{COLORS['primary']}]) {label} [dim]({value})[/dim]")
+        else:
+            console.print(f"    [{COLORS['primary']}]{i}[/{COLORS['primary']}]) {label}")
+    console.print()
+
+    while True:
+        choice = Prompt.ask(f"  [{COLORS['primary']}]Select[/{COLORS['primary']}]", default=str(default))
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(choices):
+                return choices[idx][1]
+            console.print(f"  [red]Please enter a number between 1 and {len(choices)}[/red]")
+        except ValueError:
+            # Maybe they typed the value directly
+            for label, value in choices:
+                if choice.lower() in (label.lower(), value.lower()):
+                    return value
+            console.print(f"  [red]Please enter a number between 1 and {len(choices)}[/red]")
+
+
 def _get_or_prompt(env_var_name: str, display_name: str, is_secret: bool = False, required: bool = False, force: bool = False, default: str | None = None) -> str | None:
     """Gets an environment variable or prompts the user for it."""
     # If force is True, ignore existing env var and prompt anyway
@@ -66,8 +102,10 @@ def setup_service(service_name: str, force: bool = False) -> bool:
         # Trigger OAuth flow if we have credentials
         if sf_client_id and sf_client_secret:
             save_env_vars(env_vars)
-            # Reload env vars so the auth module picks them up
+            # Reload env vars AND settings so the auth module picks them up
             load_dotenv(override=True)
+            from sdrbot_cli.config import settings
+            settings.reload()
 
             if Confirm.ask(f"[{COLORS['primary']}]Do you want to authenticate with Salesforce now?[/]", default=True):
                 try:
@@ -80,16 +118,21 @@ def setup_service(service_name: str, force: bool = False) -> bool:
                 except Exception as e:
                     console.print(f"[red]Salesforce authentication failed: {e}[/red]")
                     console.print(f"[{COLORS['dim']}]You can authenticate later when you first use Salesforce.[/{COLORS['dim']}]")
+            # Enable and sync the service
+            from sdrbot_cli.services import enable_service
+            enable_service("salesforce", sync=True, verbose=True)
             return True
         
     elif service_name == "hubspot":
         console.print(f"[{COLORS['primary']}]--- HubSpot Configuration ---[/{COLORS['primary']}]")
-        hubspot_auth_choice = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose HubSpot authentication method[/] (1: Personal Access Token, 2: OAuth - Client ID/Secret)",
-            choices=["1", "2"],
-            default="1"
+        hubspot_auth_choice = _prompt_numbered_choice(
+            "Choose authentication method",
+            [
+                ("Personal Access Token", "pat"),
+                ("OAuth (Client ID/Secret)", "oauth"),
+            ],
         )
-        if hubspot_auth_choice == "1":
+        if hubspot_auth_choice == "pat":
             hubspot_access_token = _get_or_prompt("HUBSPOT_ACCESS_TOKEN", "HubSpot Personal Access Token", is_secret=True, required=True, force=force)
             if hubspot_access_token: env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
         else:
@@ -101,8 +144,10 @@ def setup_service(service_name: str, force: bool = False) -> bool:
             # Trigger OAuth flow if we have credentials
             if hubspot_client_id and hubspot_client_secret:
                 save_env_vars(env_vars)
-                # Reload env vars so the auth module picks them up
+                # Reload env vars AND settings so the auth module picks them up
                 load_dotenv(override=True)
+                from sdrbot_cli.config import settings
+                settings.reload()
 
                 if Confirm.ask(f"[{COLORS['primary']}]Do you want to authenticate with HubSpot now?[/]", default=True):
                     try:
@@ -115,6 +160,9 @@ def setup_service(service_name: str, force: bool = False) -> bool:
                     except Exception as e:
                         console.print(f"[red]HubSpot authentication failed: {e}[/red]")
                         console.print(f"[{COLORS['dim']}]You can authenticate later when you first use HubSpot.[/{COLORS['dim']}]")
+                # Enable and sync the service
+                from sdrbot_cli.services import enable_service
+                enable_service("hubspot", sync=True, verbose=True)
                 return True
             
     elif service_name == "attio":
@@ -140,9 +188,17 @@ def setup_service(service_name: str, force: bool = False) -> bool:
     else:
         console.print(f"[red]Unknown service: {service_name}[/red]")
         return False
-        
+
     if env_vars:
         save_env_vars(env_vars)
+        # Reload env vars AND settings so they're available for sync
+        load_dotenv(override=True)
+        from sdrbot_cli.config import settings
+        settings.reload()
+        # Enable and sync the service (tavily is not a "service" in our registry)
+        if service_name != "tavily":
+            from sdrbot_cli.services import enable_service
+            enable_service(service_name, sync=True, verbose=True)
         return True
     return False
 
@@ -169,10 +225,15 @@ def setup_llm(force: bool = False) -> bool:
     Returns True if configuration was updated.
     """
     console.print(f"[{COLORS['primary']}]--- Large Language Model (LLM) Configuration ---[/{COLORS['primary']}]")
-    llm_choice = Prompt.ask(
-        f"[{COLORS['primary']}]Choose your LLM provider[/] (openai/anthropic/google/custom)",
-        choices=["openai", "anthropic", "google", "custom"],
-        default="openai"
+
+    llm_choice = _prompt_numbered_choice(
+        "Choose your LLM provider",
+        [
+            ("OpenAI", "openai"),
+            ("Anthropic", "anthropic"),
+            ("Google", "google"),
+            ("Custom (OpenAI-compatible)", "custom"),
+        ],
     )
 
     env_vars = {}
@@ -180,32 +241,18 @@ def setup_llm(force: bool = False) -> bool:
         openai_key = _get_or_prompt("OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=force)
         if openai_key:
             env_vars["OPENAI_API_KEY"] = openai_key
-            
+
         # Select Model
-        choices = [label for label, _ in MODEL_CHOICES["openai"]]
-        model_label = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose OpenAI Model[/]",
-            choices=choices,
-            default=choices[0]
-        )
-        # Find the API value for the selected label
-        model_value = next(val for label, val in MODEL_CHOICES["openai"] if label == model_label)
+        model_value = _prompt_numbered_choice("Choose OpenAI model", MODEL_CHOICES["openai"])
         save_model_config("openai", model_value)
 
     elif llm_choice == "anthropic":
         anthropic_key = _get_or_prompt("ANTHROPIC_API_KEY", "Anthropic API Key", is_secret=True, required=True, force=force)
         if anthropic_key:
             env_vars["ANTHROPIC_API_KEY"] = anthropic_key
-            
+
         # Select Model
-        choices = [label for label, _ in MODEL_CHOICES["anthropic"]]
-        model_label = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose Anthropic Model[/]",
-            choices=choices,
-            default=choices[0]
-        )
-        # Find the API value for the selected label
-        model_value = next(val for label, val in MODEL_CHOICES["anthropic"] if label == model_label)
+        model_value = _prompt_numbered_choice("Choose Anthropic model", MODEL_CHOICES["anthropic"])
         save_model_config("anthropic", model_value)
 
     elif llm_choice == "google":
@@ -214,14 +261,7 @@ def setup_llm(force: bool = False) -> bool:
             env_vars["GOOGLE_API_KEY"] = google_key
 
         # Select Model
-        choices = [label for label, _ in MODEL_CHOICES["google"]]
-        model_label = Prompt.ask(
-            f"  [{COLORS['primary']}]Choose Google Gemini Model[/]",
-            choices=choices,
-            default=choices[0]
-        )
-        # Find the API value for the selected label
-        model_value = next(val for label, val in MODEL_CHOICES["google"] if label == model_label)
+        model_value = _prompt_numbered_choice("Choose Google Gemini model", MODEL_CHOICES["google"])
         save_model_config("google", model_value)
 
     elif llm_choice == "custom":
