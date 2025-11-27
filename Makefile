@@ -53,6 +53,27 @@ format_unsafe:
 	
 
 ######################
+# UPSTREAM TRACKING
+######################
+
+# Fetch latest upstream tags
+upstream_fetch:
+	git fetch upstream --tags
+
+# Show diff between our baseline (0.0.9) and latest upstream
+upstream_diff:
+	./scripts/upstream-diff.sh
+
+# Show diff between specific versions (e.g., make upstream_diff_version V=0.0.10)
+upstream_diff_version:
+	./scripts/upstream-diff.sh $(V)
+
+# List available upstream versions
+upstream_versions:
+	@echo "Available deepagents-cli versions:"
+	@git tag -l 'deepagents-cli==*' | sort -V
+
+######################
 # HELP
 ######################
 
@@ -64,6 +85,10 @@ help:
 	@echo '-- TESTS --'
 	@echo 'test                         - run unit tests'
 	@echo 'test TEST_FILE=<test_file>   - run all tests in file'
-	@echo '-- DOCUMENTATION tasks are from the top-level Makefile --'
+	@echo '-- UPSTREAM TRACKING --'
+	@echo 'upstream_fetch               - fetch latest upstream tags'
+	@echo 'upstream_diff                - show changes since our baseline (0.0.9)'
+	@echo 'upstream_diff_version V=X    - show changes for specific version'
+	@echo 'upstream_versions            - list available upstream versions'
 
 
