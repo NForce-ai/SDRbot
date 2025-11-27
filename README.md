@@ -313,6 +313,7 @@ SDRbot creates these folders in your working directory (all gitignored):
 |--------|---------|
 | `agents/` | Agent prompt files (`{name}.md`) - created on first run |
 | `skills/` | Custom skill scripts and workflows - created when you add skills |
+| `files/` | Agent-generated exports, reports, CSVs - created on first run |
 | `.sdrbot/` | Service configuration (`services.json`) |
 
 ---

@@ -483,6 +483,26 @@ class Settings:
         skills_dir.mkdir(parents=True, exist_ok=True)
         return skills_dir
 
+    def get_files_dir(self) -> Path:
+        """Get agent-generated files directory path.
+
+        This is where the agent should save exports, reports, and other generated files.
+
+        Returns:
+            Path to ./files/
+        """
+        return Path.cwd() / "files"
+
+    def ensure_files_dir(self) -> Path:
+        """Ensure agent-generated files directory exists.
+
+        Returns:
+            Path to ./files/
+        """
+        files_dir = self.get_files_dir()
+        files_dir.mkdir(parents=True, exist_ok=True)
+        return files_dir
+
 
 # Global settings instance (initialized once)
 settings = Settings.from_environment()

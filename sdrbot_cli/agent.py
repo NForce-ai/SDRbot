@@ -389,6 +389,9 @@ def create_agent_with_config(
     # Shared skills directory (don't create if it doesn't exist)
     skills_dir = settings.get_skills_dir()
 
+    # Ensure files directory exists for agent-generated exports
+    settings.ensure_files_dir()
+
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:
         # ========== LOCAL MODE ==========

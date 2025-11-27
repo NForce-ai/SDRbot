@@ -139,8 +139,9 @@ cython_debug/
 # Project specific
 .DS_Store
 
-# SDRbot local data (agents, services config, generated tools)
+# SDRbot local data (agents, services config, generated tools, agent files)
 agents/
+skills/
+files/
 .sdrbot/
 *_generated.py
-exports/
