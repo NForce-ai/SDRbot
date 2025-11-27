@@ -504,6 +504,26 @@ class Settings:
         files_dir.mkdir(parents=True, exist_ok=True)
         return files_dir
 
+    def get_generated_dir(self) -> Path:
+        """Get generated tools directory path.
+
+        This is where schema-synced tools are generated (e.g., hubspot_tools.py).
+
+        Returns:
+            Path to ./generated/
+        """
+        return Path.cwd() / "generated"
+
+    def ensure_generated_dir(self) -> Path:
+        """Ensure generated tools directory exists.
+
+        Returns:
+            Path to ./generated/
+        """
+        generated_dir = self.get_generated_dir()
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        return generated_dir
+
 
 # Global settings instance (initialized once)
 settings = Settings.from_environment()

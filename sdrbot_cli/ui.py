@@ -569,6 +569,7 @@ def show_interactive_help() -> None:
     console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
     console.print("  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"])
     console.print("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
+    console.print("  ./generated/    Schema-synced CRM tools (created on /services sync)", style=COLORS["dim"])
     console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
     console.print()
 
@@ -709,5 +710,6 @@ def show_help() -> None:
     console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
     console.print("  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"])
     console.print("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
+    console.print("  ./generated/    Schema-synced CRM tools (created on /services sync)", style=COLORS["dim"])
     console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
     console.print()

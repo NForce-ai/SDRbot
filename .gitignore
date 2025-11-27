@@ -143,5 +143,5 @@ cython_debug/
 agents/
 skills/
 files/
+generated/
 .sdrbot/
-*_generated.py

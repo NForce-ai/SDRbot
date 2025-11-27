@@ -3,13 +3,13 @@
 This module:
 1. Fetches the Salesforce schema (object types and their fields)
 2. Generates strongly-typed Python tools for each object type
-3. Writes the generated code to tools_generated.py
+3. Writes the generated code to ./generated/salesforce_tools.py
 """
 
-from pathlib import Path
 from typing import Any
 
 from sdrbot_cli.auth.salesforce import get_client
+from sdrbot_cli.config import settings
 from sdrbot_cli.services.registry import compute_schema_hash
 
 
@@ -55,8 +55,8 @@ def sync_schema() -> dict[str, Any]:
     # 3. Generate the tools code
     generated_code = _generate_tools_code(objects_schema)
 
-    # 4. Write to tools_generated.py
-    output_path = Path(__file__).parent / "tools_generated.py"
+    # 4. Write to ./generated/salesforce_tools.py
+    output_path = settings.ensure_generated_dir() / "salesforce_tools.py"
     output_path.write_text(generated_code, encoding="utf-8")
 
     # 5. Return metadata

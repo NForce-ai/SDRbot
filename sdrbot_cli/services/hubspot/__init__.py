@@ -4,6 +4,8 @@ from typing import List
 
 from langchain_core.tools import BaseTool
 
+from sdrbot_cli.config import settings
+
 
 def get_tools() -> List[BaseTool]:
     """Get all HubSpot tools (static + generated).
@@ -17,18 +19,20 @@ def get_tools() -> List[BaseTool]:
     from sdrbot_cli.services.hubspot.tools import get_static_tools
     tools.extend(get_static_tools())
 
-    # Generated tools (if synced)
-    try:
-        from sdrbot_cli.services.hubspot import tools_generated
-        for name in dir(tools_generated):
-            if not name.startswith("hubspot_"):
-                continue
-            obj = getattr(tools_generated, name)
-            # Check if it's a LangChain tool (BaseTool instance)
-            if isinstance(obj, BaseTool):
-                tools.append(obj)
-    except ImportError:
-        pass  # Not synced yet - only static tools available
+    # Generated tools (if synced) - loaded from ./generated/hubspot_tools.py
+    generated_path = settings.get_generated_dir() / "hubspot_tools.py"
+    if generated_path.exists():
+        try:
+            # Create a namespace for the generated code
+            namespace = {"__name__": "hubspot_generated", "__file__": str(generated_path)}
+            exec(generated_path.read_text(), namespace)
+
+            # Extract tools from namespace
+            for name, obj in namespace.items():
+                if name.startswith("hubspot_") and isinstance(obj, BaseTool):
+                    tools.append(obj)
+        except Exception:
+            pass  # Failed to load generated tools - only static tools available
 
     return tools
 
