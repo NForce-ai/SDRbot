@@ -354,26 +354,33 @@ SDRbot has a comprehensive test suite covering tool loading, CRUD operations, an
 
 ### Running Tests
 
+We use `make` and `uv` to manage tests.
+
 ```bash
-# Install test dependencies
-pip install pytest pytest-timeout
-
-# Run all tests
-pytest tests/ -v
-
-# Run only unit tests (fast, no API calls)
-pytest tests/ -v -m "not integration"
+# Run all tests (unit + integration)
+make test
 
 # Run only integration tests (requires API keys in .env)
-pytest tests/ -v -m integration
+make test_integration
+
+# Run tests in watch mode (re-runs on file change)
+make test_watch
+```
+
+Alternatively, you can run `pytest` directly via `uv`:
+
+```bash
+# Run all tests
+uv run pytest tests/ -v
+
+# Run only unit tests (fast, no API calls)
+uv run pytest tests/ -v -m "not integration"
+
+# Run only integration tests (requires API keys in .env)
+uv run pytest tests/ -v -m integration
 
 # Run tests for a specific service
-pytest tests/services/hubspot/ -v
-pytest tests/services/hunter/ -v
-
-# Run with coverage (requires pytest-cov)
-pip install pytest-cov
-pytest tests/ --cov=sdrbot_cli --cov-report=term-missing
+uv run pytest tests/services/hubspot/ -v
 ```
 
 ### Test Structure

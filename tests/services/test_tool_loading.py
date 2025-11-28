@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from langchain_core.tools import BaseTool
@@ -110,10 +110,7 @@ class TestToolLoadingWithConfig:
             config_path = Path(tmpdir) / ".sdrbot" / "services.json"
 
             # Patch get_config_path to use temp directory
-            with patch(
-                "sdrbot_cli.services.registry.get_config_path",
-                return_value=config_path
-            ):
+            with patch("sdrbot_cli.services.registry.get_config_path", return_value=config_path):
                 clear_config_cache()
                 yield config_path
 
@@ -156,9 +153,7 @@ class TestToolNaming:
 
         for tool in tools:
             # Should be lowercase with underscores
-            assert tool.name.islower() or "_" in tool.name, (
-                f"Tool name not snake_case: {tool.name}"
-            )
+            assert tool.name.islower() or "_" in tool.name, f"Tool name not snake_case: {tool.name}"
             # Should not contain spaces or dashes
             assert " " not in tool.name, f"Tool name contains space: {tool.name}"
             assert "-" not in tool.name, f"Tool name contains dash: {tool.name}"
@@ -170,9 +165,5 @@ class TestToolNaming:
         valid_prefixes = [f"{s}_" for s in SERVICES]
 
         for tool in tools:
-            has_valid_prefix = any(
-                tool.name.startswith(prefix) for prefix in valid_prefixes
-            )
-            assert has_valid_prefix, (
-                f"Tool {tool.name} doesn't have a valid service prefix"
-            )
+            has_valid_prefix = any(tool.name.startswith(prefix) for prefix in valid_prefixes)
+            assert has_valid_prefix, f"Tool {tool.name} doesn't have a valid service prefix"

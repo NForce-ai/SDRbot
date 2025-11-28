@@ -1,23 +1,16 @@
-"""Services module - CRM integrations and tools.
-
-This module provides:
-- Service registry and configuration management
-- Tool loading based on enabled services
-- Schema sync and code generation for CRM integrations
+"""
+Service Registry and Management.
 """
 
-from typing import List
-
 from langchain_core.tools import BaseTool
-from rich.console import Console
+
+from sdrbot_cli.config import console
 
 # All available services
 SERVICES = ["hubspot", "salesforce", "attio", "lusha", "hunter", "tavily"]
 
 # Services that require schema sync (have user-specific schemas)
 SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio"]
-
-console = Console(highlight=False)
 
 
 def sync_service(service_name: str) -> dict:
@@ -37,10 +30,7 @@ def sync_service(service_name: str) -> dict:
     if service_name not in SYNCABLE_SERVICES:
         raise ValueError(f"{service_name} does not require sync")
 
-    sync_module = __import__(
-        f"sdrbot_cli.services.{service_name}.sync",
-        fromlist=["sync_schema"]
-    )
+    sync_module = __import__(f"sdrbot_cli.services.{service_name}.sync", fromlist=["sync_schema"])
     return sync_module.sync_schema()
 
 
@@ -60,8 +50,8 @@ def enable_service(service_name: str, sync: bool = True, verbose: bool = True) -
     Returns:
         True if service was enabled/synced successfully, False otherwise.
     """
-    from sdrbot_cli.services.registry import load_config, save_config, clear_config_cache
     from sdrbot_cli.config import settings
+    from sdrbot_cli.services.registry import clear_config_cache, load_config, save_config
 
     if service_name not in SERVICES:
         if verbose:
@@ -91,7 +81,9 @@ def enable_service(service_name: str, sync: bool = True, verbose: bool = True) -
             result = sync_service(service_name)
             config.mark_synced(service_name, result["schema_hash"], result["objects"])
             if verbose:
-                console.print(f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]")
+                console.print(
+                    f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]"
+                )
         except Exception as e:
             if verbose:
                 console.print(f"[red]Sync failed: {e}[/red]")
@@ -118,7 +110,7 @@ def disable_service(service_name: str, verbose: bool = True) -> bool:
     Returns:
         True if service was disabled, False if it wasn't enabled or doesn't exist.
     """
-    from sdrbot_cli.services.registry import load_config, save_config, clear_config_cache
+    from sdrbot_cli.services.registry import clear_config_cache, load_config, save_config
 
     if service_name not in SERVICES:
         if verbose:
@@ -152,8 +144,8 @@ def resync_service(service_name: str, verbose: bool = True) -> bool:
     Returns:
         True if sync succeeded, False otherwise.
     """
-    from sdrbot_cli.services.registry import load_config, save_config, clear_config_cache
     from sdrbot_cli.config import settings
+    from sdrbot_cli.services.registry import clear_config_cache, load_config, save_config
 
     if service_name not in SERVICES:
         if verbose:
@@ -163,7 +155,9 @@ def resync_service(service_name: str, verbose: bool = True) -> bool:
     if service_name not in SYNCABLE_SERVICES:
         if verbose:
             console.print(f"[yellow]{service_name} does not require sync[/yellow]")
-            console.print("[dim]This service has static tools that don't depend on your schema.[/dim]")
+            console.print(
+                "[dim]This service has static tools that don't depend on your schema.[/dim]"
+            )
         return False
 
     config = load_config()
@@ -198,7 +192,9 @@ def resync_service(service_name: str, verbose: bool = True) -> bool:
         clear_config_cache()
 
         if verbose:
-            console.print(f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]")
+            console.print(
+                f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]"
+            )
 
         return True
 
@@ -216,8 +212,8 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
     Args:
         verbose: If True, print status messages (default True).
     """
-    from sdrbot_cli.services.registry import load_config, save_config, clear_config_cache
     from sdrbot_cli.config import settings
+    from sdrbot_cli.services.registry import clear_config_cache, load_config, save_config
 
     config = load_config()
     synced_any = False
@@ -236,7 +232,9 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
         # Skip if no credentials
         if not settings.has_service_credentials(service_name):
             if verbose:
-                console.print(f"[yellow]⚠ {service_name} enabled but missing credentials - skipping sync[/yellow]")
+                console.print(
+                    f"[yellow]⚠ {service_name} enabled but missing credentials - skipping sync[/yellow]"
+                )
             continue
 
         # Need to sync
@@ -246,7 +244,9 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
             result = sync_service(service_name)
             config.mark_synced(service_name, result["schema_hash"], result["objects"])
             if verbose:
-                console.print(f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]")
+                console.print(
+                    f"[green]✓ Synced {len(result['objects'])} objects: {', '.join(result['objects'])}[/green]"
+                )
             synced_any = True
         except Exception as e:
             if verbose:
@@ -259,7 +259,7 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
             console.print()
 
 
-def get_enabled_tools() -> List[BaseTool]:
+def get_enabled_tools() -> list[BaseTool]:
     """Get all tools from enabled services.
 
     Returns:
@@ -277,8 +277,7 @@ def get_enabled_tools() -> List[BaseTool]:
         # Import service module and get its tools
         try:
             service_module = __import__(
-                f"sdrbot_cli.services.{service_name}",
-                fromlist=["get_tools"]
+                f"sdrbot_cli.services.{service_name}", fromlist=["get_tools"]
             )
             if hasattr(service_module, "get_tools"):
                 service_tools = service_module.get_tools()
@@ -286,6 +285,7 @@ def get_enabled_tools() -> List[BaseTool]:
         except ImportError as e:
             # Log warning but continue
             import sys
+
             print(f"Warning: Could not load {service_name}: {e}", file=sys.stderr)
 
     return tools

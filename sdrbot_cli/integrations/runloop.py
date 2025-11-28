@@ -1,15 +1,13 @@
 """BackendProtocol implementation for Runloop."""
 
+import os
+
+# Runloop is an optional sandbox backend. Don't throw a hard error if not installed.
 try:
     import runloop_api_client
 except ImportError:
-    msg = (
-        "runloop_api_client package is required for RunloopBackend. "
-        "Install with `pip install runloop_api_client`."
-    )
-    raise ImportError(msg)
-
-import os
+    # Log a warning or handle gracefully if runloop is not installed, but do not exit
+    runloop_api_client = None
 
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox

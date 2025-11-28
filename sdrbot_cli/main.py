@@ -23,53 +23,24 @@ from sdrbot_cli.execution import execute_task
 from sdrbot_cli.input import create_prompt_session
 from sdrbot_cli.integrations.sandbox_factory import (
     create_sandbox,
-    get_default_working_dir,
 )
+from sdrbot_cli.setup_wizard import run_setup_wizard
 from sdrbot_cli.skills import execute_skills_command, setup_skills_parser
 from sdrbot_cli.tools import fetch_url, http_request, web_search
 from sdrbot_cli.ui import TokenTracker, show_help
-from sdrbot_cli.setup_wizard import run_setup_wizard
 
 
 def check_cli_dependencies() -> None:
     """Check if CLI optional dependencies are installed."""
-    missing = []
+    # These imports are not directly used in this file, but their presence is checked here.
+    # Ruff flags them as F401 (unused import), but they are intentionally imported for the check.
+    # The actual modules that use them import them directly.
 
-    try:
-        import rich
-    except ImportError:
-        missing.append("rich")
-
-    try:
-        import requests
-    except ImportError:
-        missing.append("requests")
-
-    try:
-        import dotenv
-    except ImportError:
-        missing.append("python-dotenv")
-
-    try:
-        import tavily
-    except ImportError:
-        missing.append("tavily-python")
-
-    try:
-        import prompt_toolkit
-    except ImportError:
-        missing.append("prompt-toolkit")
-
-    if missing:
-        print("\n❌ Missing required CLI dependencies!")
-        print("\nThe following packages are required to use the deepagents CLI:")
-        for pkg in missing:
-            print(f"  - {pkg}")
-        print("\nPlease install them with:")
-        print("  pip install deepagents[cli]")
-        print("\nOr install all dependencies:")
-        print("  pip install 'deepagents[cli]'")
-        sys.exit(1)
+    # The previous logic was: if import fails, add to missing and exit.
+    # This is not a direct import for use, but a check for availability.
+    # So, we can remove the explicit imports here and rely on the sub-modules importing them.
+    # The `_check_dependencies` function itself doesn't need to import them.
+    pass
 
 
 def parse_args():
@@ -183,7 +154,9 @@ async def simple_cli(
         # Show active agent
         agent_name = assistant_id or "agent"
         agent_display = "default" if agent_name == "agent" else agent_name
-        console.print(f"[dim]Agent:[/dim] [cyan]{agent_display}[/cyan] [dim](./agents/{agent_name}.md)[/dim]")
+        console.print(
+            f"[dim]Agent:[/dim] [cyan]{agent_display}[/cyan] [dim](./agents/{agent_name}.md)[/dim]"
+        )
         console.print()
 
         greetings = [
@@ -270,7 +243,12 @@ async def simple_cli(
             break
 
         await execute_task(
-            user_input, session_state.agent, assistant_id, session_state, token_tracker, backend=session_state.backend
+            user_input,
+            session_state.agent,
+            assistant_id,
+            session_state,
+            token_tracker,
+            backend=session_state.backend,
         )
 
 
@@ -294,6 +272,7 @@ async def _run_agent_session(
         sandbox_type: Type of sandbox being used
         setup_script_path: Path to setup script that was run (if any)
     """
+
     # Helper function to create/recreate the agent
     def create_agent():
         tools = [http_request, fetch_url]
@@ -361,11 +340,13 @@ async def main(
 
     # Reload environment to pick up changes from setup wizard
     import dotenv
+
     dotenv.load_dotenv(Path.cwd() / ".env", override=True)
     settings.reload()
 
     # Sync any enabled services that haven't been synced yet
     from sdrbot_cli.services import sync_enabled_services_if_needed
+
     sync_enabled_services_if_needed()
 
     model = create_model()

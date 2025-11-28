@@ -21,6 +21,15 @@ dependencies = [
     "pyinstaller>=6.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-socket>=0.7.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.5.0",
+]
+
 [project.scripts]
 sdrbot = "sdrbot_cli.main:cli_main"
 
@@ -40,17 +49,17 @@ docstring-code-format = true  # Formats code blocks in docstrings
 
 [tool.ruff.lint]
 select = [
-    "ALL"  # Enable all rules by default
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
 ]
 ignore = [
+    "E501",    # Line too long
     "COM812",  # Messes with the formatter
     "ISC001",  # Messes with the formatter
-    "PERF203", # Rarely useful
-    "SLF001",  # Private member access
-    "PLC0415", # Imports should be at the top. Not always desirable
-    "PLR0913", # Too many arguments in function definition
-    "PLC0414", # Inconsistent with how type checkers expect to be notified of intentional re-exports
-    "C901",    # Too complex
+    "B008",    # Do not perform function call in argument defaults
 ]
 unfixable = ["B028"]  # Rules that shouldn't be auto-fixed
 
@@ -62,7 +71,6 @@ allow-star-arg-any = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"  # Google-style docstrings
-ignore-var-parameters = true
 
 [tool.ruff.lint.per-file-ignores]
 "sdrbot_cli/main.py" = [

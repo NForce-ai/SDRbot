@@ -4,8 +4,6 @@ These tools work regardless of the user's HubSpot schema and don't require sync.
 Schema-dependent CRUD tools are generated in tools.generated.py after sync.
 """
 
-from typing import List
-
 from langchain_core.tools import BaseTool, tool
 
 from sdrbot_cli.auth.hubspot import get_client
@@ -175,7 +173,7 @@ def hubspot_delete_association(
         return f"Error deleting association: {str(e)}"
 
 
-def get_static_tools() -> List[BaseTool]:
+def get_static_tools() -> list[BaseTool]:
     """Get all static HubSpot tools.
 
     Returns:

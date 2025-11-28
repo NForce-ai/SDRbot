@@ -58,7 +58,7 @@ def http_request(
 
         try:
             content = response.json()
-        except:
+        except Exception:
             content = response.text
 
         return {

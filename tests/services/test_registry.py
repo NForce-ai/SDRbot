@@ -1,17 +1,13 @@
 """Tests for service registry and configuration."""
 
-import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from sdrbot_cli.services.registry import (
     ServiceConfig,
     ServiceState,
-    compute_schema_hash,
     clear_config_cache,
+    compute_schema_hash,
 )
 
 
@@ -35,7 +31,7 @@ class TestServiceState:
             synced_at="2024-01-01T00:00:00Z",
             schema_hash="abc123",
             objects=["contacts", "deals"],
-            settings={"key": "value"}
+            settings={"key": "value"},
         )
 
         data = state.to_dict()

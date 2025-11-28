@@ -85,17 +85,19 @@ class TestAttioToolsUnit:
             }
         }
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_create_note
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_create_note.invoke({
-            "object_slug": "people",
-            "record_id": "rec-123",
-            "title": "Test Note",
-            "body": "Test content"
-        })
+        result = attio_create_note.invoke(
+            {
+                "object_slug": "people",
+                "record_id": "rec-123",
+                "title": "Test Note",
+                "body": "Test content",
+            }
+        )
 
         assert "Successfully created note" in result
         assert "note-123" in result
@@ -109,17 +111,14 @@ class TestAttioToolsUnit:
         """attio_create_note should handle API errors."""
         patch_attio_client.request.side_effect = Exception("API Error: Invalid record")
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_create_note
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_create_note.invoke({
-            "object_slug": "people",
-            "record_id": "invalid-id",
-            "title": "Test",
-            "body": "Content"
-        })
+        result = attio_create_note.invoke(
+            {"object_slug": "people", "record_id": "invalid-id", "title": "Test", "body": "Content"}
+        )
 
         assert "Error" in result
         assert "Invalid record" in result
@@ -137,19 +136,16 @@ class TestAttioToolsUnit:
                     "id": {"note_id": "note-2"},
                     "title": "Follow-up",
                     "created_at": "2024-01-16T14:00:00Z",
-                }
+                },
             ]
         }
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_list_notes
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_list_notes.invoke({
-            "object_slug": "people",
-            "record_id": "rec-123"
-        })
+        result = attio_list_notes.invoke({"object_slug": "people", "record_id": "rec-123"})
 
         assert "Notes:" in result
         assert "Meeting Notes" in result
@@ -160,15 +156,12 @@ class TestAttioToolsUnit:
         """attio_list_notes should handle no notes."""
         patch_attio_client.request.return_value = {"data": []}
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_list_notes
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_list_notes.invoke({
-            "object_slug": "companies",
-            "record_id": "rec-456"
-        })
+        result = attio_list_notes.invoke({"object_slug": "companies", "record_id": "rec-456"})
 
         assert "No notes found" in result
 
@@ -176,15 +169,12 @@ class TestAttioToolsUnit:
         """attio_list_notes should handle API errors."""
         patch_attio_client.request.side_effect = Exception("Connection timeout")
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_list_notes
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_list_notes.invoke({
-            "object_slug": "people",
-            "record_id": "rec-123"
-        })
+        result = attio_list_notes.invoke({"object_slug": "people", "record_id": "rec-123"})
 
         assert "Error" in result
         assert "Connection timeout" in result
@@ -198,19 +188,16 @@ class TestAttioToolsUnit:
                     "name": [{"full_name": "John Doe"}],
                     "email_addresses": [{"email_address": "john@example.com"}],
                     "company": [{"text": "Acme Inc"}],
-                }
+                },
             }
         }
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_get_record
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_get_record.invoke({
-            "object_slug": "people",
-            "record_id": "rec-123"
-        })
+        result = attio_get_record.invoke({"object_slug": "people", "record_id": "rec-123"})
 
         assert "Record ID: rec-123" in result
         assert "John Doe" in result
@@ -221,15 +208,12 @@ class TestAttioToolsUnit:
         """attio_get_record should handle missing record."""
         patch_attio_client.request.return_value = {"data": {}}
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_get_record
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_get_record.invoke({
-            "object_slug": "people",
-            "record_id": "nonexistent-id"
-        })
+        result = attio_get_record.invoke({"object_slug": "people", "record_id": "nonexistent-id"})
 
         assert "Record not found" in result
 
@@ -237,15 +221,12 @@ class TestAttioToolsUnit:
         """attio_get_record should handle API errors."""
         patch_attio_client.request.side_effect = Exception("404 Not Found")
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_get_record
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_get_record.invoke({
-            "object_slug": "invalid",
-            "record_id": "rec-123"
-        })
+        result = attio_get_record.invoke({"object_slug": "invalid", "record_id": "rec-123"})
 
         assert "Error" in result
         assert "404" in result
@@ -258,19 +239,16 @@ class TestAttioToolsUnit:
                 "values": {
                     "name": [{"value": "Acme Corp"}],
                     "domains": [{"domain": "acme.com"}],
-                }
+                },
             }
         }
 
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_get_record
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
-        result = attio_get_record.invoke({
-            "object_slug": "companies",
-            "record_id": "rec-456"
-        })
+        result = attio_get_record.invoke({"object_slug": "companies", "record_id": "rec-456"})
 
         assert "Acme Corp" in result
         assert "acme.com" in result
@@ -292,17 +270,15 @@ class TestAttioToolsIntegration:
 
     def test_list_notes_real(self, check_attio_credentials):
         """Test listing notes against real API."""
+        import sdrbot_cli.services.attio.tools as tools_module
         from sdrbot_cli.services.attio.tools import attio_list_notes
 
-        import sdrbot_cli.services.attio.tools as tools_module
         tools_module._attio_client = None
 
         # Use a placeholder record - should return "No notes" or actual notes
-        result = attio_list_notes.invoke({
-            "object_slug": "people",
-            "record_id": "test-record-id",
-            "limit": 5
-        })
+        result = attio_list_notes.invoke(
+            {"object_slug": "people", "record_id": "test-record-id", "limit": 5}
+        )
 
         # Should either return notes or handle gracefully
         assert "notes" in result.lower() or "error" in result.lower()

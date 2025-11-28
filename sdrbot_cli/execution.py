@@ -166,7 +166,7 @@ def prompt_for_tool_approval(
     except (ImportError, AttributeError, Exception) as e:
         # Check if it's a termios error (only if termios exists)
         is_termios_error = termios is not None and isinstance(e, termios.error)
-        if not (isinstance(e, (ImportError, AttributeError)) or is_termios_error):
+        if not (isinstance(e, ImportError | AttributeError) or is_termios_error):
             raise e
 
         # Fallback for non-Unix systems

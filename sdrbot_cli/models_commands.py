@@ -158,7 +158,9 @@ def _prompt_provider_choice() -> str:
     console.print()
 
     while True:
-        choice = Prompt.ask(f"  [{COLORS['primary']}]Select provider[/{COLORS['primary']}]", default="1")
+        choice = Prompt.ask(
+            f"  [{COLORS['primary']}]Select provider[/{COLORS['primary']}]", default="1"
+        )
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(providers):
@@ -187,7 +189,9 @@ def _prompt_model_choice(provider: str) -> str:
     console.print()
 
     while True:
-        choice = Prompt.ask(f"  [{COLORS['primary']}]Select model[/{COLORS['primary']}]", default="1")
+        choice = Prompt.ask(
+            f"  [{COLORS['primary']}]Select model[/{COLORS['primary']}]", default="1"
+        )
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(choices):

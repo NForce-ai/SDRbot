@@ -1,7 +1,6 @@
 """Agent management and creation for the CLI."""
 
 import os
-import shutil
 from pathlib import Path
 
 from deepagents import create_deep_agent
@@ -22,9 +21,9 @@ from langgraph.runtime import Runtime
 from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
+from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
-from sdrbot_cli.services import get_enabled_tools
 
 
 def list_agents() -> None:
@@ -183,7 +182,9 @@ def _get_enabled_services_prompt() -> str:
     from sdrbot_cli.services.registry import load_config
 
     config = load_config()
-    enabled = [s for s in ["hubspot", "salesforce", "attio", "lusha", "hunter"] if config.is_enabled(s)]
+    enabled = [
+        s for s in ["hubspot", "salesforce", "attio", "lusha", "hunter"] if config.is_enabled(s)
+    ]
 
     if not enabled:
         return """### Services
@@ -198,7 +199,9 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
     crm_services = [s for s in enabled if s in ["hubspot", "salesforce", "attio"]]
 
     if len(crm_services) == 1:
-        lines.append(f"**CRM:** {crm_services[0].title()} (use this for all CRM operations - don't ask which CRM)\n")
+        lines.append(
+            f"**CRM:** {crm_services[0].title()} (use this for all CRM operations - don't ask which CRM)\n"
+        )
     elif len(crm_services) > 1:
         lines.append(f"**CRMs:** {', '.join(s.title() for s in crm_services)}\n")
 
@@ -207,19 +210,26 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
     if enrichment:
         lines.append(f"**Enrichment:** {', '.join(s.title() for s in enrichment)}\n")
 
-    lines.append("\nUse the available tools directly. Each tool's docstring shows exact field names and types.")
+    lines.append(
+        "\nUse the available tools directly. Each tool's docstring shows exact field names and types."
+    )
 
     # Add service-specific tips
     if "salesforce" in enabled:
         lines.append("\n**Salesforce tip:** Use `salesforce_soql_query` for complex queries.")
     if "hubspot" in enabled:
-        lines.append("\n**HubSpot tip:** Use `hubspot_create_association` to link records between objects.")
+        lines.append(
+            "\n**HubSpot tip:** Use `hubspot_create_association` to link records between objects."
+        )
     if "lusha" in enabled:
         lines.append("\n**Lusha tip:** Find -> Enrich -> Create in CRM workflow.")
     if "hunter" in enabled:
-        lines.append("\n**Hunter tip:** Verify emails with `hunter_email_verifier` before adding to CRM.")
+        lines.append(
+            "\n**Hunter tip:** Verify emails with `hunter_email_verifier` before adding to CRM."
+        )
 
     return "\n".join(lines)
+
 
 def _format_write_file_description(
     tool_call: ToolCall, _state: AgentState, _runtime: Runtime
@@ -384,7 +394,7 @@ def create_agent_with_config(
     """
     # Setup agent markdown file (creates ./agents/ and {agent}.md if needed)
     default_content = get_default_coding_instructions()
-    agent_md = settings.ensure_agent_md(assistant_id, default_content)
+    settings.ensure_agent_md(assistant_id, default_content)
 
     # Shared skills directory (don't create if it doesn't exist)
     skills_dir = settings.get_skills_dir()
@@ -449,23 +459,40 @@ def create_agent_with_config(
             if "_create_" in tool_name or "_update_" in tool_name:
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                    "description": lambda t,
+                    s,
+                    r,
+                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
             elif "_delete_" in tool_name:
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t, s, r, name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
+                    "description": lambda t,
+                    s,
+                    r,
+                    name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
                 }
-            elif "_search_" in tool_name or "_query_" in tool_name or "_soql_" in tool_name or "_sosl_" in tool_name:
+            elif (
+                "_search_" in tool_name
+                or "_query_" in tool_name
+                or "_soql_" in tool_name
+                or "_sosl_" in tool_name
+            ):
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                    "description": lambda t,
+                    s,
+                    r,
+                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
             elif "lusha_" in tool_name or "hunter_" in tool_name:
                 # Lusha and Hunter tools use credits - always require approval
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t, s, r, name=tool_name: f"{name}: {str(t['args'])[:150]}...",
+                    "description": lambda t,
+                    s,
+                    r,
+                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
 
     agent = create_deep_agent(

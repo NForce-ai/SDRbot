@@ -58,7 +58,9 @@ class TestHunterToolsUnit:
         original_client = tools_module._hunter_client
         tools_module._hunter_client = None
 
-        with patch("sdrbot_cli.services.hunter.tools.HunterClient", return_value=mock_hunter_client):
+        with patch(
+            "sdrbot_cli.services.hunter.tools.HunterClient", return_value=mock_hunter_client
+        ):
             yield mock_hunter_client
 
         tools_module._hunter_client = original_client
@@ -73,22 +75,22 @@ class TestHunterToolsUnit:
                         "type": "personal",
                         "first_name": "John",
                         "last_name": "Doe",
-                        "position": "CEO"
+                        "position": "CEO",
                     },
                     {
                         "value": "jane@example.com",
                         "type": "generic",
                         "first_name": "Jane",
                         "last_name": "Smith",
-                        "position": "CTO"
-                    }
+                        "position": "CTO",
+                    },
                 ]
             }
         }
 
+        import sdrbot_cli.services.hunter.tools as tools_module
         from sdrbot_cli.services.hunter.tools import hunter_domain_search
 
-        import sdrbot_cli.services.hunter.tools as tools_module
         tools_module._hunter_client = None
 
         result = hunter_domain_search.invoke({"domain": "example.com", "limit": 10})
@@ -100,13 +102,11 @@ class TestHunterToolsUnit:
 
     def test_domain_search_no_results(self, patch_hunter_client):
         """domain_search should handle empty results."""
-        patch_hunter_client.request.return_value = {
-            "data": {"emails": []}
-        }
-
-        from sdrbot_cli.services.hunter.tools import hunter_domain_search
+        patch_hunter_client.request.return_value = {"data": {"emails": []}}
 
         import sdrbot_cli.services.hunter.tools as tools_module
+        from sdrbot_cli.services.hunter.tools import hunter_domain_search
+
         tools_module._hunter_client = None
 
         result = hunter_domain_search.invoke({"domain": "unknown.com", "limit": 10})
@@ -117,9 +117,9 @@ class TestHunterToolsUnit:
         """domain_search should handle API errors."""
         patch_hunter_client.request.side_effect = Exception("API Error")
 
+        import sdrbot_cli.services.hunter.tools as tools_module
         from sdrbot_cli.services.hunter.tools import hunter_domain_search
 
-        import sdrbot_cli.services.hunter.tools as tools_module
         tools_module._hunter_client = None
 
         result = hunter_domain_search.invoke({"domain": "error.com", "limit": 10})
@@ -130,57 +130,43 @@ class TestHunterToolsUnit:
     def test_email_finder_success(self, patch_hunter_client):
         """email_finder should return found email."""
         patch_hunter_client.request.return_value = {
-            "data": {
-                "email": "john.doe@example.com",
-                "score": 95
-            }
+            "data": {"email": "john.doe@example.com", "score": 95}
         }
 
+        import sdrbot_cli.services.hunter.tools as tools_module
         from sdrbot_cli.services.hunter.tools import hunter_email_finder
 
-        import sdrbot_cli.services.hunter.tools as tools_module
         tools_module._hunter_client = None
 
-        result = hunter_email_finder.invoke({
-            "domain": "example.com",
-            "first_name": "John",
-            "last_name": "Doe"
-        })
+        result = hunter_email_finder.invoke(
+            {"domain": "example.com", "first_name": "John", "last_name": "Doe"}
+        )
 
         assert "john.doe@example.com" in result
         assert "95%" in result
 
     def test_email_finder_not_found(self, patch_hunter_client):
         """email_finder should handle not found."""
-        patch_hunter_client.request.return_value = {
-            "data": {"email": None}
-        }
-
-        from sdrbot_cli.services.hunter.tools import hunter_email_finder
+        patch_hunter_client.request.return_value = {"data": {"email": None}}
 
         import sdrbot_cli.services.hunter.tools as tools_module
+        from sdrbot_cli.services.hunter.tools import hunter_email_finder
+
         tools_module._hunter_client = None
 
-        result = hunter_email_finder.invoke({
-            "domain": "example.com",
-            "first_name": "Unknown",
-            "last_name": "Person"
-        })
+        result = hunter_email_finder.invoke(
+            {"domain": "example.com", "first_name": "Unknown", "last_name": "Person"}
+        )
 
         assert "not found" in result.lower()
 
     def test_email_verifier_success(self, patch_hunter_client):
         """email_verifier should return verification status."""
-        patch_hunter_client.request.return_value = {
-            "data": {
-                "status": "valid",
-                "score": 98
-            }
-        }
-
-        from sdrbot_cli.services.hunter.tools import hunter_email_verifier
+        patch_hunter_client.request.return_value = {"data": {"status": "valid", "score": 98}}
 
         import sdrbot_cli.services.hunter.tools as tools_module
+        from sdrbot_cli.services.hunter.tools import hunter_email_verifier
+
         tools_module._hunter_client = None
 
         result = hunter_email_verifier.invoke({"email": "test@example.com"})
@@ -205,9 +191,9 @@ class TestHunterToolsIntegration:
 
     def test_domain_search_real(self, check_hunter_key):
         """Test domain search against real API."""
+        import sdrbot_cli.services.hunter.tools as tools_module
         from sdrbot_cli.services.hunter.tools import hunter_domain_search
 
-        import sdrbot_cli.services.hunter.tools as tools_module
         tools_module._hunter_client = None
 
         result = hunter_domain_search.invoke({"domain": "stripe.com", "limit": 3})
@@ -217,9 +203,9 @@ class TestHunterToolsIntegration:
 
     def test_email_verifier_real(self, check_hunter_key):
         """Test email verification against real API."""
+        import sdrbot_cli.services.hunter.tools as tools_module
         from sdrbot_cli.services.hunter.tools import hunter_email_verifier
 
-        import sdrbot_cli.services.hunter.tools as tools_module
         tools_module._hunter_client = None
 
         result = hunter_email_verifier.invoke({"email": "test@gmail.com"})

@@ -18,8 +18,8 @@ from sdrbot_cli.config import settings
 from sdrbot_cli.services import (
     SERVICES,
     SYNCABLE_SERVICES,
-    enable_service,
     disable_service,
+    enable_service,
     resync_service,
 )
 from sdrbot_cli.services.registry import load_config
@@ -257,7 +257,9 @@ def _show_status(service_name: str) -> None:
 
     # Basic status
     console.print(f"  Enabled:     {'[green]Yes[/green]' if state.enabled else '[dim]No[/dim]'}")
-    console.print(f"  Credentials: {'[green]Configured[/green]' if has_creds else '[red]Missing[/red]'}")
+    console.print(
+        f"  Credentials: {'[green]Configured[/green]' if has_creds else '[red]Missing[/red]'}"
+    )
     console.print(f"  Syncable:    {'Yes' if is_syncable else 'No (static tools only)'}")
 
     # Sync status

@@ -1,19 +1,21 @@
 """Command handlers for slash commands and bash execution."""
 
 import subprocess
-import dotenv
 from pathlib import Path
 
+import dotenv
 from langgraph.checkpoint.memory import InMemorySaver
 
-from .config import COLORS, DEEP_AGENTS_ASCII, console, settings, SessionState
-from .ui import TokenTracker, show_interactive_help
-from .setup_wizard import run_setup_wizard
-from .services.commands import handle_services_command
+from .config import COLORS, DEEP_AGENTS_ASCII, SessionState, console, settings
 from .models_commands import handle_models_command
+from .services.commands import handle_services_command
+from .setup_wizard import run_setup_wizard
+from .ui import TokenTracker, show_interactive_help
 
 
-def handle_command(command: str, session_state: SessionState, token_tracker: TokenTracker) -> str | bool:
+def handle_command(
+    command: str, session_state: SessionState, token_tracker: TokenTracker
+) -> str | bool:
     """
     Handle slash commands.
     Returns:

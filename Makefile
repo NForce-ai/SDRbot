@@ -8,7 +8,7 @@ all: help
 ######################
 
 # Define a variable for the test file path.
-TEST_FILE ?= tests/unit_tests
+TEST_FILE ?= tests/
 INTEGRATION_FILES ?= tests/integration_tests
 
 test:
@@ -50,7 +50,7 @@ format format_diff:
 
 format_unsafe:
 	[ "$(PYTHON_FILES)" = "" ] || uv run ruff format --unsafe-fixes $(PYTHON_FILES)
-	
+
 
 ######################
 # UPSTREAM TRACKING
@@ -90,5 +90,3 @@ help:
 	@echo 'upstream_diff                - show changes since our baseline (0.0.9)'
 	@echo 'upstream_diff_version V=X    - show changes for specific version'
 	@echo 'upstream_versions            - list available upstream versions'
-
-

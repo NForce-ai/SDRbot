@@ -78,19 +78,29 @@ class TestSalesforceToolsUnit:
         patch_sf_client.query.return_value = {
             "totalSize": 2,
             "records": [
-                {"Id": "001ABC", "Name": "John Doe", "Email": "john@example.com", "attributes": {"type": "Contact"}},
-                {"Id": "001DEF", "Name": "Jane Doe", "Email": "jane@example.com", "attributes": {"type": "Contact"}},
-            ]
+                {
+                    "Id": "001ABC",
+                    "Name": "John Doe",
+                    "Email": "john@example.com",
+                    "attributes": {"type": "Contact"},
+                },
+                {
+                    "Id": "001DEF",
+                    "Name": "Jane Doe",
+                    "Email": "jane@example.com",
+                    "attributes": {"type": "Contact"},
+                },
+            ],
         }
 
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_soql_query.invoke({
-            "query": "SELECT Id, Name, Email FROM Contact LIMIT 2"
-        })
+        result = salesforce_soql_query.invoke(
+            {"query": "SELECT Id, Name, Email FROM Contact LIMIT 2"}
+        )
 
         assert "2 records" in result
         assert "John Doe" in result
@@ -100,32 +110,27 @@ class TestSalesforceToolsUnit:
 
     def test_soql_query_no_results(self, patch_sf_client):
         """soql_query should handle empty results."""
-        patch_sf_client.query.return_value = {
-            "totalSize": 0,
-            "records": []
-        }
-
-        from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
+        patch_sf_client.query.return_value = {"totalSize": 0, "records": []}
 
         import sdrbot_cli.services.salesforce.tools as tools_module
+        from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
+
         tools_module._sf_client = None
 
-        result = salesforce_soql_query.invoke({
-            "query": "SELECT Id FROM Contact WHERE Name = 'NonExistent'"
-        })
+        result = salesforce_soql_query.invoke(
+            {"query": "SELECT Id FROM Contact WHERE Name = 'NonExistent'"}
+        )
 
         assert "0 records" in result
 
     def test_soql_query_blocks_non_select(self, patch_sf_client):
         """soql_query should block non-SELECT queries."""
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_soql_query.invoke({
-            "query": "DELETE FROM Contact WHERE Id = '001ABC'"
-        })
+        result = salesforce_soql_query.invoke({"query": "DELETE FROM Contact WHERE Id = '001ABC'"})
 
         assert "Error" in result
         assert "SELECT" in result
@@ -136,14 +141,12 @@ class TestSalesforceToolsUnit:
         """soql_query should handle API errors."""
         patch_sf_client.query.side_effect = Exception("MALFORMED_QUERY: Invalid field")
 
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_soql_query.invoke({
-            "query": "SELECT InvalidField FROM Contact"
-        })
+        result = salesforce_soql_query.invoke({"query": "SELECT InvalidField FROM Contact"})
 
         assert "Error" in result
         assert "MALFORMED_QUERY" in result
@@ -157,14 +160,14 @@ class TestSalesforceToolsUnit:
             ]
         }
 
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_sosl_search
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_sosl_search.invoke({
-            "search": "FIND {John Smith} IN ALL FIELDS RETURNING Contact, Lead"
-        })
+        result = salesforce_sosl_search.invoke(
+            {"search": "FIND {John Smith} IN ALL FIELDS RETURNING Contact, Lead"}
+        )
 
         assert "2 records" in result
         assert "Contact" in result
@@ -173,18 +176,14 @@ class TestSalesforceToolsUnit:
 
     def test_sosl_search_no_results(self, patch_sf_client):
         """sosl_search should handle no matches."""
-        patch_sf_client.search.return_value = {
-            "searchRecords": []
-        }
-
-        from sdrbot_cli.services.salesforce.tools import salesforce_sosl_search
+        patch_sf_client.search.return_value = {"searchRecords": []}
 
         import sdrbot_cli.services.salesforce.tools as tools_module
+        from sdrbot_cli.services.salesforce.tools import salesforce_sosl_search
+
         tools_module._sf_client = None
 
-        result = salesforce_sosl_search.invoke({
-            "search": "FIND {xyz123nonexistent} IN ALL FIELDS"
-        })
+        result = salesforce_sosl_search.invoke({"search": "FIND {xyz123nonexistent} IN ALL FIELDS"})
 
         assert "No records found" in result
 
@@ -192,14 +191,12 @@ class TestSalesforceToolsUnit:
         """sosl_search should handle API errors."""
         patch_sf_client.search.side_effect = Exception("INVALID_SEARCH: Bad syntax")
 
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_sosl_search
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_sosl_search.invoke({
-            "search": "FIND {bad syntax"
-        })
+        result = salesforce_sosl_search.invoke({"search": "FIND {bad syntax"})
 
         assert "Error" in result
         assert "INVALID_SEARCH" in result
@@ -222,14 +219,12 @@ class TestSalesforceToolsIntegration:
 
     def test_soql_query_real(self, check_sf_credentials):
         """Test SOQL query against real API."""
+        import sdrbot_cli.services.salesforce.tools as tools_module
         from sdrbot_cli.services.salesforce.tools import salesforce_soql_query
 
-        import sdrbot_cli.services.salesforce.tools as tools_module
         tools_module._sf_client = None
 
-        result = salesforce_soql_query.invoke({
-            "query": "SELECT Id, Name FROM Account LIMIT 1"
-        })
+        result = salesforce_soql_query.invoke({"query": "SELECT Id, Name FROM Account LIMIT 1"})
 
         # Should either return results or handle gracefully
         assert "records" in result.lower() or "error" in result.lower()

@@ -4,9 +4,6 @@ These tools work regardless of the user's Attio schema and don't require sync.
 Schema-dependent CRUD tools are generated in tools.generated.py after sync.
 """
 
-import json
-from typing import List
-
 from langchain_core.tools import BaseTool, tool
 
 from sdrbot_cli.auth.attio import AttioClient
@@ -129,7 +126,7 @@ def attio_get_record(object_slug: str, record_id: str) -> str:
         return f"Error getting record: {str(e)}"
 
 
-def get_static_tools() -> List[BaseTool]:
+def get_static_tools() -> list[BaseTool]:
     """Get all static Attio tools.
 
     Returns:

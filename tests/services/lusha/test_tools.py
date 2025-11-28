@@ -1,6 +1,5 @@
 """Tests for Lusha tools."""
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -71,18 +70,16 @@ class TestLushaToolsUnit:
                 "emailAddresses": [{"email": "john@example.com"}],
                 "phoneNumbers": [{"internationalNumber": "+1234567890"}],
                 "jobTitle": "CEO",
-                "company": {"name": "Example Inc"}
+                "company": {"name": "Example Inc"},
             }
         }
 
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_enrich_person
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
-        result = lusha_enrich_person.invoke({
-            "linkedin_url": "https://linkedin.com/in/johndoe"
-        })
+        result = lusha_enrich_person.invoke({"linkedin_url": "https://linkedin.com/in/johndoe"})
 
         assert "John Doe" in result
         assert "john@example.com" in result
@@ -91,9 +88,9 @@ class TestLushaToolsUnit:
 
     def test_enrich_person_requires_input(self, patch_lusha_client):
         """enrich_person should require linkedin_url or email."""
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_enrich_person
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
         result = lusha_enrich_person.invoke({})
@@ -104,14 +101,12 @@ class TestLushaToolsUnit:
         """enrich_person should handle not found."""
         patch_lusha_client.request.return_value = {"data": None}
 
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_enrich_person
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
-        result = lusha_enrich_person.invoke({
-            "email": "unknown@example.com"
-        })
+        result = lusha_enrich_person.invoke({"email": "unknown@example.com"})
 
         assert "No data found" in result
 
@@ -124,13 +119,13 @@ class TestLushaToolsUnit:
                 "employeesSize": "100-500",
                 "revenueRange": "$10M-$50M",
                 "social": {"linkedin": "https://linkedin.com/company/example"},
-                "description": "A great company doing great things."
+                "description": "A great company doing great things.",
             }
         }
 
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_enrich_company
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
         result = lusha_enrich_company.invoke({"domain": "example.com"})
@@ -148,26 +143,24 @@ class TestLushaToolsUnit:
                         "fullName": "John Doe",
                         "jobTitle": "CTO",
                         "company": {"name": "Tech Corp"},
-                        "social": {"linkedin": "https://linkedin.com/in/johndoe"}
+                        "social": {"linkedin": "https://linkedin.com/in/johndoe"},
                     },
                     {
                         "fullName": "Jane Smith",
                         "jobTitle": "CTO",
                         "company": {"name": "Other Corp"},
-                        "social": {"linkedin": "https://linkedin.com/in/janesmith"}
-                    }
+                        "social": {"linkedin": "https://linkedin.com/in/janesmith"},
+                    },
                 ]
             }
         }
 
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_prospect
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
-        result = lusha_prospect.invoke({
-            "filters_json": '{"jobTitle": ["CTO"]}'
-        })
+        result = lusha_prospect.invoke({"filters_json": '{"jobTitle": ["CTO"]}'})
 
         assert "John Doe" in result
         assert "Jane Smith" in result
@@ -175,30 +168,24 @@ class TestLushaToolsUnit:
 
     def test_prospect_no_results(self, patch_lusha_client):
         """prospect should handle no matches."""
-        patch_lusha_client.request.return_value = {
-            "data": {"contacts": []}
-        }
-
-        from sdrbot_cli.services.lusha.tools import lusha_prospect
+        patch_lusha_client.request.return_value = {"data": {"contacts": []}}
 
         import sdrbot_cli.services.lusha.tools as tools_module
+        from sdrbot_cli.services.lusha.tools import lusha_prospect
+
         tools_module._lusha_client = None
 
-        result = lusha_prospect.invoke({
-            "filters_json": '{"jobTitle": ["NonexistentRole"]}'
-        })
+        result = lusha_prospect.invoke({"filters_json": '{"jobTitle": ["NonexistentRole"]}'})
 
         assert "No prospects found" in result
 
     def test_prospect_invalid_json(self, patch_lusha_client):
         """prospect should handle invalid JSON."""
+        import sdrbot_cli.services.lusha.tools as tools_module
         from sdrbot_cli.services.lusha.tools import lusha_prospect
 
-        import sdrbot_cli.services.lusha.tools as tools_module
         tools_module._lusha_client = None
 
-        result = lusha_prospect.invoke({
-            "filters_json": "not valid json"
-        })
+        result = lusha_prospect.invoke({"filters_json": "not valid json"})
 
         assert "Error" in result

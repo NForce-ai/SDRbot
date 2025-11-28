@@ -4,7 +4,6 @@ Lusha does not have user-specific schemas - all tools are static.
 """
 
 import json
-from typing import List
 
 from langchain_core.tools import BaseTool, tool
 
@@ -134,12 +133,14 @@ def lusha_prospect(filters_json: str) -> str:
 
         results = []
         for c in contacts:
-            results.append({
-                "name": c.get("fullName"),
-                "title": c.get("jobTitle"),
-                "company": c.get("company", {}).get("name"),
-                "linkedin": c.get("social", {}).get("linkedin")
-            })
+            results.append(
+                {
+                    "name": c.get("fullName"),
+                    "title": c.get("jobTitle"),
+                    "company": c.get("company", {}).get("name"),
+                    "linkedin": c.get("social", {}).get("linkedin"),
+                }
+            )
 
         return f"Found {len(results)} prospects:\n{json.dumps(results, indent=2)}"
 
@@ -147,7 +148,7 @@ def lusha_prospect(filters_json: str) -> str:
         return f"Error searching prospects: {str(e)}"
 
 
-def get_static_tools() -> List[BaseTool]:
+def get_static_tools() -> list[BaseTool]:
     """Get all Lusha tools.
 
     Returns:

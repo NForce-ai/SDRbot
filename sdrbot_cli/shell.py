@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 from typing import Any
 
@@ -45,9 +46,13 @@ class ShellMiddleware(AgentMiddleware[AgentState, Any]):
         self._env = env if env is not None else os.environ.copy()
         self._workspace_root = workspace_root
 
+        # Detect operating system
+        current_os = platform.system()
+        os_info = f"You are running on {current_os}."
+
         # Build description with working directory information
         description = (
-            f"Execute a shell command directly on the host. Commands will run in "
+            f"Execute a shell command directly on the host. {os_info} Commands will run in "
             f"the working directory: {workspace_root}. Each command runs in a fresh shell "
             f"environment with the current process's environment variables. Commands may "
             f"be truncated if they exceed the configured timeout or output limits."

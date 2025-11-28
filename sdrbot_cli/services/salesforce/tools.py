@@ -5,7 +5,6 @@ Schema-dependent CRUD tools are generated in tools.generated.py after sync.
 """
 
 import json
-from typing import List
 
 from langchain_core.tools import BaseTool, tool
 
@@ -53,7 +52,9 @@ def salesforce_soql_query(query: str) -> str:
                 del rec["attributes"]
             clean_records.append(rec)
 
-        return f"Query returned {results['totalSize']} records:\n{json.dumps(clean_records, indent=2)}"
+        return (
+            f"Query returned {results['totalSize']} records:\n{json.dumps(clean_records, indent=2)}"
+        )
     except Exception as e:
         return f"SOQL Error: {str(e)}"
 
@@ -85,7 +86,7 @@ def salesforce_sosl_search(search: str) -> str:
         return f"SOSL Error: {str(e)}"
 
 
-def get_static_tools() -> List[BaseTool]:
+def get_static_tools() -> list[BaseTool]:
     """Get all static Salesforce tools.
 
     Returns:

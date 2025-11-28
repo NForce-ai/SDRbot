@@ -7,7 +7,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict, Optional
+from typing import TypedDict
 
 import dotenv
 from langchain_core.language_models import BaseChatModel
@@ -30,11 +30,11 @@ COLORS = {
 DEEP_AGENTS_ASCII = """
  ███████╗██████╗ ██████╗ ██████╗  ██████╗ ████████╗
  ██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝
- ███████╗██║  ██║██████╔╝██████╔╝██║   ██║   ██║   
- ╚════██║██║  ██║██╔══██╗██╔══██╗██║   ██║   ██║   
- ███████║██████╔╝██║  ██║██████╔╝╚██████╔╝   ██║   
- ╚══════╝╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝    ╚═╝   
-                                                   
+ ███████╗██║  ██║██████╔╝██████╔╝██║   ██║   ██║
+ ╚════██║██║  ██║██╔══██╗██╔══██╗██║   ██║   ██║
+ ███████║██████╔╝██║  ██║██████╔╝╚██████╔╝   ██║
+ ╚══════╝╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝    ╚═╝
+
              [ REVOPS INTELLIGENCE ]
 """
 
@@ -63,9 +63,10 @@ console = Console(highlight=False)
 
 class ModelConfig(TypedDict):
     """Structure for the active model configuration file."""
+
     provider: str
     model_name: str
-    api_base: Optional[str]
+    api_base: str | None
 
 
 def get_config_dir() -> Path:
@@ -75,7 +76,7 @@ def get_config_dir() -> Path:
     return config_dir
 
 
-def load_model_config() -> Optional[ModelConfig]:
+def load_model_config() -> ModelConfig | None:
     """Load the active model configuration from .sdrbot/model.json."""
     config_file = get_config_dir() / "model.json"
     if not config_file.exists():
@@ -86,13 +87,9 @@ def load_model_config() -> Optional[ModelConfig]:
         return None
 
 
-def save_model_config(provider: str, model_name: str, api_base: Optional[str] = None) -> None:
+def save_model_config(provider: str, model_name: str, api_base: str | None = None) -> None:
     """Save the active model configuration."""
-    config: ModelConfig = {
-        "provider": provider,
-        "model_name": model_name,
-        "api_base": api_base
-    }
+    config: ModelConfig = {"provider": provider, "model_name": model_name, "api_base": api_base}
     config_file = get_config_dir() / "model.json"
     config_file.write_text(json.dumps(config, indent=2))
 
@@ -173,7 +170,7 @@ class Settings:
     anthropic_api_key: str | None
     google_api_key: str | None
     tavily_api_key: str | None
-    
+
     # Salesforce Config
     sf_client_id: str | None
     sf_client_secret: str | None
@@ -215,15 +212,15 @@ class Settings:
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
         google_key = os.environ.get("GOOGLE_API_KEY")
         tavily_key = os.environ.get("TAVILY_API_KEY")
-        
+
         # Custom Model Config
         custom_base = os.environ.get("CUSTOM_API_BASE")
         custom_key = os.environ.get("CUSTOM_API_KEY")
         custom_model = os.environ.get("CUSTOM_MODEL_NAME")
-        
+
         sf_client_id = os.environ.get("SF_CLIENT_ID")
         sf_client_secret = os.environ.get("SF_CLIENT_SECRET")
-        
+
         hubspot_client_id = os.environ.get("HUBSPOT_CLIENT_ID")
         hubspot_client_secret = os.environ.get("HUBSPOT_CLIENT_SECRET")
         hubspot_access_token = os.environ.get("HUBSPOT_ACCESS_TOKEN")
@@ -288,7 +285,7 @@ class Settings:
     def has_google(self) -> bool:
         """Check if Google API key is configured."""
         return self.google_api_key is not None
-        
+
     @property
     def has_custom(self) -> bool:
         """Check if Custom Model is configured."""
@@ -588,33 +585,40 @@ def create_model() -> BaseChatModel:
     """
     # 1. Try to load explicit configuration from model.json
     model_config = load_model_config()
-    
+
     if model_config:
         provider = model_config["provider"]
         model_name = model_config["model_name"]
-        
+
         if provider == "custom":
             from langchain_openai import ChatOpenAI
+
             console.print(f"[dim]Using Custom Endpoint: {model_name}[/dim]")
             return ChatOpenAI(
                 base_url=model_config.get("api_base"),
                 api_key=settings.custom_api_key or "dummy",
                 model=model_name,
             )
-            
+
         if provider == "openai":
             if not settings.has_openai:
-                console.print("[bold red]Error:[/bold red] OpenAI selected but OPENAI_API_KEY missing in .env")
+                console.print(
+                    "[bold red]Error:[/bold red] OpenAI selected but OPENAI_API_KEY missing in .env"
+                )
                 sys.exit(1)
             from langchain_openai import ChatOpenAI
+
             console.print(f"[dim]Using OpenAI model: {model_name}[/dim]")
             return ChatOpenAI(model=model_name)
 
         if provider == "anthropic":
             if not settings.has_anthropic:
-                console.print("[bold red]Error:[/bold red] Anthropic selected but ANTHROPIC_API_KEY missing in .env")
+                console.print(
+                    "[bold red]Error:[/bold red] Anthropic selected but ANTHROPIC_API_KEY missing in .env"
+                )
                 sys.exit(1)
             from langchain_anthropic import ChatAnthropic
+
             console.print(f"[dim]Using Anthropic model: {model_name}[/dim]")
             return ChatAnthropic(
                 model_name=model_name,
@@ -623,9 +627,12 @@ def create_model() -> BaseChatModel:
 
         if provider == "google":
             if not settings.has_google:
-                console.print("[bold red]Error:[/bold red] Google selected but GOOGLE_API_KEY missing in .env")
+                console.print(
+                    "[bold red]Error:[/bold red] Google selected but GOOGLE_API_KEY missing in .env"
+                )
                 sys.exit(1)
             from langchain_google_genai import ChatGoogleGenerativeAI
+
             console.print(f"[dim]Using Google Gemini model: {model_name}[/dim]")
             return ChatGoogleGenerativeAI(
                 model=model_name,
@@ -636,6 +643,7 @@ def create_model() -> BaseChatModel:
     # 2. Fallback: Legacy/Implicit detection based on env vars
     if settings.has_custom:
         from langchain_openai import ChatOpenAI
+
         console.print(f"[dim]Using Custom Endpoint: {settings.custom_model_name}[/dim]")
         return ChatOpenAI(
             base_url=settings.custom_api_base,

@@ -3,8 +3,6 @@
 Hunter does not have user-specific schemas - all tools are static.
 """
 
-from typing import List
-
 from langchain_core.tools import BaseTool, tool
 
 from sdrbot_cli.auth.hunter import HunterClient
@@ -73,11 +71,7 @@ def hunter_email_finder(domain: str, first_name: str, last_name: str) -> str:
     """
     client = get_hunter()
     try:
-        params = {
-            "domain": domain,
-            "first_name": first_name,
-            "last_name": last_name
-        }
+        params = {"domain": domain, "first_name": first_name, "last_name": last_name}
 
         data = client.request("GET", "/email-finder", params=params)
 
@@ -125,7 +119,7 @@ def hunter_email_verifier(email: str) -> str:
         return f"Error verifying email: {str(e)}"
 
 
-def get_static_tools() -> List[BaseTool]:
+def get_static_tools() -> list[BaseTool]:
     """Get all Hunter tools.
 
     Returns:

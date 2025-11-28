@@ -1,13 +1,11 @@
 """HubSpot service - CRM integration tools."""
 
-from typing import List
-
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.config import settings
 
 
-def get_tools() -> List[BaseTool]:
+def get_tools() -> list[BaseTool]:
     """Get all HubSpot tools (static + generated).
 
     Returns:
@@ -17,6 +15,7 @@ def get_tools() -> List[BaseTool]:
 
     # Static tools (always available when service is enabled)
     from sdrbot_cli.services.hubspot.tools import get_static_tools
+
     tools.extend(get_static_tools())
 
     # Generated tools (if synced) - loaded from ./generated/hubspot_tools.py

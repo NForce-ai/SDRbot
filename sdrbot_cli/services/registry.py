@@ -9,14 +9,14 @@ This module handles:
 
 from __future__ import annotations
 
-import json
 import hashlib
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+import json
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from sdrbot_cli.services import SERVICES, SYNCABLE_SERVICES
+from sdrbot_cli.services import SYNCABLE_SERVICES
 
 
 class ServiceState:
@@ -25,10 +25,10 @@ class ServiceState:
     def __init__(
         self,
         enabled: bool = False,
-        synced_at: Optional[str] = None,
-        schema_hash: Optional[str] = None,
-        objects: Optional[list[str]] = None,
-        settings: Optional[dict[str, Any]] = None,
+        synced_at: str | None = None,
+        schema_hash: str | None = None,
+        objects: list[str] | None = None,
+        settings: dict[str, Any] | None = None,
     ):
         self.enabled = enabled
         self.synced_at = synced_at
@@ -50,7 +50,7 @@ class ServiceState:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ServiceState":
+    def from_dict(cls, data: dict[str, Any]) -> ServiceState:
         """Create from dictionary."""
         return cls(
             enabled=data.get("enabled", False),
@@ -75,7 +75,7 @@ class ServiceConfig:
     services: dict[str, ServiceState] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, config_path: Path) -> "ServiceConfig":
+    def load(cls, config_path: Path) -> ServiceConfig:
         """Load config from .sdrbot/services.json.
 
         Args:
@@ -111,10 +111,7 @@ class ServiceConfig:
 
         data = {
             "version": self.version,
-            "services": {
-                name: state.to_dict()
-                for name, state in self.services.items()
-            },
+            "services": {name: state.to_dict() for name, state in self.services.items()},
         }
 
         config_path.write_text(
@@ -210,7 +207,7 @@ class ServiceConfig:
             objects: List of objects that were synced.
         """
         state = self.get_state(service_name)
-        state.synced_at = datetime.now(timezone.utc).isoformat()
+        state.synced_at = datetime.now(UTC).isoformat()
         state.schema_hash = schema_hash
         state.objects = objects
 
@@ -255,8 +252,8 @@ _CONFIG_DIR = ".sdrbot"
 _CONFIG_FILE = "services.json"
 
 # Cached config instance
-_cached_config: Optional[ServiceConfig] = None
-_cached_config_path: Optional[Path] = None
+_cached_config: ServiceConfig | None = None
+_cached_config_path: Path | None = None
 
 
 def get_config_path() -> Path:
@@ -293,11 +290,7 @@ def load_config(force_reload: bool = False) -> ServiceConfig:
     config_path = get_config_path()
 
     # Return cached if path matches and not forcing reload
-    if (
-        not force_reload
-        and _cached_config is not None
-        and _cached_config_path == config_path
-    ):
+    if not force_reload and _cached_config is not None and _cached_config_path == config_path:
         return _cached_config
 
     _cached_config = ServiceConfig.load(config_path)
