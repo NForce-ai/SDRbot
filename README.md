@@ -1,6 +1,8 @@
 # SDRBOT - AI RevOps & Sales Development Agent
 
-[SDRBot](https://sdr.bot) is an advanced CLI agent built for Revenue Operations (RevOps) and Sales Development Representatives (SDRs). It uses **Schema Sync** to generate strongly-typed tools that match your exact CRM schema, ensuring reliable operations with your custom objects and fields.
+**Maintained by [NForce.ai](https://nforce.ai)**
+
+[SDRBot](https://sdr.bot) is an advanced CLI agent built for Revenue Operations (RevOps) and Sales Development Representatives (SDRs). It is an open-source project by [NForce.ai](https://nforce.ai), dedicated to empowering these teams with intelligent automation. It uses **Schema Sync** to generate strongly-typed tools that match your exact CRM schema, ensuring reliable operations with your custom objects and fields.
 
 It is built on top of [LangChain](https://langchain.com) and [DeepAgents](https://github.com/langchain-ai/deepagents), capable of planning multi-step workflows, researching prospects, and managing data across multiple CRMs.
 
@@ -411,7 +413,7 @@ tests/
 
 ## 🤝 Contributing
 
-We welcome contributions! If you're interested in helping build the future of AI SDRs:
+We welcome contributions to SDRbot, an [NForce.ai](https://nforce.ai) project! If you're interested in helping build the future of AI SDRs:
 
 - **Code:** Check out our repository at [github.com/Revhackers-ai/SDRbot](https://github.com/Revhackers-ai/SDRbot)
 - **Website:** Visit us at [sdr.bot](https://sdr.bot)
