@@ -1,0 +1,42 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in SDRbot.
+labels: [type: bug, status: needs triage]
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: Brief explanation of the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: "1. Run this command...
+2. Expect...
+3. Got instead..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+
+  - type: input
+    id: version
+    attributes:
+      label: SDRbot Version
+      placeholder: Output of `sdrbot --version`
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs & Screenshots (if any)
