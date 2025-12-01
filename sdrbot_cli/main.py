@@ -28,6 +28,8 @@ from sdrbot_cli.setup_wizard import run_setup_wizard
 from sdrbot_cli.skills import execute_skills_command, setup_skills_parser
 from sdrbot_cli.tools import fetch_url, http_request, web_search
 from sdrbot_cli.ui import TokenTracker, show_help
+from sdrbot_cli.updates import print_update_banner_if_needed
+from sdrbot_cli.version import __version__
 
 
 def check_cli_dependencies() -> None:
@@ -46,6 +48,7 @@ def check_cli_dependencies() -> None:
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
+        prog="sdrbot",
         description="DeepAgents - AI Coding Assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
@@ -99,6 +102,13 @@ def parse_args():
         action="store_true",
         help="Disable the startup splash screen",
     )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show the version and exit",
+    )
 
     return parser.parse_args()
 
@@ -125,8 +135,23 @@ async def simple_cli(
     # Only show splash on first run, not after reloads
     if first_run:
         if not session_state.no_splash:
-            console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
-            console.print()
+            version_display = f"v{__version__}"
+            # Brackets [ ] are interpreted by Rich as tags, so we must escape them with backslashes
+            # But for length calculation (centering), we want the visible length
+            visible_length = len(version_display) + 2  # +2 for the brackets
+            ascii_width = 51
+            padding = (ascii_width - visible_length) // 2
+
+            # Escape the opening bracket so Rich prints it literally
+            centered_version = " " * padding + f"\\[{version_display}]"
+
+            console.print(
+                DEEP_AGENTS_ASCII.replace("[VERSION_PLACEHOLDER]", centered_version),
+                style=f"bold {COLORS['primary']}",
+            )
+
+            # Check for updates
+            print_update_banner_if_needed()
 
     # Only show full UI on first run
     if first_run:
@@ -185,6 +210,7 @@ async def simple_cli(
                 "  - ⌃C to interrupt\n"
                 "  - /setup to configure models and services\n"
                 "  - /help to list commands\n"
+                "  - /exit to exit SDRbot\n"
             )
         else:
             tips = (
@@ -195,6 +221,7 @@ async def simple_cli(
                 "  - Ctrl+C to interrupt\n"
                 "  - /setup to configure models and services\n"
                 "  - /help to list commands\n"
+                "  - /exit to exit SDRbot\n"
             )
         console.print(tips, style=f"dim {COLORS['dim']}")
 
