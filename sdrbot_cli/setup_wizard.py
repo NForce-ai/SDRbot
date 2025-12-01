@@ -179,27 +179,22 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
 
             settings.reload()
 
-            if Confirm.ask(
-                f"[{COLORS['primary']}]Do you want to authenticate with Salesforce now?[/]",
-                default=True,
-            ):
-                try:
-                    # Import here to pick up fresh env vars
-                    import importlib
+            try:
+                # Import here to pick up fresh env vars
+                import importlib
 
-                    import sdrbot_cli.auth.salesforce as sf_auth
+                import sdrbot_cli.auth.salesforce as sf_auth
 
-                    importlib.reload(sf_auth)
-                    sf_auth.login()
-                    console.print(
-                        f"[{COLORS['primary']}]Salesforce authentication complete![/{COLORS['primary']}]"
-                    )
-                except Exception as e:
-                    console.print(f"[red]Salesforce authentication failed: {e}[/red]")
-                    console.print(
-                        f"[{COLORS['dim']}]You can authenticate later when you first use Salesforce.[/{COLORS['dim']}]"
-                    )
-            # Enable and sync the service
+                importlib.reload(sf_auth)
+                sf_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Salesforce authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Salesforce authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Salesforce.[/{COLORS['dim']}]"
+                )  # Enable and sync the service
             from sdrbot_cli.services import enable_service
 
             enable_service("salesforce", sync=True, verbose=True)
@@ -249,26 +244,22 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
 
                 settings.reload()
 
-                if Confirm.ask(
-                    f"[{COLORS['primary']}]Do you want to authenticate with HubSpot now?[/]",
-                    default=True,
-                ):
-                    try:
-                        # Import here to pick up fresh env vars
-                        import importlib
+                try:
+                    # Import here to pick up fresh env vars
+                    import importlib
 
-                        import sdrbot_cli.auth.hubspot as hs_auth
+                    import sdrbot_cli.auth.hubspot as hs_auth
 
-                        importlib.reload(hs_auth)
-                        hs_auth.login()
-                        console.print(
-                            f"[{COLORS['primary']}]HubSpot authentication complete![/{COLORS['primary']}]"
-                        )
-                    except Exception as e:
-                        console.print(f"[red]HubSpot authentication failed: {e}[/red]")
-                        console.print(
-                            f"[{COLORS['dim']}]You can authenticate later when you first use HubSpot.[/{COLORS['dim']}]"
-                        )
+                    importlib.reload(hs_auth)
+                    hs_auth.login()
+                    console.print(
+                        f"[{COLORS['primary']}]HubSpot authentication complete![/{COLORS['primary']}]"
+                    )
+                except Exception as e:
+                    console.print(f"[red]HubSpot authentication failed: {e}[/red]")
+                    console.print(
+                        f"[{COLORS['dim']}]You can authenticate later when you first use HubSpot.[/{COLORS['dim']}]"
+                    )
                 # Enable and sync the service
                 from sdrbot_cli.services import enable_service
 
@@ -323,26 +314,22 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
 
             settings.reload()
 
-            if Confirm.ask(
-                f"[{COLORS['primary']}]Do you want to authenticate with Zoho CRM now?[/]",
-                default=True,
-            ):
-                try:
-                    # Import here to pick up fresh env vars
-                    import importlib
+            try:
+                # Import here to pick up fresh env vars
+                import importlib
 
-                    import sdrbot_cli.auth.zohocrm as zoho_auth
+                import sdrbot_cli.auth.zohocrm as zoho_auth
 
-                    importlib.reload(zoho_auth)
-                    zoho_auth.login()
-                    console.print(
-                        f"[{COLORS['primary']}]Zoho CRM authentication complete![/{COLORS['primary']}]"
-                    )
-                except Exception as e:
-                    console.print(f"[red]Zoho CRM authentication failed: {e}[/red]")
-                    console.print(
-                        f"[{COLORS['dim']}]You can authenticate later when you first use Zoho CRM.[/{COLORS['dim']}]"
-                    )
+                importlib.reload(zoho_auth)
+                zoho_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Zoho CRM authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Zoho CRM authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Zoho CRM.[/{COLORS['dim']}]"
+                )
             # Enable and sync the service
             from sdrbot_cli.services import enable_service
 
@@ -393,26 +380,22 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
 
                 settings.reload()
 
-                if Confirm.ask(
-                    f"[{COLORS['primary']}]Do you want to authenticate with Pipedrive now?[/]",
-                    default=True,
-                ):
-                    try:
-                        # Import here to pick up fresh env vars
-                        import importlib
+                try:
+                    # Import here to pick up fresh env vars
+                    import importlib
 
-                        import sdrbot_cli.auth.pipedrive as pd_auth
+                    import sdrbot_cli.auth.pipedrive as pd_auth
 
-                        importlib.reload(pd_auth)
-                        pd_auth.login()
-                        console.print(
-                            f"[{COLORS['primary']}]Pipedrive authentication complete![/{COLORS['primary']}]"
-                        )
-                    except Exception as e:
-                        console.print(f"[red]Pipedrive authentication failed: {e}[/red]")
-                        console.print(
-                            f"[{COLORS['dim']}]You can authenticate later when you first use Pipedrive.[/{COLORS['dim']}]"
-                        )
+                    importlib.reload(pd_auth)
+                    pd_auth.login()
+                    console.print(
+                        f"[{COLORS['primary']}]Pipedrive authentication complete![/{COLORS['primary']}]"
+                    )
+                except Exception as e:
+                    console.print(f"[red]Pipedrive authentication failed: {e}[/red]")
+                    console.print(
+                        f"[{COLORS['dim']}]You can authenticate later when you first use Pipedrive.[/{COLORS['dim']}]"
+                    )
                 # Enable and sync the service
                 from sdrbot_cli.services import enable_service
 
@@ -670,14 +653,18 @@ async def _setup_llm_impl(force: bool = False) -> bool:
         elif provider_code == "google":
             is_configured = bool(os.getenv("GOOGLE_API_KEY"))
 
-        action_items = []
-        if is_configured and provider_code != "custom":
-            action_items.append(("activate", "Activate / Switch Model", ""))
+        action = None
+        if not is_configured:
+            action = "configure"
+        else:
+            action_items = []
+            if provider_code != "custom":
+                action_items.append(("activate", "Activate / Switch Model", ""))
 
-        action_items.append(("configure", "Configure Credentials", ""))
-        action_items.append(("back", "Back", ""))
+            action_items.append(("configure", "Configure Credentials", ""))
+            action_items.append(("back", "Back", ""))
 
-        action = await show_menu(action_items, title=f"Manage {provider_code.capitalize()}")
+            action = await show_menu(action_items, title=f"Manage {provider_code.capitalize()}")
 
         if action == "back":
             continue
@@ -971,15 +958,15 @@ async def run_setup_wizard(force: bool = False) -> None:
 
         # Define available services with status
         service_definitions = [
-            ("tavily", "Tavily (Web Search)"),
             ("salesforce", "Salesforce (CRM)"),
             ("hubspot", "HubSpot (CRM)"),
-            ("attio", "Attio (CRM)"),
-            ("zohocrm", "Zoho CRM"),
             ("pipedrive", "Pipedrive (CRM)"),
-            ("lusha", "Lusha (Data Provider)"),
-            ("hunter", "Hunter.io (Data Provider)"),
+            ("zohocrm", "Zoho CRM"),
+            ("attio", "Attio (CRM)"),
             ("apollo", "Apollo.io (Data Provider)"),
+            ("hunter", "Hunter.io (Data Provider)"),
+            ("lusha", "Lusha (Data Provider)"),
+            ("tavily", "Tavily (Web Search)"),
             ("postgres", "PostgreSQL (Database)"),
             ("mysql", "MySQL (Database)"),
             ("mongodb", "MongoDB (Database)"),
@@ -1078,30 +1065,29 @@ async def run_setup_wizard(force: bool = False) -> None:
             # Handle Service Selection
             configured, enabled = service_states[selected_option]
 
-            # Build action submenu
-            action_items = []
-
             if not configured:
-                # Not configured -> offer to configure
-                action_items.append(("configure", "Configure", ""))
+                # Not configured -> offer to configure directly
+                await setup_service(selected_option, force=True)
             else:
                 # Configured -> offer toggle and reconfigure
+                action_items = []
                 if enabled:
                     action_items.append(("disable", "Disable Service", ""))
                 else:
                     action_items.append(("enable", "Enable Service", ""))
                 action_items.append(("reconfigure", "Reconfigure Credentials", ""))
+                action_items.append(("back", "Back", ""))
 
-            action_items.append(("back", "Back", ""))
+                action = await show_menu(
+                    action_items, title=f"Manage {selected_option.capitalize()}"
+                )
 
-            action = await show_menu(action_items, title=f"Manage {selected_option.capitalize()}")
-
-            if action == "configure" or action == "reconfigure":
-                await setup_service(selected_option, force=True)
-            elif action == "enable":
-                enable_service(selected_option, verbose=True)
-            elif action == "disable":
-                disable_service(selected_option, verbose=True)
+                if action == "reconfigure":
+                    await setup_service(selected_option, force=True)
+                elif action == "enable":
+                    enable_service(selected_option, verbose=True)
+                elif action == "disable":
+                    disable_service(selected_option, verbose=True)
             # "back" or None (escape) -> just continue to main menu
 
     console.print(f"[{COLORS['primary']}][bold]Setup Complete![/bold][/]")

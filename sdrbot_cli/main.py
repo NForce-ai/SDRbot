@@ -181,9 +181,9 @@ async def simple_cli(
                 "Tips:\n"
                 "  - ⏎ Enter to submit\n"
                 "  - ⌥ Option + ⏎ Enter (or Esc+Enter) for newline\n"
-                "  - ⌃E to open editor\n"
                 "  - ⌃T to toggle auto-approve\n"
                 "  - ⌃C to interrupt\n"
+                "  - /setup to configure models and services\n"
                 "  - /help to list commands\n"
             )
         else:
@@ -191,9 +191,9 @@ async def simple_cli(
                 "Tips:\n"
                 "  - Enter to submit\n"
                 "  - Alt+Enter (or Esc+Enter) for newline\n"
-                "  - Ctrl+E to open editor\n"
                 "  - Ctrl+T to toggle auto-approve\n"
                 "  - Ctrl+C to interrupt\n"
+                "  - /setup to configure models and services\n"
                 "  - /help to list commands\n"
             )
         console.print(tips, style=f"dim {COLORS['dim']}")
