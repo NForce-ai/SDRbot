@@ -198,6 +198,9 @@ class Settings:
     # Hunter Config
     hunter_api_key: str | None
 
+    # Apollo Config
+    apollo_api_key: str | None
+
     # PostgreSQL Config
     postgres_host: str | None
     postgres_port: str | None
@@ -266,6 +269,7 @@ class Settings:
         attio_api_key = os.environ.get("ATTIO_API_KEY")
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
+        apollo_api_key = os.environ.get("APOLLO_API_KEY")
 
         # Postgres
         postgres_host = os.environ.get("POSTGRES_HOST")
@@ -310,6 +314,7 @@ class Settings:
             attio_api_key=attio_api_key,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
+            apollo_api_key=apollo_api_key,
             postgres_host=postgres_host,
             postgres_port=postgres_port,
             postgres_user=postgres_user,
@@ -352,6 +357,7 @@ class Settings:
         self.attio_api_key = new_settings.attio_api_key
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
+        self.apollo_api_key = new_settings.apollo_api_key
         self.postgres_host = new_settings.postgres_host
         self.postgres_port = new_settings.postgres_port
         self.postgres_user = new_settings.postgres_user
@@ -439,6 +445,11 @@ class Settings:
         return self.hunter_api_key is not None
 
     @property
+    def has_apollo(self) -> bool:
+        """Check if Apollo API key is configured."""
+        return self.apollo_api_key is not None
+
+    @property
     def has_postgres(self) -> bool:
         """Check if PostgreSQL credentials are configured."""
         return self.postgres_host is not None and self.postgres_db is not None
@@ -470,6 +481,7 @@ class Settings:
             "pipedrive": self.has_pipedrive,
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
+            "apollo": self.has_apollo,
             "postgres": self.has_postgres,
             "mysql": self.has_mysql,
             "mongodb": self.has_mongodb,
