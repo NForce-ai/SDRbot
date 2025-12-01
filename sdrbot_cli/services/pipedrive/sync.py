@@ -63,6 +63,117 @@ EXCLUDED_FIELD_KEYS = [
 # Maximum fields per tool to keep signatures manageable
 MAX_FIELDS_PER_TOOL = 20
 
+# Standard Pipedrive fields that can be sent at the top level of API requests
+# Custom fields (with hash keys) must be sent in a custom_fields object
+STANDARD_FIELDS = {
+    "deals": {
+        "title",
+        "value",
+        "currency",
+        "user_id",
+        "person_id",
+        "org_id",
+        "pipeline_id",
+        "stage_id",
+        "status",
+        "probability",
+        "lost_reason",
+        "visible_to",
+        "close_time",
+        "won_time",
+        "lost_time",
+        "expected_close_date",
+        "label",
+        "origin",
+        "channel",
+        "channel_id",
+    },
+    "persons": {
+        "name",
+        "first_name",
+        "last_name",
+        "owner_id",
+        "org_id",
+        "email",
+        "phone",
+        "visible_to",
+        "marketing_status",
+        "label",
+    },
+    "organizations": {
+        "name",
+        "owner_id",
+        "visible_to",
+        "address",
+        "label_ids",
+    },
+    "products": {
+        "name",
+        "code",
+        "description",
+        "unit",
+        "tax",
+        "active_flag",
+        "visible_to",
+        "owner_id",
+        "prices",
+    },
+    "activities": {
+        "subject",
+        "type",
+        "due_date",
+        "due_time",
+        "duration",
+        "user_id",
+        "deal_id",
+        "person_id",
+        "org_id",
+        "note",
+        "location",
+        "public_description",
+        "done",
+        "busy_flag",
+        "participants",
+        "attendees",
+    },
+    "leads": {
+        "title",
+        "owner_id",
+        "person_id",
+        "organization_id",
+        "label_ids",
+        "value",
+        "expected_close_date",
+        "visible_to",
+        "channel",
+        "channel_id",
+    },
+}
+
+# Field name mappings for leads - Pipedrive's leadFields endpoint returns different
+# field names than what the Leads API actually accepts
+LEADS_FIELD_MAPPING = {
+    "related_person_id": "person_id",
+    "related_org_id": "organization_id",
+    "labels": "label_ids",  # API expects label_ids as array of UUIDs
+}
+
+# Fields that should be integers (not strings) in the API request
+LEADS_INTEGER_FIELDS = {"person_id", "organization_id", "owner_id", "channel"}
+
+# Lead fields that are READ-ONLY or should be excluded from create/update tools
+LEADS_READONLY_FIELDS = {
+    "org_name",  # Auto-populated from organization_id
+    "org_address",  # Auto-populated from organization_id
+    "person_name",  # Auto-populated from person_id
+    "person_phone",  # Auto-populated from person_id
+    "person_email",  # Auto-populated from person_id
+    "is_archived",  # Use archive endpoint instead
+    "source",  # Read-only
+    "channel",  # Requires valid Marketing channel ID configured in account
+    "channel_id",  # Related to channel - rarely needed
+}
+
 
 def sync_schema() -> dict[str, Any]:
     """Fetch Pipedrive schema and generate tools.
@@ -113,6 +224,21 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
     response = client.get(f"/{fields_endpoint}")
     raw_fields = response.get("data", [])
 
+    # Map endpoint to object type for standard field lookup
+    endpoint_to_obj = {
+        "dealFields": "deals",
+        "personFields": "persons",
+        "organizationFields": "organizations",
+        "productFields": "products",
+        "activityFields": "activities",
+        "leadFields": "leads",
+    }
+    obj_type = endpoint_to_obj.get(fields_endpoint, "")
+    standard_keys = STANDARD_FIELDS.get(obj_type, set())
+
+    # Determine if this is leads (need special handling)
+    is_lead = fields_endpoint == "leadFields"
+
     fields = []
     for f in raw_fields:
         field_key = f.get("key", "")
@@ -125,6 +251,25 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
         if field_key.startswith("#"):
             continue
 
+        # Skip read-only lead fields
+        if is_lead and field_key in LEADS_READONLY_FIELDS:
+            continue
+
+        # Determine if this is a standard field or custom field
+        is_standard = field_key in standard_keys
+
+        # For custom fields, generate a Python-friendly parameter name from the display name
+        # Standard fields use their key directly
+        if is_standard:
+            param_name = field_key
+        else:
+            # Convert display name to snake_case parameter name
+            display_name = f.get("name", field_key)
+            param_name = _sanitize_param_name(display_name)
+            # If sanitized name conflicts with a standard field, prefix with custom_
+            if param_name in standard_keys:
+                param_name = f"custom_{param_name}"
+
         # Get options for enum types
         options = []
         if f.get("options"):
@@ -136,17 +281,45 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
 
         fields.append(
             {
-                "key": field_key,
-                "name": f.get("name", field_key),
+                "key": field_key,  # The actual API key (may be hash for custom fields)
+                "param_name": param_name,  # Python parameter name (human-readable)
+                "name": f.get("name", field_key),  # Display name for docstring
                 "field_type": f.get("field_type", "text"),
                 "mandatory_flag": f.get("mandatory_flag", False),
                 "is_writable": is_writable,
                 "add_visible_flag": f.get("add_visible_flag", False),
                 "options": options,
+                "is_standard": is_standard,
             }
         )
 
     return fields
+
+
+def _sanitize_param_name(name: str) -> str:
+    """Convert a display name to a valid Python parameter name.
+
+    Args:
+        name: Human-readable field name (e.g., "Employee Count", "Industry Type")
+
+    Returns:
+        Snake_case parameter name (e.g., "employee_count", "industry_type")
+    """
+    import re
+
+    # Convert to lowercase
+    result = name.lower()
+    # Replace spaces and special chars with underscores
+    result = re.sub(r"[^a-z0-9]+", "_", result)
+    # Remove leading/trailing underscores
+    result = result.strip("_")
+    # Ensure it starts with a letter (prefix with 'field_' if needed)
+    if result and not result[0].isalpha():
+        result = f"field_{result}"
+    # Fallback for empty result
+    if not result:
+        result = "custom_field"
+    return result
 
 
 def _generate_tools_code(schema: dict[str, list[dict]]) -> str:
@@ -332,27 +505,66 @@ def _field_to_python_type(field: dict) -> str:
 def _generate_create_tool(obj_type: str, singular: str, fields: list[dict]) -> list[str]:
     """Generate a create tool for an object type."""
     func_name = f"pipedrive_create_{singular}"
+    is_lead = obj_type == "leads"
 
-    # Build function signature
+    # Separate standard and custom fields
+    standard_fields = [f for f in fields if f.get("is_standard", True)]
+    custom_fields = [f for f in fields if not f.get("is_standard", True)]
+
+    # Build function signature using param_name (human-readable)
     params = []
     for f in fields:
         py_type = _field_to_python_type(f)
-        key = f["key"]
+        param_name = f.get("param_name", f["key"])
+        # For leads, fix types for certain fields
+        if is_lead:
+            api_key = LEADS_FIELD_MAPPING.get(f["key"], f["key"])
+            if api_key in LEADS_INTEGER_FIELDS:
+                py_type = "int"
         if f.get("mandatory_flag"):
-            params.append(f"    {key}: {py_type},")
+            params.append(f"    {param_name}: {py_type},")
         else:
-            params.append(f"    {key}: {py_type} | None = None,")
+            params.append(f"    {param_name}: {py_type} | None = None,")
 
     params_str = "\n".join(params) if params else "    # No custom fields"
 
     # Build docstring
     doc_lines = [f'    """Create a new {singular} in Pipedrive.']
+    if is_lead:
+        # Find the actual param names for person and org links
+        person_param = next(
+            (
+                f.get("param_name", f["key"])
+                for f in fields
+                if f["key"] in ("related_person_id", "contact_person")
+            ),
+            "contact_person",
+        )
+        org_param = next(
+            (
+                f.get("param_name", f["key"])
+                for f in fields
+                if f["key"] in ("related_org_id", "organization")
+            ),
+            "organization",
+        )
+        doc_lines.append("")
+        doc_lines.append("    NOTE: Leads MUST be linked to a person or organization.")
+        doc_lines.append(f"    Provide {person_param} OR {org_param} (or both).")
     doc_lines.append("")
     doc_lines.append("    Args:")
     for f in fields:
-        doc_lines.append(f"        {f['key']}: {f.get('name', f['key'])}.")
+        param_name = f.get("param_name", f["key"])
+        doc_lines.append(f"        {param_name}: {f.get('name', f['key'])}.")
         if f.get("options"):
-            doc_lines.append(f"            Options: {', '.join(f['options'][:5])}")
+            # For labels field, explain it needs UUIDs not names
+            if is_lead and f["key"] == "labels":
+                doc_lines.append(
+                    "            Comma-separated label UUIDs. Use pipedrive_get_lead_labels to get IDs."
+                )
+                doc_lines.append(f"            Label names: {', '.join(f['options'][:5])}")
+            else:
+                doc_lines.append(f"            Options: {', '.join(f['options'][:5])}")
     doc_lines.append("")
     doc_lines.append("    Returns:")
     doc_lines.append(f"        Success message with the new {singular} ID.")
@@ -364,19 +576,61 @@ def _generate_create_tool(obj_type: str, singular: str, fields: list[dict]) -> l
         "    try:",
         "        data = {}",
         "        local_vars = locals()",
-        "        param_names = [",
     ]
 
-    for f in fields:
-        body.append(f"            '{f['key']}',")
+    if is_lead:
+        # For leads, we need to map field names and ensure correct types
+        body.append(
+            "        # Lead field mappings (API uses different names than leadFields endpoint)"
+        )
+        body.append("        field_mapping = {")
+        for f in fields:
+            param_name = f.get("param_name", f["key"])
+            api_key = LEADS_FIELD_MAPPING.get(f["key"], f["key"])
+            body.append(f"            '{param_name}': '{api_key}',")
+        body.append("        }")
+        body.append("        for param_name, api_name in field_mapping.items():")
+        body.append("            value = local_vars.get(param_name)")
+        body.append("            if value is not None:")
+        body.append("                # label_ids must be an array")
+        body.append("                if api_name == 'label_ids' and isinstance(value, str):")
+        body.append(
+            "                    value = [v.strip() for v in value.split(',') if v.strip()]"
+        )
+        body.append("                data[api_name] = value")
+    else:
+        # Handle standard fields - go directly in data dict
+        if standard_fields:
+            body.append("        # Standard fields go at top level")
+            body.append("        standard_field_mapping = {")
+            for f in standard_fields:
+                param_name = f.get("param_name", f["key"])
+                body.append(f"            '{param_name}': '{f['key']}',")
+            body.append("        }")
+            body.append("        for param_name, api_key in standard_field_mapping.items():")
+            body.append("            value = local_vars.get(param_name)")
+            body.append("            if value is not None:")
+            body.append("                data[api_key] = value")
+
+        # Handle custom fields - go in custom_fields object
+        if custom_fields:
+            body.append("")
+            body.append("        # Custom fields go in custom_fields object with hash keys")
+            body.append("        custom_fields_data = {}")
+            body.append("        custom_field_mapping = {")
+            for f in custom_fields:
+                param_name = f.get("param_name", f["key"])
+                body.append(f"            '{param_name}': '{f['key']}',  # {f.get('name', '')}")
+            body.append("        }")
+            body.append("        for param_name, api_key in custom_field_mapping.items():")
+            body.append("            value = local_vars.get(param_name)")
+            body.append("            if value is not None:")
+            body.append("                custom_fields_data[api_key] = value")
+            body.append("        if custom_fields_data:")
+            body.append("            data['custom_fields'] = custom_fields_data")
 
     body.extend(
         [
-            "        ]",
-            "        for name in param_names:",
-            "            value = local_vars.get(name)",
-            "            if value is not None:",
-            "                data[name] = value",
             "",
             "        if not data:",
             f'            return "Error: At least one field must be provided to create a {singular}."',
@@ -405,12 +659,16 @@ def _generate_update_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     """Generate an update tool for an object type."""
     func_name = f"pipedrive_update_{singular}"
 
+    # Separate standard and custom fields
+    standard_fields = [f for f in fields if f.get("is_standard", True)]
+    custom_fields = [f for f in fields if not f.get("is_standard", True)]
+
     # Build function signature - ID is required, all others optional
     params = [f"    {singular}_id: int,"]
     for f in fields:
         py_type = _field_to_python_type(f)
-        key = f["key"]
-        params.append(f"    {key}: {py_type} | None = None,")
+        param_name = f.get("param_name", f["key"])
+        params.append(f"    {param_name}: {py_type} | None = None,")
 
     params_str = "\n".join(params)
 
@@ -420,7 +678,8 @@ def _generate_update_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     doc_lines.append("    Args:")
     doc_lines.append(f"        {singular}_id: The ID of the {singular} to update.")
     for f in fields:
-        doc_lines.append(f"        {f['key']}: {f.get('name', f['key'])}.")
+        param_name = f.get("param_name", f["key"])
+        doc_lines.append(f"        {param_name}: {f.get('name', f['key'])}.")
     doc_lines.append("")
     doc_lines.append("    Returns:")
     doc_lines.append(f"        Success message confirming the {singular} was updated.")
@@ -432,19 +691,40 @@ def _generate_update_tool(obj_type: str, singular: str, fields: list[dict]) -> l
         "    try:",
         "        data = {}",
         "        local_vars = locals()",
-        "        param_names = [",
     ]
 
-    for f in fields:
-        body.append(f"            '{f['key']}',")
+    # Handle standard fields - go directly in data dict
+    if standard_fields:
+        body.append("        # Standard fields go at top level")
+        body.append("        standard_field_mapping = {")
+        for f in standard_fields:
+            param_name = f.get("param_name", f["key"])
+            body.append(f"            '{param_name}': '{f['key']}',")
+        body.append("        }")
+        body.append("        for param_name, api_key in standard_field_mapping.items():")
+        body.append("            value = local_vars.get(param_name)")
+        body.append("            if value is not None:")
+        body.append("                data[api_key] = value")
+
+    # Handle custom fields - go in custom_fields object
+    if custom_fields:
+        body.append("")
+        body.append("        # Custom fields go in custom_fields object with hash keys")
+        body.append("        custom_fields_data = {}")
+        body.append("        custom_field_mapping = {")
+        for f in custom_fields:
+            param_name = f.get("param_name", f["key"])
+            body.append(f"            '{param_name}': '{f['key']}',  # {f.get('name', '')}")
+        body.append("        }")
+        body.append("        for param_name, api_key in custom_field_mapping.items():")
+        body.append("            value = local_vars.get(param_name)")
+        body.append("            if value is not None:")
+        body.append("                custom_fields_data[api_key] = value")
+        body.append("        if custom_fields_data:")
+        body.append("            data['custom_fields'] = custom_fields_data")
 
     body.extend(
         [
-            "        ]",
-            "        for name in param_names:",
-            "            value = local_vars.get(name)",
-            "            if value is not None:",
-            "                data[name] = value",
             "",
             "        if not data:",
             '            return "Error: At least one field must be provided to update."',

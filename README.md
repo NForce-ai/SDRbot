@@ -28,6 +28,7 @@ By using this software, you acknowledge that:
 - **Attio:** Next-gen CRM support using the Attio v2 API (Objects & Attributes).
 
 ### 2. Prospecting & Enrichment
+- **Apollo.io Integration:** Search 210M+ contacts, enrich people and companies with emails, phone numbers, and firmographic data.
 - **Lusha Integration:** Find prospects by role/industry and enrich them with B2B emails and phone numbers.
 - **Hunter.io Integration:** Find and verify email addresses for any domain.
 - **Web Research (Tavily):** Research prospects to find recent news, revenue data, or strategic insights before reaching out.
@@ -47,6 +48,7 @@ By using this software, you acknowledge that:
 | **Zoho CRM** | OAuth 2.0 | ✓ | COQL, CRUD, Lead Conversion, Notes |
 | **Pipedrive** | API Token or OAuth | ✓ | Search, CRUD, Pipelines, Notes, Activities |
 | **Attio** | API Key | ✓ | Query, CRUD, Notes |
+| **Apollo.io** | API Key | — | People/Company Search, Enrichment |
 | **Lusha** | API Key | — | Prospecting, Person/Company Enrichment |
 | **Hunter.io** | API Key | — | Domain Search, Email Finder, Verification |
 | **PostgreSQL** | Connection String | — | SQL Queries, Table Management |
@@ -131,6 +133,7 @@ nano .env
 - **Zoho CRM:** `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REGION` (us, eu, in, au, cn, or jp)
 - **Pipedrive:** `PIPEDRIVE_API_TOKEN` **OR** `PIPEDRIVE_CLIENT_ID` and `PIPEDRIVE_CLIENT_SECRET` (OAuth)
 - **Attio:** `ATTIO_API_KEY`
+- **Apollo.io:** `APOLLO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
 - **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
@@ -273,7 +276,7 @@ sdrbot
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
 - **Zoho CRM:** Opens a browser for OAuth login. Tokens are saved securely in your system keyring with automatic refresh.
 - **Pipedrive:** Uses API Token directly, or launches browser OAuth flow if using Client ID/Secret. Tokens are saved securely with automatic refresh.
-- **Attio / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
+- **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 
 ### Example Prompts
 

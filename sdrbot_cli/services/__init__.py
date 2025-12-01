@@ -15,6 +15,7 @@ SERVICES = [
     "pipedrive",
     "lusha",
     "hunter",
+    "apollo",
     "postgres",
     "mysql",
     "mongodb",

@@ -310,6 +310,39 @@ def pipedrive_get_deal_activities(deal_id: int, limit: int = 10) -> str:
         return f"Error getting activities: {str(e)}"
 
 
+@tool
+def pipedrive_get_lead_labels() -> str:
+    """
+    Get all available lead labels in Pipedrive.
+
+    Use this to get label UUIDs for creating leads with labels.
+    The label ID (UUID) is required when setting labels on a lead.
+
+    Returns:
+        JSON string with lead labels including their IDs, names, and colors.
+    """
+    client = get_pipedrive()
+    try:
+        response = client.get("/leadLabels")
+        labels = response.get("data", [])
+
+        if not labels:
+            return "No lead labels found"
+
+        results = [
+            {
+                "id": label.get("id"),
+                "name": label.get("name"),
+                "color": label.get("color"),
+            }
+            for label in labels
+        ]
+
+        return f"Found {len(results)} lead labels:\n" + json.dumps(results, indent=2)
+    except Exception as e:
+        return f"Error getting lead labels: {str(e)}"
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Pipedrive tools.
 
@@ -323,4 +356,5 @@ def get_static_tools() -> list[BaseTool]:
         pipedrive_list_pipelines,
         pipedrive_list_users,
         pipedrive_get_deal_activities,
+        pipedrive_get_lead_labels,
     ]

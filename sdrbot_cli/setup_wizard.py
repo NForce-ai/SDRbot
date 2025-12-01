@@ -435,6 +435,14 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
         if hunter_key:
             env_vars["HUNTER_API_KEY"] = hunter_key
 
+    elif service_name == "apollo":
+        console.print(f"[{COLORS['primary']}]--- Apollo.io Configuration ---[/{COLORS['primary']}]")
+        apollo_key = await _get_or_prompt(
+            "APOLLO_API_KEY", "Apollo API Key", is_secret=True, required=True, force=force
+        )
+        if apollo_key:
+            env_vars["APOLLO_API_KEY"] = apollo_key
+
     elif service_name == "tavily":
         console.print(f"[{COLORS['primary']}]--- Tavily Configuration ---[/{COLORS['primary']}]")
         tavily_key = await _get_or_prompt(
@@ -811,6 +819,8 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("LUSHA_API_KEY"))
     elif service_name == "hunter":
         configured = bool(os.getenv("HUNTER_API_KEY"))
+    elif service_name == "apollo":
+        configured = bool(os.getenv("APOLLO_API_KEY"))
     elif service_name == "tavily":
         configured = bool(os.getenv("TAVILY_API_KEY"))
     elif service_name == "postgres":
@@ -969,6 +979,7 @@ async def run_setup_wizard(force: bool = False) -> None:
             ("pipedrive", "Pipedrive (CRM)"),
             ("lusha", "Lusha (Data Provider)"),
             ("hunter", "Hunter.io (Data Provider)"),
+            ("apollo", "Apollo.io (Data Provider)"),
             ("postgres", "PostgreSQL (Database)"),
             ("mysql", "MySQL (Database)"),
             ("mongodb", "MongoDB (Database)"),
