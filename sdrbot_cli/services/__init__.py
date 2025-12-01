@@ -7,7 +7,17 @@ from langchain_core.tools import BaseTool
 from sdrbot_cli.config import console
 
 # All available services
-SERVICES = ["hubspot", "salesforce", "attio", "lusha", "hunter", "tavily"]
+SERVICES = [
+    "hubspot",
+    "salesforce",
+    "attio",
+    "lusha",
+    "hunter",
+    "postgres",
+    "mysql",
+    "mongodb",
+    "tavily",
+]
 
 # Services that require schema sync (have user-specific schemas)
 SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio"]

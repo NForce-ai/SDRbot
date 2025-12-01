@@ -45,6 +45,9 @@ By using this software, you acknowledge that:
 | **Attio** | API Key | ✓ | Query, CRUD, Notes |
 | **Lusha** | API Key | — | Prospecting, Person/Company Enrichment |
 | **Hunter.io** | API Key | — | Domain Search, Email Finder, Verification |
+| **PostgreSQL** | Connection String | — | SQL Queries, Table Management |
+| **MySQL** | Connection String | — | SQL Queries, Table Management |
+| **MongoDB** | Connection URI | — | CRUD Operations, Collection Management |
 | **Tavily** | API Key | — | Web Search, News Retrieval |
 
 ---
@@ -103,12 +106,7 @@ Just run the bot! The first time you launch `sdrbot`, it will detect missing con
 sdrbot
 ```
 
-You can also reconfigure specific settings at any time:
-- `/setup`: Re-run the full setup wizard.
-- `/models list`: List all available LLM providers and highlight the active one.
-- `/models switch <provider>`: Switch your LLM provider (OpenAI, Anthropic, Google, Custom).
-- `/models update <provider>`: Reconfigure a specific LLM provider's settings.
-- `/services update <name>`: Reconfigure a specific service's credentials (e.g., `/services update salesforce`).
+You can also reconfigure settings at any time using `/setup` to re-run the interactive setup wizard.
 
 **Option 2: Manual Configuration (.env)**
 
@@ -129,6 +127,9 @@ nano .env
 - **Attio:** `ATTIO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
+- **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
+- **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
+- **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
 
 ---
 
@@ -228,35 +229,47 @@ sdrbot
 
 SDRbot uses a **service architecture** that generates strongly-typed tools based on your CRM schema. This eliminates errors like "property doesn't exist" by ensuring the agent knows exactly what fields are available.
 
-### Service Commands
+### Setup Wizard
+
+All service configuration is done through the interactive setup wizard:
 
 ```bash
-# List all services and their status
-/services list
+# Run the setup wizard
+/setup
+```
 
-# Enable a service (auto-syncs if required)
-/services enable hubspot
+The wizard allows you to:
+- Configure and switch LLM providers (OpenAI, Anthropic, Google, Custom)
+- Enable/disable services
+- Configure service credentials
+- View service status
 
-# Manually re-sync after schema changes
-/services sync hubspot
+### Schema Sync
 
-# View detailed status
-/services status hubspot
+For CRM services (HubSpot, Salesforce, Attio), SDRbot syncs your schema to generate strongly-typed tools.
 
-# Disable a service
-/services disable hubspot
+**Automatic sync on startup**: When you launch SDRbot, it automatically syncs any enabled services that haven't been synced yet.
+
+**Manual re-sync**: Use `/sync` when your CRM schema changes:
+
+```bash
+# Re-sync all enabled services
+/sync
+
+# Re-sync a specific service
+/sync hubspot
 ```
 
 ### How Schema Sync Works
 
-1. **Enable a service**: Run `/services enable hubspot`
-2. **Automatic sync**: SDRbot fetches your CRM schema (objects, fields, types)
+1. **Enable a service**: Use `/setup` to configure and enable a CRM service
+2. **Automatic sync**: On startup, SDRbot fetches your CRM schema (objects, fields, types)
 3. **Code generation**: Strongly-typed tools are generated (e.g., `hubspot_create_contact` with exact field names)
 4. **Ready to use**: The agent now has tools that match your exact schema
 
 ### When to Re-sync
 
-Run `/services sync <name>` when:
+Run `/sync` when:
 - You add new custom fields to your CRM
 - You create new custom objects
 - You modify field types or picklist values
@@ -424,7 +437,7 @@ We welcome contributions to SDRbot, an [NForce.ai](https://nforce.ai) project! I
 
 - **Code:** Check out our repository at [github.com/Revhackers-ai/SDRbot](https://github.com/Revhackers-ai/SDRbot)
 - **Website:** Visit us at [sdr.bot](https://sdr.bot)
-- **Community:** Join our [Discord](https://discord.gg/6cHN2pyzpe)
+- **Community:** Join our [Discord](https://discord.gg/XYPJe2HC9R)
 
 ## License
 
