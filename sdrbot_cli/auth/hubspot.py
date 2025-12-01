@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -38,6 +39,9 @@ SCOPES = [
     "crm.schemas.deals.read",
     "crm.schemas.custom.read",
 ]
+
+# Buffer time (in seconds) before token expiry to trigger proactive refresh
+TOKEN_EXPIRY_BUFFER = 300  # 5 minutes
 
 
 def is_configured() -> bool:
@@ -134,6 +138,9 @@ def login() -> dict | None:
     response.raise_for_status()
     token_data = response.json()
 
+    # Add expiry timestamp for proactive refresh
+    token_data["expires_at"] = int(time.time()) + token_data.get("expires_in", 3600)
+
     # Save token
     save_token(token_data)
     console.print(
@@ -154,6 +161,59 @@ def get_stored_token() -> dict | None:
     if data:
         return json.loads(data)
     return None
+
+
+def _is_token_expired(token_data: dict, buffer_seconds: int = TOKEN_EXPIRY_BUFFER) -> bool:
+    """Check if the access token is expired or will expire soon.
+
+    Args:
+        token_data: Token data dictionary containing expires_at.
+        buffer_seconds: Seconds before actual expiry to consider token expired.
+
+    Returns:
+        True if token is expired or will expire within buffer_seconds.
+    """
+    expires_at = token_data.get("expires_at")
+    if not expires_at:
+        # No expiry info, assume valid (legacy tokens without expires_at)
+        return False
+    return time.time() >= (expires_at - buffer_seconds)
+
+
+def _refresh_token(token_data: dict) -> dict | None:
+    """Refresh the access token using the refresh token.
+
+    Args:
+        token_data: Current token data with refresh_token.
+
+    Returns:
+        Updated token data, or None if refresh failed.
+    """
+    refresh_token = token_data.get("refresh_token")
+    if not refresh_token:
+        return None
+
+    try:
+        token_url = "https://api.hubapi.com/oauth/v1/token"
+        payload = {
+            "grant_type": "refresh_token",
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "refresh_token": refresh_token,
+        }
+        response = requests.post(token_url, data=payload)
+        response.raise_for_status()
+        new_token_data = response.json()
+
+        # Merge new data (refresh token may not be returned on refresh)
+        token_data.update(new_token_data)
+        token_data["expires_at"] = int(time.time()) + new_token_data.get("expires_in", 3600)
+        save_token(token_data)
+
+        return token_data
+    except Exception as e:
+        console.print(f"[{COLORS['tool']}]Token refresh failed: {e}[/{COLORS['tool']}]")
+        return None
 
 
 def get_client() -> HubSpot | None:
@@ -185,6 +245,18 @@ def get_client() -> HubSpot | None:
         if not token_data:  # login might return None if client_id/secret are missing
             return None
 
+    # Proactive refresh if token is expired or about to expire
+    if _is_token_expired(token_data):
+        console.print(f"[{COLORS['dim']}]HubSpot token expired, refreshing...[/{COLORS['dim']}]")
+        token_data = _refresh_token(token_data)
+        if not token_data:
+            console.print(
+                f"[{COLORS['tool']}]Token refresh failed. Re-authenticating...[/{COLORS['tool']}]"
+            )
+            token_data = login()
+            if not token_data:
+                return None
+
     client = HubSpot(access_token=token_data["access_token"])
 
     try:
@@ -193,40 +265,26 @@ def get_client() -> HubSpot | None:
         client.crm.contacts.basic_api.get_page(limit=1)
         return client
     except Exception as e:
-        # Check if it's an auth error (401)
+        # Check if it's an auth error (401) - fallback for edge cases
         is_auth_error = "401" in str(e) or "Unauthorized" in str(e)
 
         if is_auth_error:
             console.print(
-                f"[{COLORS['dim']}]HubSpot session expired, attempting refresh...[/{COLORS['dim']}]"
+                f"[{COLORS['dim']}]HubSpot session invalid, attempting refresh...[/{COLORS['dim']}]"
             )
-            if "refresh_token" in token_data:
-                try:
-                    token_url = "https://api.hubapi.com/oauth/v1/token"
-                    payload = {
-                        "grant_type": "refresh_token",
-                        "client_id": CLIENT_ID,
-                        "client_secret": CLIENT_SECRET,
-                        "refresh_token": token_data["refresh_token"],
-                    }
-                    response = requests.post(token_url, data=payload)
-                    response.raise_for_status()
-                    new_token_data = response.json()
+            token_data = _refresh_token(token_data) if token_data else None
+            if token_data:
+                return HubSpot(access_token=token_data["access_token"])
 
-                    token_data.update(new_token_data)
-                    save_token(token_data)
+            # Refresh failed, re-login
+            console.print(
+                f"[{COLORS['tool']}]Refresh failed. Re-authenticating...[/{COLORS['tool']}]"
+            )
+            token_data = login()
+            if token_data:
+                return HubSpot(access_token=token_data["access_token"])
+            return None
 
-                    return HubSpot(access_token=token_data["access_token"])
-                except Exception as refresh_err:
-                    console.print(
-                        f"[{COLORS['tool']}]Refresh failed: {refresh_err}. Re-authenticating.[/{COLORS['tool']}]"
-                    )
-
-        # Fallback to re-login if refresh failed or other error
-        console.print(
-            f"[{COLORS['tool']}]HubSpot client error: {e}. Attempting re-login.[/{COLORS['tool']}]"
-        )
-        token_data = login()
-        if token_data:
-            return HubSpot(access_token=token_data["access_token"])
+        # Non-auth error, re-raise
+        console.print(f"[{COLORS['tool']}]HubSpot client error: {e}[/{COLORS['tool']}]")
         return None

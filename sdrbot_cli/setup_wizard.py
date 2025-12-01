@@ -8,15 +8,21 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout.containers import Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm
 
 from sdrbot_cli.config import COLORS, console, load_model_config, save_model_config
 from sdrbot_cli.services import disable_service, enable_service
 from sdrbot_cli.services.registry import load_config
 
 
+class CancelledError(Exception):
+    """Raised when user cancels input with ESC."""
+
+    pass
+
+
 async def show_choice_menu(
-    options: list[tuple[str, str]], title: str = "Select an option"
+    options: list[tuple[str, str]], title: str = "Select an option", allow_cancel: bool = True
 ) -> str | None:
     """
     Show an interactive choice menu using keyboard navigation.
@@ -24,16 +30,24 @@ async def show_choice_menu(
     Args:
         options: List of tuples (value, label)
         title: Title of the menu
+        allow_cancel: If True (default), pressing ESC raises CancelledError.
+                      If False, ESC returns None.
 
     Returns:
-        The selected value, or None if cancelled.
+        The selected value, or None if cancelled and allow_cancel=False.
+
+    Raises:
+        CancelledError: If user presses ESC and allow_cancel=True.
     """
     # Convert to the format show_menu expects: (id, label, status)
     menu_options = [(value, label, "") for value, label in options]
-    return await show_menu(menu_options, title=title)
+    result = await show_menu(menu_options, title=title)
+    if result is None and allow_cancel:
+        raise CancelledError()
+    return result
 
 
-def _get_or_prompt(
+async def _get_or_prompt(
     env_var_name: str,
     display_name: str,
     is_secret: bool = False,
@@ -41,7 +55,13 @@ def _get_or_prompt(
     force: bool = False,
     default: str | None = None,
 ) -> str | None:
-    """Gets an environment variable or prompts the user for it."""
+    """Gets an environment variable or prompts the user for it.
+
+    Raises:
+        CancelledError: If user presses ESC or Ctrl+C to cancel.
+    """
+    from prompt_toolkit import PromptSession
+
     # If force is True, ignore existing env var and prompt anyway
     if not force:
         value = os.getenv(env_var_name)
@@ -51,17 +71,36 @@ def _get_or_prompt(
             )
             return value
 
+    # Create key bindings that support ESC to cancel
+    bindings = KeyBindings()
+
+    @bindings.add("escape")
+    def _(event):
+        event.app.exit(exception=CancelledError())
+
+    @bindings.add("c-c")
+    def _(event):
+        event.app.exit(exception=CancelledError())
+
+    session: PromptSession = PromptSession(key_bindings=bindings)
+
     if required:
         console.print(f"[{COLORS['primary']}]Missing {display_name}.[/]")
-        return Prompt.ask(
-            f"  Please enter your {display_name}", password=is_secret, default=default
+        console.print(f"[{COLORS['dim']}](Press ESC to cancel)[/{COLORS['dim']}]")
+        return await session.prompt_async(
+            f"  Please enter your {display_name}: ",
+            is_password=is_secret,
+            default=default or "",
         )
     else:
         if Confirm.ask(
             f"[{COLORS['primary']}]Do you want to configure {display_name}?[/", default=False
         ):
-            return Prompt.ask(
-                f"  Please enter your {display_name}", password=is_secret, default=default
+            console.print(f"[{COLORS['dim']}](Press ESC to cancel)[/{COLORS['dim']}]")
+            return await session.prompt_async(
+                f"  Please enter your {display_name}: ",
+                is_password=is_secret,
+                default=default or "",
             )
     return None
 
@@ -98,17 +137,28 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
     """
     Run setup for a specific service.
     Returns True if configuration was updated.
+
+    User can press ESC at any prompt to cancel and return to the menu.
     """
+    try:
+        return await _setup_service_impl(service_name, force)
+    except CancelledError:
+        console.print(f"\n[{COLORS['dim']}]Configuration cancelled.[/{COLORS['dim']}]")
+        return False
+
+
+async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
+    """Implementation of setup_service that may raise CancelledError."""
     env_vars = {}
 
     if service_name == "salesforce":
         console.print(
             f"[{COLORS['primary']}]--- Salesforce Configuration ---[/{COLORS['primary']}]"
         )
-        sf_client_id = _get_or_prompt(
+        sf_client_id = await _get_or_prompt(
             "SF_CLIENT_ID", "Salesforce Client ID", required=True, force=force
         )
-        sf_client_secret = _get_or_prompt(
+        sf_client_secret = await _get_or_prompt(
             "SF_CLIENT_SECRET",
             "Salesforce Client Secret",
             is_secret=True,
@@ -165,7 +215,7 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
             title="Choose authentication method",
         )
         if hubspot_auth_choice == "pat":
-            hubspot_access_token = _get_or_prompt(
+            hubspot_access_token = await _get_or_prompt(
                 "HUBSPOT_ACCESS_TOKEN",
                 "HubSpot Personal Access Token",
                 is_secret=True,
@@ -175,10 +225,10 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
             if hubspot_access_token:
                 env_vars["HUBSPOT_ACCESS_TOKEN"] = hubspot_access_token
         else:
-            hubspot_client_id = _get_or_prompt(
+            hubspot_client_id = await _get_or_prompt(
                 "HUBSPOT_CLIENT_ID", "HubSpot Client ID", required=True, force=force
             )
-            hubspot_client_secret = _get_or_prompt(
+            hubspot_client_secret = await _get_or_prompt(
                 "HUBSPOT_CLIENT_SECRET",
                 "HubSpot Client Secret",
                 is_secret=True,
@@ -227,15 +277,81 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "attio":
         console.print(f"[{COLORS['primary']}]--- Attio Configuration ---[/{COLORS['primary']}]")
-        attio_key = _get_or_prompt(
+        attio_key = await _get_or_prompt(
             "ATTIO_API_KEY", "Attio API Key", is_secret=True, required=True, force=force
         )
         if attio_key:
             env_vars["ATTIO_API_KEY"] = attio_key
 
+    elif service_name == "zohocrm":
+        console.print(f"[{COLORS['primary']}]--- Zoho CRM Configuration ---[/{COLORS['primary']}]")
+        zoho_client_id = await _get_or_prompt(
+            "ZOHO_CLIENT_ID", "Zoho Client ID", required=True, force=force
+        )
+        zoho_client_secret = await _get_or_prompt(
+            "ZOHO_CLIENT_SECRET",
+            "Zoho Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+        zoho_region = await show_choice_menu(
+            [
+                ("us", "US (zoho.com)"),
+                ("eu", "EU (zoho.eu)"),
+                ("in", "India (zoho.in)"),
+                ("au", "Australia (zoho.com.au)"),
+                ("cn", "China (zoho.com.cn)"),
+                ("jp", "Japan (zoho.jp)"),
+            ],
+            title="Select your Zoho data center region",
+        )
+
+        if zoho_client_id:
+            env_vars["ZOHO_CLIENT_ID"] = zoho_client_id
+        if zoho_client_secret:
+            env_vars["ZOHO_CLIENT_SECRET"] = zoho_client_secret
+        if zoho_region:
+            env_vars["ZOHO_REGION"] = zoho_region
+
+        # Trigger OAuth flow if we have credentials
+        if zoho_client_id and zoho_client_secret and zoho_region:
+            save_env_vars(env_vars)
+            # Reload env vars AND settings so the auth module picks them up
+            load_dotenv(override=True)
+            from sdrbot_cli.config import settings
+
+            settings.reload()
+
+            if Confirm.ask(
+                f"[{COLORS['primary']}]Do you want to authenticate with Zoho CRM now?[/]",
+                default=True,
+            ):
+                try:
+                    # Import here to pick up fresh env vars
+                    import importlib
+
+                    import sdrbot_cli.auth.zohocrm as zoho_auth
+
+                    importlib.reload(zoho_auth)
+                    zoho_auth.login()
+                    console.print(
+                        f"[{COLORS['primary']}]Zoho CRM authentication complete![/{COLORS['primary']}]"
+                    )
+                except Exception as e:
+                    console.print(f"[red]Zoho CRM authentication failed: {e}[/red]")
+                    console.print(
+                        f"[{COLORS['dim']}]You can authenticate later when you first use Zoho CRM.[/{COLORS['dim']}]"
+                    )
+            # Enable and sync the service
+            from sdrbot_cli.services import enable_service
+
+            enable_service("zohocrm", sync=True, verbose=True)
+            return True
+
     elif service_name == "lusha":
         console.print(f"[{COLORS['primary']}]--- Lusha Configuration ---[/{COLORS['primary']}]")
-        lusha_key = _get_or_prompt(
+        lusha_key = await _get_or_prompt(
             "LUSHA_API_KEY", "Lusha API Key", is_secret=True, required=True, force=force
         )
         if lusha_key:
@@ -243,7 +359,7 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "hunter":
         console.print(f"[{COLORS['primary']}]--- Hunter.io Configuration ---[/{COLORS['primary']}]")
-        hunter_key = _get_or_prompt(
+        hunter_key = await _get_or_prompt(
             "HUNTER_API_KEY", "Hunter.io API Key", is_secret=True, required=True, force=force
         )
         if hunter_key:
@@ -251,7 +367,7 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "tavily":
         console.print(f"[{COLORS['primary']}]--- Tavily Configuration ---[/{COLORS['primary']}]")
-        tavily_key = _get_or_prompt(
+        tavily_key = await _get_or_prompt(
             "TAVILY_API_KEY", "Tavily API Key", is_secret=True, required=True, force=force
         )
         if tavily_key:
@@ -261,17 +377,19 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
         console.print(
             f"[{COLORS['primary']}]--- PostgreSQL Configuration ---[/{COLORS['primary']}]"
         )
-        pg_host = _get_or_prompt(
+        pg_host = await _get_or_prompt(
             "POSTGRES_HOST", "PostgreSQL Host", default="localhost", required=True, force=force
         )
-        pg_port = _get_or_prompt(
+        pg_port = await _get_or_prompt(
             "POSTGRES_PORT", "PostgreSQL Port", default="5432", required=True, force=force
         )
-        pg_user = _get_or_prompt("POSTGRES_USER", "PostgreSQL User", required=True, force=force)
-        pg_pass = _get_or_prompt(
+        pg_user = await _get_or_prompt(
+            "POSTGRES_USER", "PostgreSQL User", required=True, force=force
+        )
+        pg_pass = await _get_or_prompt(
             "POSTGRES_PASSWORD", "PostgreSQL Password", is_secret=True, required=True, force=force
         )
-        pg_db = _get_or_prompt(
+        pg_db = await _get_or_prompt(
             "POSTGRES_DB", "PostgreSQL Database Name", required=True, force=force
         )
         pg_ssl = await show_choice_menu(
@@ -299,17 +417,19 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "mysql":
         console.print(f"[{COLORS['primary']}]--- MySQL Configuration ---[/{COLORS['primary']}]")
-        mysql_host = _get_or_prompt(
+        mysql_host = await _get_or_prompt(
             "MYSQL_HOST", "MySQL Host", default="localhost", required=True, force=force
         )
-        mysql_port = _get_or_prompt(
+        mysql_port = await _get_or_prompt(
             "MYSQL_PORT", "MySQL Port", default="3306", required=True, force=force
         )
-        mysql_user = _get_or_prompt("MYSQL_USER", "MySQL User", required=True, force=force)
-        mysql_pass = _get_or_prompt(
+        mysql_user = await _get_or_prompt("MYSQL_USER", "MySQL User", required=True, force=force)
+        mysql_pass = await _get_or_prompt(
             "MYSQL_PASSWORD", "MySQL Password", is_secret=True, required=True, force=force
         )
-        mysql_db = _get_or_prompt("MYSQL_DB", "MySQL Database Name", required=True, force=force)
+        mysql_db = await _get_or_prompt(
+            "MYSQL_DB", "MySQL Database Name", required=True, force=force
+        )
         mysql_ssl = await show_choice_menu(
             [
                 ("false", "Disabled"),
@@ -333,7 +453,7 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "mongodb":
         console.print(f"[{COLORS['primary']}]--- MongoDB Configuration ---[/{COLORS['primary']}]")
-        mongo_uri = _get_or_prompt(
+        mongo_uri = await _get_or_prompt(
             "MONGODB_URI",
             "MongoDB Connection URI",
             default="mongodb://localhost:27017",
@@ -341,7 +461,9 @@ async def setup_service(service_name: str, force: bool = False) -> bool:
             required=True,
             force=force,
         )
-        mongo_db = _get_or_prompt("MONGODB_DB", "MongoDB Database Name", required=True, force=force)
+        mongo_db = await _get_or_prompt(
+            "MONGODB_DB", "MongoDB Database Name", required=True, force=force
+        )
         mongo_tls = await show_choice_menu(
             [
                 ("false", "Disabled"),
@@ -397,8 +519,18 @@ async def setup_llm(force: bool = False) -> bool:
     """
     Run setup for LLM configuration.
     Returns True if configuration was updated.
-    """
 
+    User can press ESC at any prompt to cancel and return to the menu.
+    """
+    try:
+        return await _setup_llm_impl(force)
+    except CancelledError:
+        console.print(f"\n[{COLORS['dim']}]Configuration cancelled.[/{COLORS['dim']}]")
+        return False
+
+
+async def _setup_llm_impl(force: bool = False) -> bool:
+    """Implementation of setup_llm that may raise CancelledError."""
     # Provider definitions
     providers = [
         ("openai", "OpenAI"),
@@ -477,7 +609,7 @@ async def setup_llm(force: bool = False) -> bool:
         if action == "configure" or (action == "activate" and provider_code == "custom"):
             # Configuration Logic
             if provider_code == "openai":
-                openai_key = _get_or_prompt(
+                openai_key = await _get_or_prompt(
                     "OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=True
                 )
                 if openai_key:
@@ -491,7 +623,7 @@ async def setup_llm(force: bool = False) -> bool:
                         save_model_config("openai", model_value)
 
             elif provider_code == "anthropic":
-                anthropic_key = _get_or_prompt(
+                anthropic_key = await _get_or_prompt(
                     "ANTHROPIC_API_KEY",
                     "Anthropic API Key",
                     is_secret=True,
@@ -508,7 +640,7 @@ async def setup_llm(force: bool = False) -> bool:
                         save_model_config("anthropic", model_value)
 
             elif provider_code == "google":
-                google_key = _get_or_prompt(
+                google_key = await _get_or_prompt(
                     "GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=True
                 )
                 if google_key:
@@ -524,17 +656,17 @@ async def setup_llm(force: bool = False) -> bool:
                 console.print(
                     f"[{COLORS['dim']}]Configure a custom OpenAI-compatible endpoint (e.g., local Ollama, vLLM).[/]"
                 )
-                api_base = _get_or_prompt(
+                api_base = await _get_or_prompt(
                     "CUSTOM_API_BASE",
                     "API Base URL",
                     required=True,
                     force=True,
                     default="http://localhost:11434/v1",
                 )
-                model_name = _get_or_prompt(
+                model_name = await _get_or_prompt(
                     "CUSTOM_MODEL_NAME", "Model Name", required=True, force=True
                 )
-                api_key = _get_or_prompt(
+                api_key = await _get_or_prompt(
                     "CUSTOM_API_KEY",
                     "API Key (Optional)",
                     is_secret=True,
@@ -594,6 +726,12 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         )
     elif service_name == "attio":
         configured = bool(os.getenv("ATTIO_API_KEY"))
+    elif service_name == "zohocrm":
+        configured = bool(
+            os.getenv("ZOHO_CLIENT_ID")
+            and os.getenv("ZOHO_CLIENT_SECRET")
+            and os.getenv("ZOHO_REGION")
+        )
     elif service_name == "lusha":
         configured = bool(os.getenv("LUSHA_API_KEY"))
     elif service_name == "hunter":
@@ -752,6 +890,7 @@ async def run_setup_wizard(force: bool = False) -> None:
             ("salesforce", "Salesforce (CRM)"),
             ("hubspot", "HubSpot (CRM)"),
             ("attio", "Attio (CRM)"),
+            ("zohocrm", "Zoho CRM"),
             ("lusha", "Lusha (Data Provider)"),
             ("hunter", "Hunter.io (Data Provider)"),
             ("postgres", "PostgreSQL (Database)"),

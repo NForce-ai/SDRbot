@@ -179,6 +179,11 @@ class Settings:
     hubspot_client_secret: str | None
     hubspot_access_token: str | None
 
+    # Zoho CRM Config
+    zoho_client_id: str | None
+    zoho_client_secret: str | None
+    zoho_region: str | None
+
     # Attio Config
     attio_api_key: str | None
 
@@ -245,6 +250,10 @@ class Settings:
         hubspot_client_secret = os.environ.get("HUBSPOT_CLIENT_SECRET")
         hubspot_access_token = os.environ.get("HUBSPOT_ACCESS_TOKEN")
 
+        zoho_client_id = os.environ.get("ZOHO_CLIENT_ID")
+        zoho_client_secret = os.environ.get("ZOHO_CLIENT_SECRET")
+        zoho_region = os.environ.get("ZOHO_REGION")
+
         attio_api_key = os.environ.get("ATTIO_API_KEY")
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
@@ -283,6 +292,9 @@ class Settings:
             hubspot_client_id=hubspot_client_id,
             hubspot_client_secret=hubspot_client_secret,
             hubspot_access_token=hubspot_access_token,
+            zoho_client_id=zoho_client_id,
+            zoho_client_secret=zoho_client_secret,
+            zoho_region=zoho_region,
             attio_api_key=attio_api_key,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
@@ -319,6 +331,9 @@ class Settings:
         self.hubspot_client_id = new_settings.hubspot_client_id
         self.hubspot_client_secret = new_settings.hubspot_client_secret
         self.hubspot_access_token = new_settings.hubspot_access_token
+        self.zoho_client_id = new_settings.zoho_client_id
+        self.zoho_client_secret = new_settings.zoho_client_secret
+        self.zoho_region = new_settings.zoho_region
         self.attio_api_key = new_settings.attio_api_key
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
@@ -378,6 +393,15 @@ class Settings:
         return self.hubspot_access_token is not None or self.hubspot_client_id is not None
 
     @property
+    def has_zohocrm(self) -> bool:
+        """Check if Zoho CRM credentials are configured."""
+        return (
+            self.zoho_client_id is not None
+            and self.zoho_client_secret is not None
+            and self.zoho_region is not None
+        )
+
+    @property
     def has_attio(self) -> bool:
         """Check if Attio API key is configured."""
         return self.attio_api_key is not None
@@ -420,6 +444,7 @@ class Settings:
             "hubspot": self.has_hubspot,
             "salesforce": self.has_salesforce,
             "attio": self.has_attio,
+            "zohocrm": self.has_zohocrm,
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
             "postgres": self.has_postgres,
