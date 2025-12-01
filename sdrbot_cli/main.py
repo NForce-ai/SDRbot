@@ -336,7 +336,7 @@ async def main(
     # Clear terminal at startup
     console.clear()
 
-    await run_setup_wizard()
+    await run_setup_wizard(allow_exit=True)
 
     # Reload environment to pick up changes from setup wizard
     import dotenv

@@ -83,7 +83,7 @@ async def handle_command(
         return True
 
     if cmd == "setup":
-        await run_setup_wizard(force=True)
+        await run_setup_wizard(force=True, allow_exit=False)
         # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()

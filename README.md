@@ -314,7 +314,7 @@ The wizard allows you to:
 
 For CRM services (HubSpot, Salesforce, Zoho CRM, Attio), SDRbot syncs your schema to generate strongly-typed tools.
 
-**Automatic sync on startup**: When you launch SDRbot, it automatically syncs any enabled services that haven't been synced yet.
+**Automatic sync on startup**: When you launch SDRbot, if a service hasn't synced in 24 hours, it will automatically sync.
 
 **Manual re-sync**: Use `/sync` when your CRM schema changes:
 
