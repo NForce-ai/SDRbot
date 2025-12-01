@@ -8,18 +8,18 @@ from sdrbot_cli.config import console
 
 # All available services
 SERVICES = [
-    "hubspot",
     "salesforce",
-    "attio",
-    "zohocrm",
+    "hubspot",
     "pipedrive",
-    "lusha",
-    "hunter",
+    "zohocrm",
+    "attio",
     "apollo",
+    "hunter",
+    "lusha",
+    "tavily",
     "postgres",
     "mysql",
     "mongodb",
-    "tavily",
 ]
 
 # Services that require schema sync (have user-specific schemas)
