@@ -35,7 +35,7 @@ DEEP_AGENTS_ASCII = """
  ███████║██████╔╝██║  ██║██████╔╝╚██████╔╝   ██║
  ╚══════╝╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝    ╚═╝
 
-             [ REVOPS INTELLIGENCE ]
+[VERSION_PLACEHOLDER]
 """
 
 # Interactive commands
