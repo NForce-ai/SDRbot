@@ -12,6 +12,7 @@ SERVICES = [
     "salesforce",
     "attio",
     "zohocrm",
+    "pipedrive",
     "lusha",
     "hunter",
     "postgres",
@@ -21,7 +22,7 @@ SERVICES = [
 ]
 
 # Services that require schema sync (have user-specific schemas)
-SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio", "zohocrm"]
+SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio", "zohocrm", "pipedrive"]
 
 
 def sync_service(service_name: str) -> dict:
