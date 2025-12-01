@@ -45,9 +45,8 @@ COMMANDS = {
     "tokens": "Show token usage for current session",
     "quit": "Exit the CLI",
     "exit": "Exit the CLI",
-    "setup": "Re-run full setup wizard",
-    "models": "Manage LLM providers and models (list, switch, update)",
-    "services": "Manage external services (enable, disable, update, sync, status)",
+    "setup": "Re-run the setup wizard",
+    "sync": "Re-sync service schemas (hubspot, salesforce, attio)",
 }
 
 
@@ -189,6 +188,27 @@ class Settings:
     # Hunter Config
     hunter_api_key: str | None
 
+    # PostgreSQL Config
+    postgres_host: str | None
+    postgres_port: str | None
+    postgres_user: str | None
+    postgres_password: str | None
+    postgres_db: str | None
+    postgres_ssl_mode: str | None  # disable, require, verify-ca, verify-full
+
+    # MySQL Config
+    mysql_host: str | None
+    mysql_port: str | None
+    mysql_user: str | None
+    mysql_password: str | None
+    mysql_db: str | None
+    mysql_ssl: bool  # Enable SSL (default: False)
+
+    # MongoDB Config
+    mongodb_uri: str | None
+    mongodb_db: str | None
+    mongodb_tls: bool  # Enable TLS (default: False)
+
     # Custom Model Config
     custom_api_base: str | None
     custom_api_key: str | None
@@ -229,6 +249,27 @@ class Settings:
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
 
+        # Postgres
+        postgres_host = os.environ.get("POSTGRES_HOST")
+        postgres_port = os.environ.get("POSTGRES_PORT")
+        postgres_user = os.environ.get("POSTGRES_USER")
+        postgres_password = os.environ.get("POSTGRES_PASSWORD")
+        postgres_db = os.environ.get("POSTGRES_DB")
+        postgres_ssl_mode = os.environ.get("POSTGRES_SSL_MODE")
+
+        # MySQL
+        mysql_host = os.environ.get("MYSQL_HOST")
+        mysql_port = os.environ.get("MYSQL_PORT")
+        mysql_user = os.environ.get("MYSQL_USER")
+        mysql_password = os.environ.get("MYSQL_PASSWORD")
+        mysql_db = os.environ.get("MYSQL_DB")
+        mysql_ssl = os.environ.get("MYSQL_SSL", "").lower() == "true"
+
+        # MongoDB
+        mongodb_uri = os.environ.get("MONGODB_URI")
+        mongodb_db = os.environ.get("MONGODB_DB")
+        mongodb_tls = os.environ.get("MONGODB_TLS", "").lower() == "true"
+
         # Detect project
         project_root = _find_project_root(start_path)
 
@@ -245,6 +286,21 @@ class Settings:
             attio_api_key=attio_api_key,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
+            postgres_host=postgres_host,
+            postgres_port=postgres_port,
+            postgres_user=postgres_user,
+            postgres_password=postgres_password,
+            postgres_db=postgres_db,
+            postgres_ssl_mode=postgres_ssl_mode,
+            mysql_host=mysql_host,
+            mysql_port=mysql_port,
+            mysql_user=mysql_user,
+            mysql_password=mysql_password,
+            mysql_db=mysql_db,
+            mysql_ssl=mysql_ssl,
+            mongodb_uri=mongodb_uri,
+            mongodb_db=mongodb_db,
+            mongodb_tls=mongodb_tls,
             custom_api_base=custom_base,
             custom_api_key=custom_key,
             custom_model_name=custom_model,
@@ -266,6 +322,21 @@ class Settings:
         self.attio_api_key = new_settings.attio_api_key
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
+        self.postgres_host = new_settings.postgres_host
+        self.postgres_port = new_settings.postgres_port
+        self.postgres_user = new_settings.postgres_user
+        self.postgres_password = new_settings.postgres_password
+        self.postgres_db = new_settings.postgres_db
+        self.postgres_ssl_mode = new_settings.postgres_ssl_mode
+        self.mysql_host = new_settings.mysql_host
+        self.mysql_port = new_settings.mysql_port
+        self.mysql_user = new_settings.mysql_user
+        self.mysql_password = new_settings.mysql_password
+        self.mysql_db = new_settings.mysql_db
+        self.mysql_ssl = new_settings.mysql_ssl
+        self.mongodb_uri = new_settings.mongodb_uri
+        self.mongodb_db = new_settings.mongodb_db
+        self.mongodb_tls = new_settings.mongodb_tls
         self.custom_api_base = new_settings.custom_api_base
         self.custom_api_key = new_settings.custom_api_key
         self.custom_model_name = new_settings.custom_model_name
@@ -321,6 +392,21 @@ class Settings:
         """Check if Hunter API key is configured."""
         return self.hunter_api_key is not None
 
+    @property
+    def has_postgres(self) -> bool:
+        """Check if PostgreSQL credentials are configured."""
+        return self.postgres_host is not None and self.postgres_db is not None
+
+    @property
+    def has_mysql(self) -> bool:
+        """Check if MySQL credentials are configured."""
+        return self.mysql_host is not None and self.mysql_db is not None
+
+    @property
+    def has_mongodb(self) -> bool:
+        """Check if MongoDB credentials are configured."""
+        return self.mongodb_uri is not None and self.mongodb_db is not None
+
     def has_service_credentials(self, service_name: str) -> bool:
         """Check if credentials exist for a specific service.
 
@@ -336,6 +422,9 @@ class Settings:
             "attio": self.has_attio,
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
+            "postgres": self.has_postgres,
+            "mysql": self.has_mysql,
+            "mongodb": self.has_mongodb,
             "tavily": self.has_tavily,
         }
         return checks.get(service_name, False)

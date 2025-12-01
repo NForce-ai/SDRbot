@@ -550,15 +550,18 @@ def show_interactive_help() -> None:
     console.print()
 
     console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
-    console.print("  /services list              List all services and status", style=COLORS["dim"])
     console.print(
-        "  /services enable <name>     Enable a service (auto-syncs)", style=COLORS["dim"]
+        "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
     )
-    console.print("  /services disable <name>    Disable a service", style=COLORS["dim"])
-    console.print("  /services sync <name>       Re-sync service schema", style=COLORS["dim"])
-    console.print("  /services status <name>     Show detailed status", style=COLORS["dim"])
+    console.print(
+        "  /sync [name]                Re-sync service schema (all or specific)",
+        style=COLORS["dim"],
+    )
     console.print()
-    console.print("  Services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"])
+    console.print(
+        "  Services: hubspot, salesforce, attio, lusha, hunter, postgres, mysql, mongodb, tavily",
+        style=COLORS["dim"],
+    )
     console.print()
 
     console.print("[bold]Agent Commands:[/bold]", style=COLORS["primary"])
@@ -706,17 +709,16 @@ def show_help() -> None:
 
     console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
     console.print(
-        "  /services list              List all services and their status", style=COLORS["dim"]
+        "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
     )
     console.print(
-        "  /services enable <name>     Enable a service (auto-syncs if needed)", style=COLORS["dim"]
+        "  /sync [name]                Re-sync service schema (all or specific)",
+        style=COLORS["dim"],
     )
-    console.print("  /services disable <name>    Disable a service", style=COLORS["dim"])
-    console.print("  /services sync <name>       Re-sync service schema", style=COLORS["dim"])
-    console.print("  /services status <name>     Show detailed service status", style=COLORS["dim"])
     console.print()
     console.print(
-        "  Available services: hubspot, salesforce, attio, lusha, hunter", style=COLORS["dim"]
+        "  Available services: hubspot, salesforce, attio, lusha, hunter, postgres, mysql, mongodb, tavily",
+        style=COLORS["dim"],
     )
     console.print()
 

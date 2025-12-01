@@ -7,13 +7,12 @@ import dotenv
 from langgraph.checkpoint.memory import InMemorySaver
 
 from .config import COLORS, DEEP_AGENTS_ASCII, SessionState, console, settings
-from .models_commands import handle_models_command
-from .services.commands import handle_services_command
+from .services import SYNCABLE_SERVICES, resync_service
 from .setup_wizard import run_setup_wizard
 from .ui import TokenTracker, show_interactive_help
 
 
-def handle_command(
+async def handle_command(
     command: str, session_state: SessionState, token_tracker: TokenTracker
 ) -> str | bool:
     """
@@ -30,17 +29,31 @@ def handle_command(
     if cmd in ["quit", "exit", "q"]:
         return "exit"
 
-    if cmd == "services":
-        if handle_services_command(args, session_state):
-            return True
-        return True
+    if cmd == "sync":
+        if args:
+            # Sync specific service
+            service_name = args[0]
+            if service_name not in SYNCABLE_SERVICES:
+                console.print(f"[red]Service '{service_name}' does not support syncing.[/red]")
+                console.print(f"[dim]Syncable services: {', '.join(SYNCABLE_SERVICES)}[/dim]")
+                return True
+            resync_service(service_name, verbose=True)
+        else:
+            # Sync all enabled syncable services
+            from sdrbot_cli.services.registry import load_config
 
-    if cmd == "models":
-        result = handle_models_command(args)
-        if result == "reload":
-            dotenv.load_dotenv(Path.cwd() / ".env", override=True)
-            settings.reload()
-            session_state.reload_agent()
+            config = load_config()
+            synced_any = False
+
+            console.print(f"[{COLORS['primary']}]Syncing enabled services...[/{COLORS['primary']}]")
+
+            for service in SYNCABLE_SERVICES:
+                if config.is_enabled(service):
+                    resync_service(service, verbose=True)
+                    synced_any = True
+
+            if not synced_any:
+                console.print("[dim]No enabled services require syncing.[/dim]")
         return True
 
     if cmd == "clear":
@@ -70,7 +83,7 @@ def handle_command(
         return True
 
     if cmd == "setup":
-        run_setup_wizard(force=True)
+        await run_setup_wizard(force=True)
         # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()

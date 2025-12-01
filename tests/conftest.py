@@ -72,3 +72,69 @@ def real_hubspot_client():
     from hubspot import HubSpot
 
     return HubSpot(access_token=pat)
+
+
+@pytest.fixture
+def mock_postgres_conn():
+    """Create a mock PostgreSQL connection and cursor."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    return mock_conn, mock_cursor
+
+
+@pytest.fixture
+def patch_postgres_conn(mock_postgres_conn):
+    """Patch psycopg2.connect to return mock."""
+    mock_conn, _ = mock_postgres_conn
+    with patch("psycopg2.connect", return_value=mock_conn):
+        yield mock_postgres_conn
+
+
+@pytest.fixture
+def mock_mysql_conn():
+    """Create a mock MySQL connection and cursor."""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    # Mock 'open' property
+    mock_conn.open = True
+    return mock_conn, mock_cursor
+
+
+@pytest.fixture
+def patch_mysql_conn(mock_mysql_conn):
+    """Patch pymysql.connect to return mock."""
+    mock_conn, _ = mock_mysql_conn
+    with patch("pymysql.connect", return_value=mock_conn):
+        yield mock_mysql_conn
+
+
+@pytest.fixture
+def patch_mongo_db():
+    """Patch get_mongo_db to return a mock database object."""
+    mock_db = MagicMock()
+
+    # Mock common MongoDB operations
+    mock_db.list_collection_names.return_value = ["test_collection"]
+
+    # Mock find().limit() chain
+    mock_cursor = MagicMock()
+    mock_cursor.limit.return_value = []  # Default to no results
+    mock_db.__getitem__.return_value.find.return_value = mock_cursor
+
+    mock_insert_result = MagicMock()
+    mock_insert_result.inserted_id = "mock_insert_id"
+    mock_db.__getitem__.return_value.insert_one.return_value = mock_insert_result
+
+    mock_update_result = MagicMock()
+    mock_update_result.matched_count = 0
+    mock_update_result.modified_count = 0
+    mock_db.__getitem__.return_value.update_many.return_value = mock_update_result
+
+    mock_delete_result = MagicMock()
+    mock_delete_result.deleted_count = 0
+    mock_db.__getitem__.return_value.delete_many.return_value = mock_delete_result
+
+    with patch("sdrbot_cli.services.mongodb.tools.get_mongo_db", return_value=mock_db):
+        yield mock_db

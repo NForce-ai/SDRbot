@@ -224,7 +224,7 @@ async def simple_cli(
 
         # Check for slash commands first
         if user_input.startswith("/"):
-            result = handle_command(user_input, session_state, token_tracker)
+            result = await handle_command(user_input, session_state, token_tracker)
             if result == "exit":
                 console.print("\nGoodbye!", style=COLORS["primary"])
                 break
@@ -336,7 +336,7 @@ async def main(
     # Clear terminal at startup
     console.clear()
 
-    run_setup_wizard()
+    await run_setup_wizard()
 
     # Reload environment to pick up changes from setup wizard
     import dotenv

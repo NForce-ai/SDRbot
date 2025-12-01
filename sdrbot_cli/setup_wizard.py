@@ -2,50 +2,35 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from prompt_toolkit.application import Application
+from prompt_toolkit.formatted_text import HTML, to_formatted_text
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout.containers import Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.layout import Layout
 from rich.prompt import Confirm, Prompt
 
-from sdrbot_cli.config import COLORS, console, save_model_config
+from sdrbot_cli.config import COLORS, console, load_model_config, save_model_config
+from sdrbot_cli.services import disable_service, enable_service
+from sdrbot_cli.services.registry import load_config
 
 
-def _prompt_numbered_choice(
-    prompt_text: str, choices: list[tuple[str, str]], default: int = 1
-) -> str:
-    """Display numbered choices and return the selected value.
+async def show_choice_menu(
+    options: list[tuple[str, str]], title: str = "Select an option"
+) -> str | None:
+    """
+    Show an interactive choice menu using keyboard navigation.
 
     Args:
-        prompt_text: Text to display before the choices
-        choices: List of (label, value) tuples
-        default: Default choice number (1-indexed)
+        options: List of tuples (value, label)
+        title: Title of the menu
 
     Returns:
-        The value (second element) of the selected choice
+        The selected value, or None if cancelled.
     """
-    console.print()
-    console.print(f"  [{COLORS['primary']}]{prompt_text}:[/{COLORS['primary']}]")
-    for i, (label, value) in enumerate(choices, 1):
-        if value and value != label:
-            console.print(
-                f"    [{COLORS['primary']}]{i}[/{COLORS['primary']}]) {label} [dim]({value})[/dim]"
-            )
-        else:
-            console.print(f"    [{COLORS['primary']}]{i}[/{COLORS['primary']}]) {label}")
-    console.print()
-
-    while True:
-        choice = Prompt.ask(
-            f"  [{COLORS['primary']}]Select[/{COLORS['primary']}]", default=str(default)
-        )
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(choices):
-                return choices[idx][1]
-            console.print(f"  [red]Please enter a number between 1 and {len(choices)}[/red]")
-        except ValueError:
-            # Maybe they typed the value directly
-            for label, value in choices:
-                if choice.lower() in (label.lower(), value.lower()):
-                    return value
-            console.print(f"  [red]Please enter a number between 1 and {len(choices)}[/red]")
+    # Convert to the format show_menu expects: (id, label, status)
+    menu_options = [(value, label, "") for value, label in options]
+    return await show_menu(menu_options, title=title)
 
 
 def _get_or_prompt(
@@ -109,7 +94,7 @@ def save_env_vars(env_vars: dict) -> None:
     console.print(f"[{COLORS['dim']}]Credentials saved to {env_file}[/{COLORS['dim']}]")
 
 
-def setup_service(service_name: str, force: bool = False) -> bool:
+async def setup_service(service_name: str, force: bool = False) -> bool:
     """
     Run setup for a specific service.
     Returns True if configuration was updated.
@@ -172,12 +157,12 @@ def setup_service(service_name: str, force: bool = False) -> bool:
 
     elif service_name == "hubspot":
         console.print(f"[{COLORS['primary']}]--- HubSpot Configuration ---[/{COLORS['primary']}]")
-        hubspot_auth_choice = _prompt_numbered_choice(
-            "Choose authentication method",
+        hubspot_auth_choice = await show_choice_menu(
             [
-                ("Personal Access Token", "pat"),
-                ("OAuth (Client ID/Secret)", "oauth"),
+                ("pat", "Personal Access Token"),
+                ("oauth", "OAuth (Client ID/Secret)"),
             ],
+            title="Choose authentication method",
         )
         if hubspot_auth_choice == "pat":
             hubspot_access_token = _get_or_prompt(
@@ -272,6 +257,106 @@ def setup_service(service_name: str, force: bool = False) -> bool:
         if tavily_key:
             env_vars["TAVILY_API_KEY"] = tavily_key
 
+    elif service_name == "postgres":
+        console.print(
+            f"[{COLORS['primary']}]--- PostgreSQL Configuration ---[/{COLORS['primary']}]"
+        )
+        pg_host = _get_or_prompt(
+            "POSTGRES_HOST", "PostgreSQL Host", default="localhost", required=True, force=force
+        )
+        pg_port = _get_or_prompt(
+            "POSTGRES_PORT", "PostgreSQL Port", default="5432", required=True, force=force
+        )
+        pg_user = _get_or_prompt("POSTGRES_USER", "PostgreSQL User", required=True, force=force)
+        pg_pass = _get_or_prompt(
+            "POSTGRES_PASSWORD", "PostgreSQL Password", is_secret=True, required=True, force=force
+        )
+        pg_db = _get_or_prompt(
+            "POSTGRES_DB", "PostgreSQL Database Name", required=True, force=force
+        )
+        pg_ssl = await show_choice_menu(
+            [
+                ("", "None (no SSL)"),
+                ("require", "Require (encrypt, no verification)"),
+                ("verify-ca", "Verify CA (encrypt, verify server cert)"),
+                ("verify-full", "Verify Full (encrypt, verify server cert + hostname)"),
+            ],
+            title="SSL Mode",
+        )
+
+        if pg_host:
+            env_vars["POSTGRES_HOST"] = pg_host
+        if pg_port:
+            env_vars["POSTGRES_PORT"] = pg_port
+        if pg_user:
+            env_vars["POSTGRES_USER"] = pg_user
+        if pg_pass:
+            env_vars["POSTGRES_PASSWORD"] = pg_pass
+        if pg_db:
+            env_vars["POSTGRES_DB"] = pg_db
+        if pg_ssl:
+            env_vars["POSTGRES_SSL_MODE"] = pg_ssl
+
+    elif service_name == "mysql":
+        console.print(f"[{COLORS['primary']}]--- MySQL Configuration ---[/{COLORS['primary']}]")
+        mysql_host = _get_or_prompt(
+            "MYSQL_HOST", "MySQL Host", default="localhost", required=True, force=force
+        )
+        mysql_port = _get_or_prompt(
+            "MYSQL_PORT", "MySQL Port", default="3306", required=True, force=force
+        )
+        mysql_user = _get_or_prompt("MYSQL_USER", "MySQL User", required=True, force=force)
+        mysql_pass = _get_or_prompt(
+            "MYSQL_PASSWORD", "MySQL Password", is_secret=True, required=True, force=force
+        )
+        mysql_db = _get_or_prompt("MYSQL_DB", "MySQL Database Name", required=True, force=force)
+        mysql_ssl = await show_choice_menu(
+            [
+                ("false", "Disabled"),
+                ("true", "Enabled"),
+            ],
+            title="Enable SSL",
+        )
+
+        if mysql_host:
+            env_vars["MYSQL_HOST"] = mysql_host
+        if mysql_port:
+            env_vars["MYSQL_PORT"] = mysql_port
+        if mysql_user:
+            env_vars["MYSQL_USER"] = mysql_user
+        if mysql_pass:
+            env_vars["MYSQL_PASSWORD"] = mysql_pass
+        if mysql_db:
+            env_vars["MYSQL_DB"] = mysql_db
+        if mysql_ssl == "true":
+            env_vars["MYSQL_SSL"] = "true"
+
+    elif service_name == "mongodb":
+        console.print(f"[{COLORS['primary']}]--- MongoDB Configuration ---[/{COLORS['primary']}]")
+        mongo_uri = _get_or_prompt(
+            "MONGODB_URI",
+            "MongoDB Connection URI",
+            default="mongodb://localhost:27017",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+        mongo_db = _get_or_prompt("MONGODB_DB", "MongoDB Database Name", required=True, force=force)
+        mongo_tls = await show_choice_menu(
+            [
+                ("false", "Disabled"),
+                ("true", "Enabled"),
+            ],
+            title="Enable TLS",
+        )
+
+        if mongo_uri:
+            env_vars["MONGODB_URI"] = mongo_uri
+        if mongo_db:
+            env_vars["MONGODB_DB"] = mongo_db
+        if mongo_tls == "true":
+            env_vars["MONGODB_TLS"] = "true"
+
     else:
         console.print(f"[red]Unknown service: {service_name}[/red]")
         return False
@@ -308,96 +393,331 @@ MODEL_CHOICES = {
 }
 
 
-def setup_llm(force: bool = False) -> bool:
+async def setup_llm(force: bool = False) -> bool:
     """
     Run setup for LLM configuration.
     Returns True if configuration was updated.
     """
-    console.print(
-        f"[{COLORS['primary']}]--- Large Language Model (LLM) Configuration ---[/{COLORS['primary']}]"
-    )
 
-    llm_choice = _prompt_numbered_choice(
-        "Choose your LLM provider",
-        [
-            ("OpenAI", "openai"),
-            ("Anthropic", "anthropic"),
-            ("Google", "google"),
-            ("Custom (OpenAI-compatible)", "custom"),
-        ],
-    )
+    # Provider definitions
+    providers = [
+        ("openai", "OpenAI"),
+        ("anthropic", "Anthropic"),
+        ("google", "Google Gemini"),
+        ("custom", "Custom (OpenAI-compatible)"),
+    ]
 
-    env_vars = {}
-    if llm_choice == "openai":
-        openai_key = _get_or_prompt(
-            "OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=force
-        )
-        if openai_key:
-            env_vars["OPENAI_API_KEY"] = openai_key
+    while True:
+        # Load current state
+        current_config = load_model_config()
+        active_provider = current_config.get("provider") if current_config else None
 
-        # Select Model
-        model_value = _prompt_numbered_choice("Choose OpenAI model", MODEL_CHOICES["openai"])
-        save_model_config("openai", model_value)
+        menu_items = []
+        for code, label in providers:
+            # Check configuration
+            is_configured = False
+            if code == "openai":
+                is_configured = bool(os.getenv("OPENAI_API_KEY"))
+            elif code == "anthropic":
+                is_configured = bool(os.getenv("ANTHROPIC_API_KEY"))
+            elif code == "google":
+                is_configured = bool(os.getenv("GOOGLE_API_KEY"))
+            elif code == "custom":
+                # Custom is tricky to check without loading config,
+                # but let's assume if it's active it's configured, or check config file for custom entries if needed.
+                # For simplicity, we'll mark as configured if active, or just check if it was previously set.
+                is_configured = active_provider == "custom"
 
-    elif llm_choice == "anthropic":
-        anthropic_key = _get_or_prompt(
-            "ANTHROPIC_API_KEY", "Anthropic API Key", is_secret=True, required=True, force=force
-        )
-        if anthropic_key:
-            env_vars["ANTHROPIC_API_KEY"] = anthropic_key
+            status_parts = []
+            if code == active_provider:
+                status_parts.append("[green]● Active[/green]")
 
-        # Select Model
-        model_value = _prompt_numbered_choice("Choose Anthropic model", MODEL_CHOICES["anthropic"])
-        save_model_config("anthropic", model_value)
+            if is_configured:
+                status_parts.append("[dim]Configured[/dim]")
+            else:
+                status_parts.append("[red]Missing Keys[/red]")
 
-    elif llm_choice == "google":
-        google_key = _get_or_prompt(
-            "GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=force
-        )
-        if google_key:
-            env_vars["GOOGLE_API_KEY"] = google_key
+            status_str = " ".join(status_parts)
+            menu_items.append((code, label, status_str))
 
-        # Select Model
-        model_value = _prompt_numbered_choice("Choose Google Gemini model", MODEL_CHOICES["google"])
-        save_model_config("google", model_value)
+        menu_items.append(("back", "Back to Main Menu", ""))
 
-    elif llm_choice == "custom":
-        console.print(
-            f"[{COLORS['dim']}]Configure a custom OpenAI-compatible endpoint (e.g., local Ollama, vLLM).[/]"
-        )
+        selected_provider = await show_menu(menu_items, title="Select LLM Provider")
 
-        api_base = _get_or_prompt(
-            "CUSTOM_API_BASE",
-            "API Base URL",
-            required=True,
-            force=force,
-            default="http://localhost:11434/v1",
-        )
-        # Don't save base to env, saving to model config instead
+        if selected_provider == "back" or selected_provider is None:
+            return False
 
-        model_name = _get_or_prompt("CUSTOM_MODEL_NAME", "Model Name", required=True, force=force)
-        # Don't save model name to env, saving to model config instead
+        # Provider Selected - Show Actions
+        # Determine if we can just activate it or need to configure
+        provider_code = selected_provider
 
-        # Optional API Key for custom provider
-        api_key = _get_or_prompt(
-            "CUSTOM_API_KEY", "API Key (Optional)", is_secret=True, required=False, force=force
-        )
-        if api_key:
-            env_vars["CUSTOM_API_KEY"] = api_key
+        # Check if configured again for logic
+        is_configured = False
+        if provider_code == "openai":
+            is_configured = bool(os.getenv("OPENAI_API_KEY"))
+        elif provider_code == "anthropic":
+            is_configured = bool(os.getenv("ANTHROPIC_API_KEY"))
+        elif provider_code == "google":
+            is_configured = bool(os.getenv("GOOGLE_API_KEY"))
 
-        if api_base and model_name:
-            save_model_config("custom", model_name, api_base)
+        action_items = []
+        if is_configured and provider_code != "custom":
+            action_items.append(("activate", "Activate / Switch Model", ""))
 
-    if env_vars:
-        save_env_vars(env_vars)
+        action_items.append(("configure", "Configure Credentials", ""))
+        action_items.append(("back", "Back", ""))
+
+        action = await show_menu(action_items, title=f"Manage {provider_code.capitalize()}")
+
+        if action == "back":
+            continue
+
+        env_vars = {}
+
+        if action == "configure" or (action == "activate" and provider_code == "custom"):
+            # Configuration Logic
+            if provider_code == "openai":
+                openai_key = _get_or_prompt(
+                    "OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=True
+                )
+                if openai_key:
+                    env_vars["OPENAI_API_KEY"] = openai_key
+                    # After setting key, prompt for model to activate immediately
+                    model_value = await show_choice_menu(
+                        [(v, label) for label, v in MODEL_CHOICES["openai"]],
+                        title="Choose OpenAI model",
+                    )
+                    if model_value:
+                        save_model_config("openai", model_value)
+
+            elif provider_code == "anthropic":
+                anthropic_key = _get_or_prompt(
+                    "ANTHROPIC_API_KEY",
+                    "Anthropic API Key",
+                    is_secret=True,
+                    required=True,
+                    force=True,
+                )
+                if anthropic_key:
+                    env_vars["ANTHROPIC_API_KEY"] = anthropic_key
+                    model_value = await show_choice_menu(
+                        [(v, label) for label, v in MODEL_CHOICES["anthropic"]],
+                        title="Choose Anthropic model",
+                    )
+                    if model_value:
+                        save_model_config("anthropic", model_value)
+
+            elif provider_code == "google":
+                google_key = _get_or_prompt(
+                    "GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=True
+                )
+                if google_key:
+                    env_vars["GOOGLE_API_KEY"] = google_key
+                    model_value = await show_choice_menu(
+                        [(v, label) for label, v in MODEL_CHOICES["google"]],
+                        title="Choose Google Gemini model",
+                    )
+                    if model_value:
+                        save_model_config("google", model_value)
+
+            elif provider_code == "custom":
+                console.print(
+                    f"[{COLORS['dim']}]Configure a custom OpenAI-compatible endpoint (e.g., local Ollama, vLLM).[/]"
+                )
+                api_base = _get_or_prompt(
+                    "CUSTOM_API_BASE",
+                    "API Base URL",
+                    required=True,
+                    force=True,
+                    default="http://localhost:11434/v1",
+                )
+                model_name = _get_or_prompt(
+                    "CUSTOM_MODEL_NAME", "Model Name", required=True, force=True
+                )
+                api_key = _get_or_prompt(
+                    "CUSTOM_API_KEY",
+                    "API Key (Optional)",
+                    is_secret=True,
+                    required=False,
+                    force=True,
+                )
+                if api_key:
+                    env_vars["CUSTOM_API_KEY"] = api_key
+
+                if api_base and model_name:
+                    save_model_config("custom", model_name, api_base)
+
+        elif action == "activate":
+            # Just switching model for already configured provider
+            if provider_code == "openai":
+                model_value = await show_choice_menu(
+                    [(v, label) for label, v in MODEL_CHOICES["openai"]],
+                    title="Choose OpenAI model",
+                )
+                if model_value:
+                    save_model_config("openai", model_value)
+            elif provider_code == "anthropic":
+                model_value = await show_choice_menu(
+                    [(v, label) for label, v in MODEL_CHOICES["anthropic"]],
+                    title="Choose Anthropic model",
+                )
+                if model_value:
+                    save_model_config("anthropic", model_value)
+            elif provider_code == "google":
+                model_value = await show_choice_menu(
+                    [(v, label) for label, v in MODEL_CHOICES["google"]],
+                    title="Choose Google Gemini model",
+                )
+                if model_value:
+                    save_model_config("google", model_value)
+
+        if env_vars:
+            save_env_vars(env_vars)
+            load_dotenv(override=True)
+
         return True
 
-    # Return True if we saved model config even if no env vars changed
-    # (e.g. just switched model but kept same key)
-    return True
+
+def get_service_status(service_name: str) -> tuple[bool, bool]:
+    """
+    Check service status.
+    Returns: (is_configured, is_enabled)
+    """
+    # Check configuration (env vars)
+    configured = False
+    if service_name == "salesforce":
+        configured = bool(os.getenv("SF_CLIENT_ID") and os.getenv("SF_CLIENT_SECRET"))
+    elif service_name == "hubspot":
+        configured = bool(
+            os.getenv("HUBSPOT_ACCESS_TOKEN")
+            or (os.getenv("HUBSPOT_CLIENT_ID") and os.getenv("HUBSPOT_CLIENT_SECRET"))
+        )
+    elif service_name == "attio":
+        configured = bool(os.getenv("ATTIO_API_KEY"))
+    elif service_name == "lusha":
+        configured = bool(os.getenv("LUSHA_API_KEY"))
+    elif service_name == "hunter":
+        configured = bool(os.getenv("HUNTER_API_KEY"))
+    elif service_name == "tavily":
+        configured = bool(os.getenv("TAVILY_API_KEY"))
+    elif service_name == "postgres":
+        configured = bool(os.getenv("POSTGRES_HOST"))
+    elif service_name == "mysql":
+        configured = bool(os.getenv("MYSQL_HOST"))
+    elif service_name == "mongodb":
+        configured = bool(os.getenv("MONGODB_URI"))
+
+    # Check enabled state from registry
+    try:
+        config = load_config()
+        enabled = config.is_enabled(service_name)
+    except Exception:
+        enabled = False
+
+    return configured, enabled
 
 
-def run_setup_wizard(force: bool = False) -> None:
+async def show_menu(
+    options: list[tuple[str, str, str]], title: str = "Select a service to configure"
+) -> str | None:
+    """
+    Show an interactive menu in the terminal using prompt_toolkit.
+
+    Args:
+        options: List of tuples (id, label, status_markup)
+        title: Title of the menu
+
+    Returns:
+        The selected id, or None if cancelled.
+    """
+    bindings = KeyBindings()
+    selected_index = 0
+
+    # Store the result to return
+    result_id = None
+
+    @bindings.add("up")
+    def _(event):
+        nonlocal selected_index
+        selected_index = max(0, selected_index - 1)
+
+    @bindings.add("down")
+    def _(event):
+        nonlocal selected_index
+        selected_index = min(len(options) - 1, selected_index + 1)
+
+    @bindings.add("enter")
+    def _(event):
+        nonlocal result_id
+        result_id = options[selected_index][0]
+        event.app.exit()
+
+    @bindings.add("c-c")
+    @bindings.add("q")
+    @bindings.add("escape")
+    def _(event):
+        event.app.exit()
+
+    def get_formatted_text():
+        text = []
+        text.extend(
+            to_formatted_text(
+                HTML(f"<b>{title}</b> <gray>(↑↓ Navigate, Enter Select, Esc Back)</gray>\n\n")
+            )
+        )
+
+        for i, (_, label, status) in enumerate(options):
+            # Convert rich-style markup in status to HTML-ish for prompt_toolkit
+            pt_status = status.replace("[green]", "<style fg='green'>").replace(
+                "[/green]", "</style>"
+            )
+            pt_status = pt_status.replace("[red]", "<style fg='red'>").replace("[/red]", "</style>")
+            pt_status = pt_status.replace("[yellow]", "<style fg='yellow'>").replace(
+                "[/yellow]", "</style>"
+            )
+            pt_status = pt_status.replace("[dim]", "<style fg='gray'>").replace(
+                "[/dim]", "</style>"
+            )
+
+            # Allow raw HTML in status if no rich tags found (for submenu items with no status)
+            if "[" not in status:
+                pt_status = status
+
+            if i == selected_index:
+                # Highlighted row
+                row_content = f"  > {label:<35} {pt_status}"
+                # We need to render the inner HTML first, then apply the background style
+                # But HTML() parser handles nested tags.
+                text.extend(
+                    to_formatted_text(
+                        HTML(f"<style bg='#2e3440' fg='#ffffff'>{row_content}</style>")
+                    )
+                )
+            else:
+                # Normal row
+                row_content = f"    {label:<35} {pt_status}"
+                text.extend(to_formatted_text(HTML(row_content)))
+
+            text.append(("", "\n"))
+        return text
+
+    # Height = header (2) + items + footer (0)
+    window_height = len(options) + 3
+
+    layout = Layout(Window(content=FormattedTextControl(get_formatted_text), height=window_height))
+
+    app = Application(
+        layout=layout,
+        key_bindings=bindings,
+        mouse_support=False,
+        full_screen=False,
+    )
+
+    await app.run_async()
+    return result_id
+
+
+async def run_setup_wizard(force: bool = False) -> None:
     """
     Guides the user through setting up essential environment variables for SDRbot.
     Missing variables will be prompted for and saved to the .env file.
@@ -422,41 +742,147 @@ def run_setup_wizard(force: bool = False) -> None:
         f"[{COLORS['dim']}]Values will be saved to your working folders .env file.[/]{COLORS['dim']}\n"
     )
 
-    # LLM Provider
-    setup_llm(force=force)
+    while True:
+        # Refresh env vars in case they changed
+        load_dotenv(override=True)
 
-    console.print("\n")
+        # Define available services with status
+        service_definitions = [
+            ("tavily", "Tavily (Web Search)"),
+            ("salesforce", "Salesforce (CRM)"),
+            ("hubspot", "HubSpot (CRM)"),
+            ("attio", "Attio (CRM)"),
+            ("lusha", "Lusha (Data Provider)"),
+            ("hunter", "Hunter.io (Data Provider)"),
+            ("postgres", "PostgreSQL (Database)"),
+            ("mysql", "MySQL (Database)"),
+            ("mongodb", "MongoDB (Database)"),
+        ]
 
-    # Optional services
-    if Confirm.ask(
-        f"[{COLORS['primary']}]Do you want to configure Tavily (Web Search)?[/", default=False
-    ):
-        setup_service("tavily", force)
-    console.print("\n")
+        # Build menu items
+        # Format: (id, label, status_rich_markup)
+        menu_items = []
 
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Salesforce?[/", default=False):
-        setup_service("salesforce", force)
-    console.print("\n")
+        # LLM Item
+        current_model_config = load_model_config()
+        active_provider = current_model_config.get("provider") if current_model_config else None
+        active_model = current_model_config.get("model_name") if current_model_config else None
 
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure HubSpot?[/", default=False):
-        setup_service("hubspot", force)
-    console.print("\n")
+        if active_provider:
+            # Make it look nice, e.g. "OpenAI (gpt-5-mini)"
+            provider_display = active_provider.capitalize()
+            if active_provider == "openai":
+                provider_display = "OpenAI"
+            elif active_provider == "anthropic":
+                provider_display = "Anthropic"
+            elif active_provider == "google":
+                provider_display = "Google"
 
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Hunter.io?[/", default=False):
-        setup_service("hunter", force)
-    console.print("\n")
+            llm_status = f"[green]✓ {provider_display} ({active_model})[/green]"
+        else:
+            # Fallback check for legacy env vars if config file missing
+            llm_configured = bool(
+                os.getenv("OPENAI_API_KEY")
+                or os.getenv("ANTHROPIC_API_KEY")
+                or os.getenv("GOOGLE_API_KEY")
+                or os.getenv("CUSTOM_API_BASE")
+            )
+            llm_status = (
+                "[green]✓ Configured[/green]" if llm_configured else "[red]Not Configured[/red]"
+            )
 
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Lusha?[/", default=False):
-        setup_service("lusha", force)
-    console.print("\n")
+        menu_items.append(("llm", "LLM Provider", llm_status))
 
-    if Confirm.ask(f"[{COLORS['primary']}]Do you want to configure Attio?[/", default=False):
-        setup_service("attio", force)
-    console.print("\n")
+        # Track service status to use in selection logic
+        service_states = {}
+
+        for code, label in service_definitions:
+            configured, enabled = get_service_status(code)
+            service_states[code] = (configured, enabled)
+
+            if configured:
+                if enabled:
+                    status = "[green]✓ Enabled[/green]"
+                else:
+                    status = "[yellow]• Disabled[/yellow] [dim](Configured)[/dim]"
+            else:
+                status = "[dim]• Not Configured[/dim]"
+
+            menu_items.append((code, label, status))
+
+        menu_items.append(("done", "Done / Continue", ""))
+        menu_items.append(("exit", "Exit", ""))
+
+        # Show the inline menu
+        selected_option = await show_menu(menu_items)
+
+        if selected_option is None or selected_option == "exit":
+            console.print(f"[{COLORS['dim']}]Exiting setup wizard.[/{COLORS['dim']}]")
+            return
+
+        if selected_option == "done":
+            # Validate that an LLM provider is configured
+            current_config = load_model_config()
+            has_llm = current_config and current_config.get("provider")
+
+            # Also check legacy env vars as fallback
+            if not has_llm:
+                has_llm = bool(
+                    os.getenv("OPENAI_API_KEY")
+                    or os.getenv("ANTHROPIC_API_KEY")
+                    or os.getenv("GOOGLE_API_KEY")
+                    or os.getenv("CUSTOM_API_BASE")
+                )
+
+            if not has_llm:
+                console.print("\n[red][bold]LLM Provider Required[/bold][/red]")
+                console.print(
+                    "[red]You must configure at least one LLM provider before continuing.[/red]"
+                )
+                console.print(
+                    f"[{COLORS['dim']}]Select 'LLM Provider' from the menu to configure one.[/{COLORS['dim']}]\n"
+                )
+                continue
+
+            break
+
+        if selected_option == "llm":
+            await setup_llm(force=True)
+        else:
+            # Handle Service Selection
+            configured, enabled = service_states[selected_option]
+
+            # Build action submenu
+            action_items = []
+
+            if not configured:
+                # Not configured -> offer to configure
+                action_items.append(("configure", "Configure", ""))
+            else:
+                # Configured -> offer toggle and reconfigure
+                if enabled:
+                    action_items.append(("disable", "Disable Service", ""))
+                else:
+                    action_items.append(("enable", "Enable Service", ""))
+                action_items.append(("reconfigure", "Reconfigure Credentials", ""))
+
+            action_items.append(("back", "Back", ""))
+
+            action = await show_menu(action_items, title=f"Manage {selected_option.capitalize()}")
+
+            if action == "configure" or action == "reconfigure":
+                await setup_service(selected_option, force=True)
+            elif action == "enable":
+                enable_service(selected_option, verbose=True)
+            elif action == "disable":
+                disable_service(selected_option, verbose=True)
+            # "back" or None (escape) -> just continue to main menu
 
     console.print(f"[{COLORS['primary']}][bold]Setup Complete![/bold][/]")
     console.print(f"[{COLORS['dim']}]You can now run SDRbot.[/]{COLORS['dim']}\n")
 
 
 if __name__ == "__main__":
-    run_setup_wizard()
+    import asyncio
+
+    asyncio.run(run_setup_wizard())

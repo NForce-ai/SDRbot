@@ -19,6 +19,9 @@ dependencies = [
     "requests>=2.31.0",
     "markdownify>=0.11.0",
     "pyinstaller>=6.0.0",
+    "psycopg2-binary>=2.9.0",
+    "pymysql>=1.1.0",
+    "pymongo>=4.6.0",
 ]
 
 [project.optional-dependencies]
