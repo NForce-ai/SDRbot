@@ -2,6 +2,8 @@
 Service Registry and Management.
 """
 
+from datetime import UTC, datetime, timedelta
+
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.config import console
@@ -238,9 +240,35 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
         if not state.enabled:
             continue
 
-        # Skip if already synced
-        if state.synced_at:
+        should_sync = False
+        reason = None
+
+        # Check if never synced
+        if not state.synced_at:
+            should_sync = True
+            reason = "initial sync"
+        else:
+            # Check if generated file exists
+            generated_file = settings.ensure_generated_dir() / f"{service_name}_tools.py"
+            if not generated_file.exists():
+                should_sync = True
+                reason = "tools file missing"
+
+            # Check if expired (24h)
+            try:
+                last_sync = datetime.fromisoformat(state.synced_at)
+                if datetime.now(UTC) - last_sync > timedelta(hours=24):
+                    should_sync = True
+                    reason = "schema cache expired (>24h)"
+            except ValueError:
+                should_sync = True  # Invalid format, re-sync
+                reason = "invalid timestamp"
+
+        if not should_sync:
             continue
+
+        if verbose and state.synced_at:
+            console.print(f"[yellow]⚠ {service_name}: {reason} - re-syncing...[/yellow]")
 
         # Skip if no credentials
         if not settings.has_service_credentials(service_name):

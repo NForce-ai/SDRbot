@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -624,11 +625,10 @@ async def _setup_llm_impl(force: bool = False) -> bool:
             status_parts = []
             if code == active_provider:
                 status_parts.append("[green]● Active[/green]")
-
-            if is_configured:
-                status_parts.append("[dim]Configured[/dim]")
+            elif is_configured:
+                status_parts.append("[cyan]Configured[/cyan]")
             else:
-                status_parts.append("[red]Missing Keys[/red]")
+                status_parts.append("[dim]Missing Keys[/dim]")
 
             status_str = " ".join(status_parts)
             menu_items.append((code, label, status_str))
@@ -654,7 +654,9 @@ async def _setup_llm_impl(force: bool = False) -> bool:
             is_configured = bool(os.getenv("GOOGLE_API_KEY"))
 
         action = None
-        if not is_configured:
+        is_explicit_config = False
+
+        if not is_configured or (force and provider_code != active_provider):
             action = "configure"
         else:
             action_items = []
@@ -666,6 +668,9 @@ async def _setup_llm_impl(force: bool = False) -> bool:
 
             action = await show_menu(action_items, title=f"Manage {provider_code.capitalize()}")
 
+            if action == "configure":
+                is_explicit_config = True
+
         if action == "back":
             continue
 
@@ -675,7 +680,11 @@ async def _setup_llm_impl(force: bool = False) -> bool:
             # Configuration Logic
             if provider_code == "openai":
                 openai_key = await _get_or_prompt(
-                    "OPENAI_API_KEY", "OpenAI API Key", is_secret=True, required=True, force=True
+                    "OPENAI_API_KEY",
+                    "OpenAI API Key",
+                    is_secret=True,
+                    required=True,
+                    force=is_explicit_config,
                 )
                 if openai_key:
                     env_vars["OPENAI_API_KEY"] = openai_key
@@ -693,7 +702,7 @@ async def _setup_llm_impl(force: bool = False) -> bool:
                     "Anthropic API Key",
                     is_secret=True,
                     required=True,
-                    force=True,
+                    force=is_explicit_config,
                 )
                 if anthropic_key:
                     env_vars["ANTHROPIC_API_KEY"] = anthropic_key
@@ -706,7 +715,11 @@ async def _setup_llm_impl(force: bool = False) -> bool:
 
             elif provider_code == "google":
                 google_key = await _get_or_prompt(
-                    "GOOGLE_API_KEY", "Google API Key", is_secret=True, required=True, force=True
+                    "GOOGLE_API_KEY",
+                    "Google API Key",
+                    is_secret=True,
+                    required=True,
+                    force=is_explicit_config,
                 )
                 if google_key:
                     env_vars["GOOGLE_API_KEY"] = google_key
@@ -885,6 +898,9 @@ async def show_menu(
             pt_status = pt_status.replace("[yellow]", "<style fg='yellow'>").replace(
                 "[/yellow]", "</style>"
             )
+            pt_status = pt_status.replace("[cyan]", "<style fg='cyan'>").replace(
+                "[/cyan]", "</style>"
+            )
             pt_status = pt_status.replace("[dim]", "<style fg='gray'>").replace(
                 "[/dim]", "</style>"
             )
@@ -927,36 +943,42 @@ async def show_menu(
     return result_id
 
 
-async def run_setup_wizard(force: bool = False) -> None:
+async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None:
     """
     Guides the user through setting up essential environment variables for SDRbot.
     Missing variables will be prompted for and saved to the .env file.
 
     Args:
         force: If True, run the wizard even if credentials already exist.
+        allow_exit: If True, include an "Exit" option in the menu.
     """
     # Check if we already have what we need
-    has_api_key = (
-        os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    )
+    model_config = load_model_config()
+    has_model_json = model_config and model_config.get("provider")
 
-    if has_api_key and not force:
+    # We now strictly require model.json to exist (so a provider is explicitly chosen)
+    # Env vars alone are not enough to skip the wizard.
+    if has_model_json and not force:
         # Configuration exists, skip wizard
         return
 
     console.print(f"[{COLORS['primary']}][bold]SDRbot Setup Wizard[/bold][/{COLORS['primary']}]")
+
     console.print(
         f"[{COLORS['dim']}]This wizard will help you configure your API keys and credentials.[/]{COLORS['dim']}]"
     )
+
     console.print(
         f"[{COLORS['dim']}]Values will be saved to your working folders .env file.[/]{COLORS['dim']}\n"
     )
 
     while True:
         # Refresh env vars in case they changed
+
         load_dotenv(override=True)
 
         # Define available services with status
+
         service_definitions = [
             ("salesforce", "Salesforce (CRM)"),
             ("hubspot", "HubSpot (CRM)"),
@@ -973,12 +995,17 @@ async def run_setup_wizard(force: bool = False) -> None:
         ]
 
         # Build menu items
+
         # Format: (id, label, status_rich_markup)
+
         menu_items = []
 
         # LLM Item
+
         current_model_config = load_model_config()
+
         active_provider = current_model_config.get("provider") if current_model_config else None
+
         active_model = current_model_config.get("model_name") if current_model_config else None
 
         if active_provider:
@@ -993,16 +1020,8 @@ async def run_setup_wizard(force: bool = False) -> None:
 
             llm_status = f"[green]✓ {provider_display} ({active_model})[/green]"
         else:
-            # Fallback check for legacy env vars if config file missing
-            llm_configured = bool(
-                os.getenv("OPENAI_API_KEY")
-                or os.getenv("ANTHROPIC_API_KEY")
-                or os.getenv("GOOGLE_API_KEY")
-                or os.getenv("CUSTOM_API_BASE")
-            )
-            llm_status = (
-                "[green]✓ Configured[/green]" if llm_configured else "[red]Not Configured[/red]"
-            )
+            # No model.json means not configured for our purposes
+            llm_status = "[dim]• Not Configured[/dim]"
 
         menu_items.append(("llm", "LLM Provider", llm_status))
 
@@ -1017,35 +1036,40 @@ async def run_setup_wizard(force: bool = False) -> None:
                 if enabled:
                     status = "[green]✓ Enabled[/green]"
                 else:
-                    status = "[yellow]• Disabled[/yellow] [dim](Configured)[/dim]"
+                    # Configured but not enabled in services.json
+                    status = "[yellow]• Disabled[/yellow] [dim](Credentials present)[/dim]"
             else:
+                # Not configured (missing env vars)
                 status = "[dim]• Not Configured[/dim]"
 
             menu_items.append((code, label, status))
 
         menu_items.append(("done", "Done / Continue", ""))
-        menu_items.append(("exit", "Exit", ""))
+
+        if allow_exit:
+            menu_items.append(("exit", "Exit", ""))
 
         # Show the inline menu
         selected_option = await show_menu(menu_items)
 
-        if selected_option is None or selected_option == "exit":
-            console.print(f"[{COLORS['dim']}]Exiting setup wizard.[/{COLORS['dim']}]")
-            return
+        if selected_option == "exit":
+            console.print(f"[{COLORS['dim']}]Exiting...[/{COLORS['dim']}]")
+            sys.exit(0)
+
+        if selected_option is None:
+            if allow_exit:
+                console.print(
+                    f"[{COLORS['dim']}]Setup cancelled. Exiting application.[/{COLORS['dim']}]"
+                )
+                sys.exit(0)
+            else:
+                console.print(f"[{COLORS['dim']}]Exiting setup wizard.[/{COLORS['dim']}]")
+                return
 
         if selected_option == "done":
-            # Validate that an LLM provider is configured
+            # Validate that an LLM provider is configured (must have model.json)
             current_config = load_model_config()
             has_llm = current_config and current_config.get("provider")
-
-            # Also check legacy env vars as fallback
-            if not has_llm:
-                has_llm = bool(
-                    os.getenv("OPENAI_API_KEY")
-                    or os.getenv("ANTHROPIC_API_KEY")
-                    or os.getenv("GOOGLE_API_KEY")
-                    or os.getenv("CUSTOM_API_BASE")
-                )
 
             if not has_llm:
                 console.print("\n[red][bold]LLM Provider Required[/bold][/red]")
