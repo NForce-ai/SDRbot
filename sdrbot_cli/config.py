@@ -184,6 +184,11 @@ class Settings:
     zoho_client_secret: str | None
     zoho_region: str | None
 
+    # Pipedrive Config
+    pipedrive_api_token: str | None
+    pipedrive_client_id: str | None
+    pipedrive_client_secret: str | None
+
     # Attio Config
     attio_api_key: str | None
 
@@ -254,6 +259,10 @@ class Settings:
         zoho_client_secret = os.environ.get("ZOHO_CLIENT_SECRET")
         zoho_region = os.environ.get("ZOHO_REGION")
 
+        pipedrive_api_token = os.environ.get("PIPEDRIVE_API_TOKEN")
+        pipedrive_client_id = os.environ.get("PIPEDRIVE_CLIENT_ID")
+        pipedrive_client_secret = os.environ.get("PIPEDRIVE_CLIENT_SECRET")
+
         attio_api_key = os.environ.get("ATTIO_API_KEY")
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
@@ -295,6 +304,9 @@ class Settings:
             zoho_client_id=zoho_client_id,
             zoho_client_secret=zoho_client_secret,
             zoho_region=zoho_region,
+            pipedrive_api_token=pipedrive_api_token,
+            pipedrive_client_id=pipedrive_client_id,
+            pipedrive_client_secret=pipedrive_client_secret,
             attio_api_key=attio_api_key,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
@@ -334,6 +346,9 @@ class Settings:
         self.zoho_client_id = new_settings.zoho_client_id
         self.zoho_client_secret = new_settings.zoho_client_secret
         self.zoho_region = new_settings.zoho_region
+        self.pipedrive_api_token = new_settings.pipedrive_api_token
+        self.pipedrive_client_id = new_settings.pipedrive_client_id
+        self.pipedrive_client_secret = new_settings.pipedrive_client_secret
         self.attio_api_key = new_settings.attio_api_key
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
@@ -402,6 +417,13 @@ class Settings:
         )
 
     @property
+    def has_pipedrive(self) -> bool:
+        """Check if Pipedrive credentials are configured."""
+        return self.pipedrive_api_token is not None or (
+            self.pipedrive_client_id is not None and self.pipedrive_client_secret is not None
+        )
+
+    @property
     def has_attio(self) -> bool:
         """Check if Attio API key is configured."""
         return self.attio_api_key is not None
@@ -445,6 +467,7 @@ class Settings:
             "salesforce": self.has_salesforce,
             "attio": self.has_attio,
             "zohocrm": self.has_zohocrm,
+            "pipedrive": self.has_pipedrive,
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
             "postgres": self.has_postgres,

@@ -349,6 +349,76 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
             enable_service("zohocrm", sync=True, verbose=True)
             return True
 
+    elif service_name == "pipedrive":
+        console.print(f"[{COLORS['primary']}]--- Pipedrive Configuration ---[/{COLORS['primary']}]")
+        pipedrive_auth_choice = await show_choice_menu(
+            [
+                ("api_token", "API Token"),
+                ("oauth", "OAuth (Client ID/Secret)"),
+            ],
+            title="Choose authentication method",
+        )
+        if pipedrive_auth_choice == "api_token":
+            pipedrive_api_token = await _get_or_prompt(
+                "PIPEDRIVE_API_TOKEN",
+                "Pipedrive API Token",
+                is_secret=True,
+                required=True,
+                force=force,
+            )
+            if pipedrive_api_token:
+                env_vars["PIPEDRIVE_API_TOKEN"] = pipedrive_api_token
+        else:
+            pipedrive_client_id = await _get_or_prompt(
+                "PIPEDRIVE_CLIENT_ID", "Pipedrive Client ID", required=True, force=force
+            )
+            pipedrive_client_secret = await _get_or_prompt(
+                "PIPEDRIVE_CLIENT_SECRET",
+                "Pipedrive Client Secret",
+                is_secret=True,
+                required=True,
+                force=force,
+            )
+            if pipedrive_client_id:
+                env_vars["PIPEDRIVE_CLIENT_ID"] = pipedrive_client_id
+            if pipedrive_client_secret:
+                env_vars["PIPEDRIVE_CLIENT_SECRET"] = pipedrive_client_secret
+
+            # Trigger OAuth flow if we have credentials
+            if pipedrive_client_id and pipedrive_client_secret:
+                save_env_vars(env_vars)
+                # Reload env vars AND settings so the auth module picks them up
+                load_dotenv(override=True)
+                from sdrbot_cli.config import settings
+
+                settings.reload()
+
+                if Confirm.ask(
+                    f"[{COLORS['primary']}]Do you want to authenticate with Pipedrive now?[/]",
+                    default=True,
+                ):
+                    try:
+                        # Import here to pick up fresh env vars
+                        import importlib
+
+                        import sdrbot_cli.auth.pipedrive as pd_auth
+
+                        importlib.reload(pd_auth)
+                        pd_auth.login()
+                        console.print(
+                            f"[{COLORS['primary']}]Pipedrive authentication complete![/{COLORS['primary']}]"
+                        )
+                    except Exception as e:
+                        console.print(f"[red]Pipedrive authentication failed: {e}[/red]")
+                        console.print(
+                            f"[{COLORS['dim']}]You can authenticate later when you first use Pipedrive.[/{COLORS['dim']}]"
+                        )
+                # Enable and sync the service
+                from sdrbot_cli.services import enable_service
+
+                enable_service("pipedrive", sync=True, verbose=True)
+                return True
+
     elif service_name == "lusha":
         console.print(f"[{COLORS['primary']}]--- Lusha Configuration ---[/{COLORS['primary']}]")
         lusha_key = await _get_or_prompt(
@@ -732,6 +802,11 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
             and os.getenv("ZOHO_CLIENT_SECRET")
             and os.getenv("ZOHO_REGION")
         )
+    elif service_name == "pipedrive":
+        configured = bool(
+            os.getenv("PIPEDRIVE_API_TOKEN")
+            or (os.getenv("PIPEDRIVE_CLIENT_ID") and os.getenv("PIPEDRIVE_CLIENT_SECRET"))
+        )
     elif service_name == "lusha":
         configured = bool(os.getenv("LUSHA_API_KEY"))
     elif service_name == "hunter":
@@ -891,6 +966,7 @@ async def run_setup_wizard(force: bool = False) -> None:
             ("hubspot", "HubSpot (CRM)"),
             ("attio", "Attio (CRM)"),
             ("zohocrm", "Zoho CRM"),
+            ("pipedrive", "Pipedrive (CRM)"),
             ("lusha", "Lusha (Data Provider)"),
             ("hunter", "Hunter.io (Data Provider)"),
             ("postgres", "PostgreSQL (Database)"),

@@ -24,6 +24,7 @@ By using this software, you acknowledge that:
 - **Salesforce:** Full support for SOQL, SOSL, and CRUD on Standard & Custom Objects.
 - **HubSpot:** Support for Contacts, Companies, Deals, and Custom Objects via the v3 API.
 - **Zoho CRM:** Full support for all modules including custom modules, COQL queries, and lead conversion.
+- **Pipedrive:** Full support for Deals, Persons, Organizations, Products, Activities, and Leads via the v1 API.
 - **Attio:** Next-gen CRM support using the Attio v2 API (Objects & Attributes).
 
 ### 2. Prospecting & Enrichment
@@ -44,6 +45,7 @@ By using this software, you acknowledge that:
 | **Salesforce** | OAuth 2.0 | ✓ | SOQL, SOSL, CRUD on all objects |
 | **HubSpot** | OAuth 2.0 or PAT | ✓ | Search, CRUD, Pipelines, Associations |
 | **Zoho CRM** | OAuth 2.0 | ✓ | COQL, CRUD, Lead Conversion, Notes |
+| **Pipedrive** | API Token or OAuth | ✓ | Search, CRUD, Pipelines, Notes, Activities |
 | **Attio** | API Key | ✓ | Query, CRUD, Notes |
 | **Lusha** | API Key | — | Prospecting, Person/Company Enrichment |
 | **Hunter.io** | API Key | — | Domain Search, Email Finder, Verification |
@@ -127,6 +129,7 @@ nano .env
 - **Salesforce:** `SF_CLIENT_ID`, `SF_CLIENT_SECRET` (Requires a Connected App)
 - **HubSpot:** `HUBSPOT_ACCESS_TOKEN` (Legacy App Token) **OR** `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` (OAuth)
 - **Zoho CRM:** `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REGION` (us, eu, in, au, cn, or jp)
+- **Pipedrive:** `PIPEDRIVE_API_TOKEN` **OR** `PIPEDRIVE_CLIENT_ID` and `PIPEDRIVE_CLIENT_SECRET` (OAuth)
 - **Attio:** `ATTIO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
@@ -138,7 +141,7 @@ nano .env
 
 ## 🔐 OAuth Setup Guide
 
-SDRbot uses OAuth 2.0 to securely connect to Salesforce, HubSpot, and Zoho CRM. You'll need to create your own app credentials in each platform.
+SDRbot uses OAuth 2.0 to securely connect to Salesforce, HubSpot, Zoho CRM, and Pipedrive. You'll need to create your own app credentials in each platform.
 
 ### Salesforce Connected App
 
@@ -220,6 +223,41 @@ Zoho CRM requires OAuth 2.0 authentication. The simplest method is creating a "S
 
 **Important:** Use the API console that matches your Zoho account's data center. If your Zoho account is on zoho.eu, use api-console.zoho.eu.
 
+### Pipedrive Authentication
+
+Pipedrive offers two options:
+
+#### Option 1: API Token (Simplest)
+
+This is the easiest method - no OAuth callback server needed.
+
+1. **Log in to Pipedrive** and go to **Settings** (gear icon)
+2. Navigate to **Personal preferences → API**
+3. Copy your **Personal API token** → This is your `PIPEDRIVE_API_TOKEN`
+
+#### Option 2: OAuth App
+
+Use this if you need refresh tokens or plan to distribute SDRbot to others.
+
+1. **Log in to Pipedrive** as an admin
+2. Go to **Settings → Tools and apps → Developer hub**
+3. Click **Create an app** and select **Create private app**
+4. Fill in the basic information:
+   - **App name:** `SDRbot` (or any name you prefer)
+5. Go to the **OAuth & access scopes** tab:
+   - **Callback URL:** `http://localhost:8080/callback/pipedrive`
+   - Add these scopes:
+     - `deals:full` - Manage deals
+     - `contacts:full` - Manage persons and organizations
+     - `activities:full` - Manage activities
+     - `products:full` - Manage products
+     - `leads:full` - Manage leads
+     - `admin` - Access pipelines, stages, users
+6. Click **Save**
+7. Go to the **Basic info** tab:
+   - Copy the **Client ID** → This is your `PIPEDRIVE_CLIENT_ID`
+   - Copy the **Client Secret** → This is your `PIPEDRIVE_CLIENT_SECRET`
+
 ---
 
 ## 🎮 Usage
@@ -234,6 +272,7 @@ sdrbot
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
 - **Zoho CRM:** Opens a browser for OAuth login. Tokens are saved securely in your system keyring with automatic refresh.
+- **Pipedrive:** Uses API Token directly, or launches browser OAuth flow if using Client ID/Secret. Tokens are saved securely with automatic refresh.
 - **Attio / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 
 ### Example Prompts

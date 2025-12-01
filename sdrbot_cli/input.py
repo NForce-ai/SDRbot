@@ -102,9 +102,24 @@ class CommandCompleter(Completer):
 
 
 def parse_file_mentions(text: str) -> tuple[str, list[Path]]:
-    """Extract @file mentions and return cleaned text with resolved file paths."""
+    """Extract @file mentions and return cleaned text with resolved file paths.
+
+    Skips email addresses (word@domain pattern) to avoid false positives.
+    """
     pattern = r"@((?:[^\s@]|(?<=\\)\s)+)"  # Match @filename, allowing escaped spaces
     matches = re.findall(pattern, text)
+
+    # Filter out email-like patterns (something before @ that looks like email username)
+    # Email pattern: word characters/dots/hyphens followed by @domain
+    email_pattern = re.compile(r"[\w.\-+]+@[\w.\-]+\.[a-zA-Z]{2,}")
+    email_domains = set()
+    for email_match in email_pattern.finditer(text):
+        # Extract just the domain part (after @)
+        domain = email_match.group().split("@")[1]
+        email_domains.add(domain)
+
+    # Remove matches that are email domains
+    matches = [m for m in matches if m not in email_domains]
 
     files = []
     for match in matches:
