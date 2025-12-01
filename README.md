@@ -13,7 +13,7 @@ It is built on top of [LangChain](https://langchain.com) and [DeepAgents](https:
 By using this software, you acknowledge that:
 1.  **You are responsible for your data:** SDRbot is a powerful tool capable of creating, updating, and deleting records in your CRM. We are not liable for any data loss, corruption, or unintended modifications.
 2.  **Review Plans Carefully:** Always review the agent's proposed plan before approving execution.
-3.  **Third-Party Terms:** You are responsible for ensuring your use of this tool complies with the Terms of Service of any third-party platforms it interacts with (Salesforce, HubSpot, LinkedIn, etc.).
+3.  **Third-Party Terms:** You are responsible for ensuring your use of this tool complies with the Terms of Service of any third-party platforms it interacts with.
 
 ---
 
@@ -23,6 +23,7 @@ By using this software, you acknowledge that:
 `sdrbot` syncs with your CRM to generate tools with exact field names and types.
 - **Salesforce:** Full support for SOQL, SOSL, and CRUD on Standard & Custom Objects.
 - **HubSpot:** Support for Contacts, Companies, Deals, and Custom Objects via the v3 API.
+- **Zoho CRM:** Full support for all modules including custom modules, COQL queries, and lead conversion.
 - **Attio:** Next-gen CRM support using the Attio v2 API (Objects & Attributes).
 
 ### 2. Prospecting & Enrichment
@@ -42,6 +43,7 @@ By using this software, you acknowledge that:
 | :--- | :--- | :---: | :--- |
 | **Salesforce** | OAuth 2.0 | ✓ | SOQL, SOSL, CRUD on all objects |
 | **HubSpot** | OAuth 2.0 or PAT | ✓ | Search, CRUD, Pipelines, Associations |
+| **Zoho CRM** | OAuth 2.0 | ✓ | COQL, CRUD, Lead Conversion, Notes |
 | **Attio** | API Key | ✓ | Query, CRUD, Notes |
 | **Lusha** | API Key | — | Prospecting, Person/Company Enrichment |
 | **Hunter.io** | API Key | — | Domain Search, Email Finder, Verification |
@@ -124,6 +126,7 @@ nano .env
 **CRM & Tools (Fill only what you use):**
 - **Salesforce:** `SF_CLIENT_ID`, `SF_CLIENT_SECRET` (Requires a Connected App)
 - **HubSpot:** `HUBSPOT_ACCESS_TOKEN` (Legacy App Token) **OR** `HUBSPOT_CLIENT_ID` and `HUBSPOT_CLIENT_SECRET` (OAuth)
+- **Zoho CRM:** `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REGION` (us, eu, in, au, cn, or jp)
 - **Attio:** `ATTIO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
@@ -135,7 +138,7 @@ nano .env
 
 ## 🔐 OAuth Setup Guide
 
-SDRbot uses OAuth 2.0 to securely connect to Salesforce and HubSpot. You'll need to create your own app credentials in each platform.
+SDRbot uses OAuth 2.0 to securely connect to Salesforce, HubSpot, and Zoho CRM. You'll need to create your own app credentials in each platform.
 
 ### Salesforce Connected App
 
@@ -197,6 +200,26 @@ Use this if you need refresh tokens or plan to distribute SDRbot to others.
 5. Copy the **Client ID** → This is your `HUBSPOT_CLIENT_ID`
 6. Copy the **Client Secret** → This is your `HUBSPOT_CLIENT_SECRET`
 
+### Zoho CRM Self Client
+
+Zoho CRM requires OAuth 2.0 authentication. The simplest method is creating a "Self Client" for server-side access.
+
+1. **Log in to Zoho API Console** at [api-console.zoho.com](https://api-console.zoho.com) (use your region's domain: .eu, .in, .com.au, etc.)
+2. Click **Add Client** and select **Self Client**
+3. Give it a name (e.g., `SDRbot`)
+4. Go to the **Client Secret** tab:
+   - Copy the **Client ID** → This is your `ZOHO_CLIENT_ID`
+   - Copy the **Client Secret** → This is your `ZOHO_CLIENT_SECRET`
+5. **Set your region** in `.env`:
+   - `ZOHO_REGION=us` for zoho.com (United States)
+   - `ZOHO_REGION=eu` for zoho.eu (Europe)
+   - `ZOHO_REGION=in` for zoho.in (India)
+   - `ZOHO_REGION=au` for zoho.com.au (Australia)
+   - `ZOHO_REGION=cn` for zoho.com.cn (China)
+   - `ZOHO_REGION=jp` for zoho.jp (Japan)
+
+**Important:** Use the API console that matches your Zoho account's data center. If your Zoho account is on zoho.eu, use api-console.zoho.eu.
+
 ---
 
 ## 🎮 Usage
@@ -210,6 +233,7 @@ sdrbot
 ### Authentication Flows
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
+- **Zoho CRM:** Opens a browser for OAuth login. Tokens are saved securely in your system keyring with automatic refresh.
 - **Attio / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 
 ### Example Prompts
@@ -246,7 +270,7 @@ The wizard allows you to:
 
 ### Schema Sync
 
-For CRM services (HubSpot, Salesforce, Attio), SDRbot syncs your schema to generate strongly-typed tools.
+For CRM services (HubSpot, Salesforce, Zoho CRM, Attio), SDRbot syncs your schema to generate strongly-typed tools.
 
 **Automatic sync on startup**: When you launch SDRbot, it automatically syncs any enabled services that haven't been synced yet.
 

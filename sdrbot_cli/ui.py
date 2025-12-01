@@ -535,31 +535,12 @@ def show_interactive_help() -> None:
     )
     console.print()
 
-    console.print("[bold]Model Commands:[/bold]", style=COLORS["primary"])
-    console.print(
-        "  /models                     List active and available models", style=COLORS["dim"]
-    )
-    console.print(
-        "  /models switch              Switch to a different provider/model", style=COLORS["dim"]
-    )
-    console.print(
-        "  /models configure <name>    Reconfigure API key and model", style=COLORS["dim"]
-    )
-    console.print()
-    console.print("  Providers: openai, anthropic, google, custom", style=COLORS["dim"])
-    console.print()
-
-    console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
+    console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
     console.print(
         "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
     )
     console.print(
-        "  /sync [name]                Re-sync service schema (all or specific)",
-        style=COLORS["dim"],
-    )
-    console.print()
-    console.print(
-        "  Services: hubspot, salesforce, attio, lusha, hunter, postgres, mysql, mongodb, tavily",
+        "  /sync [name]                      Re-sync service schema (all or specific)",
         style=COLORS["dim"],
     )
     console.print()
@@ -693,31 +674,12 @@ def show_help() -> None:
     )
     console.print()
 
-    console.print("[bold]Model Commands:[/bold]", style=COLORS["primary"])
-    console.print(
-        "  /models                     List active and available models", style=COLORS["dim"]
-    )
-    console.print(
-        "  /models switch              Switch to a different provider/model", style=COLORS["dim"]
-    )
-    console.print(
-        "  /models configure <name>    Reconfigure API key and model", style=COLORS["dim"]
-    )
-    console.print()
-    console.print("  Providers: openai, anthropic, google, custom", style=COLORS["dim"])
-    console.print()
-
-    console.print("[bold]Service Commands:[/bold]", style=COLORS["primary"])
+    console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
     console.print(
         "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
     )
     console.print(
-        "  /sync [name]                Re-sync service schema (all or specific)",
-        style=COLORS["dim"],
-    )
-    console.print()
-    console.print(
-        "  Available services: hubspot, salesforce, attio, lusha, hunter, postgres, mysql, mongodb, tavily",
+        "  /sync [name]                      Re-sync service schema (all or specific)",
         style=COLORS["dim"],
     )
     console.print()
