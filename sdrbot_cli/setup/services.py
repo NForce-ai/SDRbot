@@ -1,4 +1,4 @@
-"""Service integrations setup for the setup wizard."""
+"""Services setup for the setup wizard."""
 
 import importlib
 import os
@@ -96,8 +96,8 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
     return configured, enabled
 
 
-def get_integrations_status() -> str:
-    """Get overall status string for integrations."""
+def get_services_status() -> str:
+    """Get overall status string for services."""
     config = load_config()
     enabled_count = 0
 
@@ -111,22 +111,22 @@ def get_integrations_status() -> str:
     return "[dim]• None configured[/dim]"
 
 
-async def setup_integrations() -> str | None:
+async def setup_services() -> str | None:
     """
-    Run the Integrations setup wizard with categories.
+    Run the Services setup wizard with categories.
 
     Returns:
         "back" to return to main menu, None if exited
     """
     try:
-        return await _setup_integrations_impl()
+        return await _setup_services_impl()
     except CancelledError:
         console.print(f"\n[{COLORS['dim']}]Configuration cancelled.[/{COLORS['dim']}]")
         return "back"
 
 
-async def _setup_integrations_impl() -> str | None:
-    """Implementation of integrations setup."""
+async def _setup_services_impl() -> str | None:
+    """Implementation of services setup."""
     while True:
         # Build category menu
         menu_items = []
@@ -149,7 +149,7 @@ async def _setup_integrations_impl() -> str | None:
         menu_items.append(("---", "──────────────", ""))
         menu_items.append(("back", "← Back", ""))
 
-        selected = await show_menu(menu_items, title="Integrations")
+        selected = await show_menu(menu_items, title="Services")
 
         if selected == "back" or selected is None:
             return "back"

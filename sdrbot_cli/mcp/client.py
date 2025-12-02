@@ -16,7 +16,6 @@ _ClientSession = None
 _StdioServerParameters = None
 _stdio_client = None
 _sse_client = None
-_streamablehttp_client = None
 
 try:
     from mcp import ClientSession as _ClientSession
@@ -25,12 +24,6 @@ try:
     from mcp.client.stdio import stdio_client as _stdio_client
 
     MCP_AVAILABLE = True
-
-    # Try to import streamable HTTP client (newer MCP versions)
-    try:
-        from mcp.client.streamable_http import streamablehttp_client as _streamablehttp_client
-    except ImportError:
-        pass
 except ImportError:
     pass
 
@@ -96,22 +89,16 @@ class MCPServerConnection:
                 read_stream, write_stream = streams[0], streams[1]
 
             elif transport == "http":
-                # Streamable HTTP transport (modern MCP)
-                if _streamablehttp_client is None:
-                    console.print(
-                        "[red]Streamable HTTP client not available. "
-                        "Update MCP SDK: pip install --upgrade mcp[/red]"
-                    )
-                    return False
-
-                # Build auth headers if configured
-                auth_headers = build_auth_headers(self.config.get("auth"))
-
-                http_ctx = _streamablehttp_client(self.config["url"], headers=auth_headers or None)
-                streams = await http_ctx.__aenter__()
-                self._context_stack.append(http_ctx)
-                # Returns (read_stream, write_stream, get_session_id)
-                read_stream, write_stream = streams[0], streams[1]
+                # Streamable HTTP transport is currently disabled due to a bug in the
+                # MCP SDK that corrupts the asyncio event loop during cleanup.
+                # See: https://github.com/modelcontextprotocol/python-sdk/issues/915
+                console.print(
+                    "[red]HTTP transport is temporarily disabled due to an upstream bug.[/red]\n"
+                    "[dim]The MCP SDK's streamablehttp_client has a known issue that corrupts\n"
+                    "the asyncio event loop. Use 'stdio' or 'sse' transport instead.\n"
+                    "See: https://github.com/modelcontextprotocol/python-sdk/issues/915[/dim]"
+                )
+                return False
 
             else:
                 console.print(f"[red]Unknown transport: {transport}[/red]")

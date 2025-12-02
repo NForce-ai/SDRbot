@@ -398,10 +398,8 @@ def create_agent_with_config(
     default_content = get_default_coding_instructions()
     settings.ensure_agent_md(assistant_id, default_content)
 
-    # Shared skills directory (don't create if it doesn't exist)
-    skills_dir = settings.get_skills_dir()
-
-    # Ensure files directory exists for agent-generated exports
+    # Ensure skills and files directories exist
+    skills_dir = settings.ensure_skills_dir()
     settings.ensure_files_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox

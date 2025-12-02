@@ -12,6 +12,7 @@ from typing import TypedDict
 import dotenv
 from langchain_core.language_models import BaseChatModel
 from rich.console import Console
+from rich.theme import Theme
 
 # Load .env ONLY from current working directory to avoid accidental parent config inheritance
 dotenv.load_dotenv(Path.cwd() / ".env")
@@ -19,7 +20,7 @@ dotenv.load_dotenv(Path.cwd() / ".env")
 # Color scheme
 COLORS = {
     "primary": "#10b981",
-    "dim": "#6b7280",
+    "dim": "#9ca3af",  # Lighter gray for better visibility on Windows/macOS terminals
     "user": "#ffffff",
     "agent": "#10b981",
     "thinking": "#34d399",
@@ -56,8 +57,11 @@ MAX_ARG_LENGTH = 150
 # Agent configuration
 config = {"recursion_limit": 1000}
 
+# Custom theme to override dim style for better visibility on Windows/macOS terminals
+_theme = Theme({"dim": COLORS["dim"]})
+
 # Rich console instance
-console = Console(highlight=False)
+console = Console(highlight=False, theme=_theme)
 
 
 class ModelConfig(TypedDict):

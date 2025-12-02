@@ -9,9 +9,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from .config import COLORS, DEEP_AGENTS_ASCII, SessionState, console, settings
 from .services import SYNCABLE_SERVICES, resync_service
 from .setup import run_setup_wizard
-from .setup.integrations import setup_integrations
 from .setup.mcp import run_mcp_wizard
 from .setup.models import setup_models
+from .setup.services import setup_services
 from .ui import TokenTracker, show_interactive_help
 
 
@@ -57,6 +57,8 @@ async def handle_command(
 
             if not synced_any:
                 console.print("[dim]No enabled services require syncing.[/dim]")
+        # Reload agent to pick up newly generated tools
+        await session_state.reload_agent()
         return True
 
     if cmd == "clear":
@@ -112,8 +114,8 @@ async def handle_command(
         await session_state.reload_agent()
         return True
 
-    if cmd == "integrations":
-        await setup_integrations()
+    if cmd == "services":
+        await setup_services()
         # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
