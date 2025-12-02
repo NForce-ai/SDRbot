@@ -22,6 +22,9 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "pymysql>=1.1.0",
     "pymongo>=4.6.0",
+    "langsmith>=0.1.0",
+    "langfuse>=3.0.0",
+    "opik>=1.0.0",
 ]
 
 [project.optional-dependencies]

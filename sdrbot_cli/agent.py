@@ -21,6 +21,7 @@ from langgraph.runtime import Runtime
 from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
+from sdrbot_cli.observability import get_observability_callbacks
 from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
@@ -495,6 +496,14 @@ def create_agent_with_config(
                     name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
 
+    # Get observability callbacks
+    observability_callbacks = get_observability_callbacks()
+
+    # Build config with callbacks if any are configured
+    agent_config = dict(config)
+    if observability_callbacks:
+        agent_config["callbacks"] = observability_callbacks
+
     agent = create_deep_agent(
         model=model,
         system_prompt=system_prompt,
@@ -502,7 +511,7 @@ def create_agent_with_config(
         backend=composite_backend,
         middleware=agent_middleware,
         interrupt_on=interrupt_on,
-    ).with_config(config)
+    ).with_config(agent_config)
 
     agent.checkpointer = InMemorySaver()
 

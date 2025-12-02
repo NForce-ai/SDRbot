@@ -541,6 +541,43 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
         if mongo_tls == "true":
             env_vars["MONGODB_TLS"] = "true"
 
+    elif service_name == "langsmith":
+        console.print(f"[{COLORS['primary']}]--- LangSmith Configuration ---[/{COLORS['primary']}]")
+        api_key = await _get_or_prompt(
+            "LANGSMITH_API_KEY", "LangSmith API Key", is_secret=True, required=True, force=force
+        )
+        if api_key:
+            env_vars["LANGSMITH_API_KEY"] = api_key
+
+    elif service_name == "langfuse":
+        console.print(f"[{COLORS['primary']}]--- Langfuse Configuration ---[/{COLORS['primary']}]")
+        public_key = await _get_or_prompt(
+            "LANGFUSE_PUBLIC_KEY", "Langfuse Public Key", required=True, force=force
+        )
+        secret_key = await _get_or_prompt(
+            "LANGFUSE_SECRET_KEY", "Langfuse Secret Key", is_secret=True, required=True, force=force
+        )
+        host = await _get_or_prompt(
+            "LANGFUSE_HOST",
+            "Langfuse Host (optional, for self-hosted)",
+            required=False,
+            force=force,
+        )
+        if public_key:
+            env_vars["LANGFUSE_PUBLIC_KEY"] = public_key
+        if secret_key:
+            env_vars["LANGFUSE_SECRET_KEY"] = secret_key
+        if host:
+            env_vars["LANGFUSE_HOST"] = host
+
+    elif service_name == "opik":
+        console.print(f"[{COLORS['primary']}]--- Opik Configuration ---[/{COLORS['primary']}]")
+        api_key = await _get_or_prompt(
+            "OPIK_API_KEY", "Opik API Key", is_secret=True, required=True, force=force
+        )
+        if api_key:
+            env_vars["OPIK_API_KEY"] = api_key
+
     else:
         console.print(f"[red]Unknown service: {service_name}[/red]")
         return False
@@ -829,6 +866,12 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("MYSQL_HOST"))
     elif service_name == "mongodb":
         configured = bool(os.getenv("MONGODB_URI"))
+    elif service_name == "langsmith":
+        configured = bool(os.getenv("LANGSMITH_API_KEY"))
+    elif service_name == "langfuse":
+        configured = bool(os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"))
+    elif service_name == "opik":
+        configured = bool(os.getenv("OPIK_API_KEY"))
 
     # Check enabled state from registry
     try:
@@ -992,6 +1035,9 @@ async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None
             ("postgres", "PostgreSQL (Database)"),
             ("mysql", "MySQL (Database)"),
             ("mongodb", "MongoDB (Database)"),
+            ("langsmith", "LangSmith (Observability)"),
+            ("langfuse", "Langfuse (Observability)"),
+            ("opik", "Opik (Observability)"),
         ]
 
         # Build menu items
