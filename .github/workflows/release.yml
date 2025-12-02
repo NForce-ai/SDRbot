@@ -34,7 +34,11 @@ jobs:
 
       - name: Build executable
         run: |
-          uv run pyinstaller --onefile sdrbot_entry.py --name sdrbot --paths . --collect-all sdrbot_cli
+          uv run pyinstaller sdrbot.spec
+
+      - name: Sign binary (macOS)
+        if: runner.os == 'macOS'
+        run: codesign --force --deep -s - dist/sdrbot
 
       # Calculate a consistent suffix (e.g., linux-x64, windows-x64)
       - name: Set Binary Suffix

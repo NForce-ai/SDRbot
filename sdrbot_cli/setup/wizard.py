@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 
 from sdrbot_cli.config import COLORS, console, load_model_config
 
-from .integrations import get_integrations_status
 from .mcp import get_mcp_status, run_mcp_wizard
 from .menu import CancelledError, show_menu
 from .models import get_model_status, setup_models
 from .observability import get_observability_status, setup_observability
+from .services import get_services_status
 
 
 async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None:
@@ -19,7 +19,7 @@ async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None
 
     Guides the user through setting up:
     - Models (LLM providers)
-    - Integrations (CRMs, Prospecting, Databases)
+    - Services (CRMs, Prospecting, Databases)
     - MCP Servers (external tool servers)
     - Observability (LangSmith, Langfuse, Opik)
 
@@ -37,7 +37,7 @@ async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None
 
     console.print(f"\n[{COLORS['primary']}][bold]SDRbot Setup Wizard[/bold][/{COLORS['primary']}]")
     console.print(
-        f"[{COLORS['dim']}]Configure your LLM provider, integrations, and external tools.[/{COLORS['dim']}]"
+        f"[{COLORS['dim']}]Configure your LLM provider, services, and external tools.[/{COLORS['dim']}]"
     )
     console.print(
         f"[{COLORS['dim']}]Values will be saved to your working folder's .env file.[/{COLORS['dim']}]\n"
@@ -63,14 +63,14 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
 
         # Get status for each section
         _, _, model_status = get_model_status()
-        integrations_status = get_integrations_status()
+        services_status = get_services_status()
         mcp_status = get_mcp_status()
         observability_status = get_observability_status()
 
         # Build menu items
         menu_items = [
             ("models", "Models", model_status),
-            ("integrations", "Integrations", integrations_status),
+            ("services", "Services", services_status),
             ("mcp", "MCP Servers", mcp_status),
             ("observability", "Observability", observability_status),
             ("---", "──────────────", ""),
@@ -119,10 +119,10 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
         if selected == "models":
             await setup_models()
 
-        elif selected == "integrations":
-            from .integrations import setup_integrations
+        elif selected == "services":
+            from .services import setup_services
 
-            await setup_integrations()
+            await setup_services()
 
         elif selected == "mcp":
             await run_mcp_wizard(return_to_setup=True)

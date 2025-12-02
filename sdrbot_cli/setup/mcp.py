@@ -135,11 +135,12 @@ async def _add_mcp_server() -> None:
             return
 
         # Choose transport
+        # NOTE: HTTP transport is disabled due to MCP SDK bug
+        # See: https://github.com/modelcontextprotocol/python-sdk/issues/915
         transport = await show_choice_menu(
             [
                 ("stdio", "stdio - Run as subprocess (npx, uvx, python, etc.)"),
-                ("http", "HTTP - Streamable HTTP (modern, recommended)"),
-                ("sse", "SSE - Server-Sent Events (legacy)"),
+                ("sse", "SSE - Server-Sent Events"),
             ],
             title="Transport type",
         )

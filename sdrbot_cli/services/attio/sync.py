@@ -94,14 +94,15 @@ def _fetch_object_attributes(client: AttioClient, object_slug: str) -> list[dict
 
     result = []
     for attr in attributes:
-        # Skip inactive attributes
-        if attr.get("status") != "active":
+        # Skip archived attributes
+        if attr.get("is_archived", False):
             continue
 
         # Get attribute info
         attr_type = attr.get("type")
         is_required = attr.get("is_required", False)
         is_writable = attr.get("is_writable", True)
+        is_multiselect = attr.get("is_multiselect", False)
 
         # Skip read-only attributes
         if not is_writable:
@@ -120,6 +121,7 @@ def _fetch_object_attributes(client: AttioClient, object_slug: str) -> list[dict
                 "title": attr.get("title"),
                 "type": attr_type,
                 "required": is_required,
+                "is_multiselect": is_multiselect,
                 "options": options[:20],
             }
         )
@@ -163,17 +165,19 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
         "    return _attio_client",
         "",
         "",
-        "def _format_attio_value(value):",
+        "def _format_attio_value(value, is_multiselect=False):",
         '    """Format a value for Attio API.',
         "",
         "    Attio requires values in specific formats depending on type.",
-        "    This helper handles common cases.",
+        "    Multi-select attributes must be arrays.",
         '    """',
         "    if isinstance(value, bool):",
         "        return value",
         "    if isinstance(value, (int, float)):",
         "        return value",
-        "    # For strings, wrap in the expected format",
+        "    # Multi-select attributes need array wrapping",
+        "    if is_multiselect and not isinstance(value, list):",
+        "        return [value]",
         "    return value",
         "",
         "",
@@ -310,22 +314,22 @@ def _generate_create_tool(obj_slug: str, singular: str, attributes: list[dict]) 
         "        # Build values dict from non-None arguments",
         "        values = {}",
         "        local_vars = locals()",
-        "        # Map parameter names to API slugs",
-        "        param_mapping = {",
+        "        # Map parameter names to API slugs and multiselect status",
+        "        param_config = {",
     ]
 
     for a in attributes:
         param_name = a["api_slug"].replace("-", "_")
-        body.append(f"            '{param_name}': '{a['api_slug']}',")
+        is_multi = "True" if a.get("is_multiselect", False) else "False"
+        body.append(f"            '{param_name}': ('{a['api_slug']}', {is_multi}),")
 
     body.extend(
         [
             "        }",
-            "        for param_name, api_slug in param_mapping.items():",
+            "        for param_name, (api_slug, is_multiselect) in param_config.items():",
             "            value = local_vars.get(param_name)",
             "            if value is not None:",
-            "                # Attio requires specific value formats",
-            "                values[api_slug] = _format_attio_value(value)",
+            "                values[api_slug] = _format_attio_value(value, is_multiselect)",
             "",
             "        if not values:",
             f'            return "Error: At least one attribute must be provided to create a {singular}."',
@@ -395,20 +399,22 @@ def _generate_update_tool(obj_slug: str, singular: str, attributes: list[dict]) 
         "        # Build values dict from non-None arguments",
         "        values = {}",
         "        local_vars = locals()",
-        "        param_mapping = {",
+        "        # Map parameter names to API slugs and multiselect status",
+        "        param_config = {",
     ]
 
     for a in attributes:
         param_name = a["api_slug"].replace("-", "_")
-        body.append(f"            '{param_name}': '{a['api_slug']}',")
+        is_multi = "True" if a.get("is_multiselect", False) else "False"
+        body.append(f"            '{param_name}': ('{a['api_slug']}', {is_multi}),")
 
     body.extend(
         [
             "        }",
-            "        for param_name, api_slug in param_mapping.items():",
+            "        for param_name, (api_slug, is_multiselect) in param_config.items():",
             "            value = local_vars.get(param_name)",
             "            if value is not None:",
-            "                values[api_slug] = _format_attio_value(value)",
+            "                values[api_slug] = _format_attio_value(value, is_multiselect)",
             "",
             "        if not values:",
             '            return "Error: At least one attribute must be provided to update."',

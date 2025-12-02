@@ -223,7 +223,7 @@ async def simple_cli(
                 "  - /help to list commands\n"
                 "  - /exit to exit SDRbot\n"
             )
-        console.print(tips, style=f"dim {COLORS['dim']}")
+        console.print(tips, style=COLORS["dim"])
 
         console.print()
 
