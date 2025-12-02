@@ -222,6 +222,16 @@ class Settings:
     mongodb_db: str | None
     mongodb_tls: bool  # Enable TLS (default: False)
 
+    # Observability Config
+    langsmith_api_key: str | None
+    langsmith_project: str | None
+    langfuse_public_key: str | None
+    langfuse_secret_key: str | None
+    langfuse_host: str | None  # Optional, defaults to cloud
+    opik_api_key: str | None
+    opik_workspace: str | None
+    opik_project: str | None
+
     # Custom Model Config
     custom_api_base: str | None
     custom_api_key: str | None
@@ -292,6 +302,16 @@ class Settings:
         mongodb_db = os.environ.get("MONGODB_DB")
         mongodb_tls = os.environ.get("MONGODB_TLS", "").lower() == "true"
 
+        # Observability
+        langsmith_api_key = os.environ.get("LANGSMITH_API_KEY")
+        langsmith_project = os.environ.get("LANGSMITH_PROJECT")
+        langfuse_public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
+        langfuse_secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
+        langfuse_host = os.environ.get("LANGFUSE_HOST")
+        opik_api_key = os.environ.get("OPIK_API_KEY")
+        opik_workspace = os.environ.get("OPIK_WORKSPACE")
+        opik_project = os.environ.get("OPIK_PROJECT")
+
         # Detect project
         project_root = _find_project_root(start_path)
 
@@ -330,6 +350,14 @@ class Settings:
             mongodb_uri=mongodb_uri,
             mongodb_db=mongodb_db,
             mongodb_tls=mongodb_tls,
+            langsmith_api_key=langsmith_api_key,
+            langsmith_project=langsmith_project,
+            langfuse_public_key=langfuse_public_key,
+            langfuse_secret_key=langfuse_secret_key,
+            langfuse_host=langfuse_host,
+            opik_api_key=opik_api_key,
+            opik_workspace=opik_workspace,
+            opik_project=opik_project,
             custom_api_base=custom_base,
             custom_api_key=custom_key,
             custom_model_name=custom_model,
@@ -373,6 +401,14 @@ class Settings:
         self.mongodb_uri = new_settings.mongodb_uri
         self.mongodb_db = new_settings.mongodb_db
         self.mongodb_tls = new_settings.mongodb_tls
+        self.langsmith_api_key = new_settings.langsmith_api_key
+        self.langsmith_project = new_settings.langsmith_project
+        self.langfuse_public_key = new_settings.langfuse_public_key
+        self.langfuse_secret_key = new_settings.langfuse_secret_key
+        self.langfuse_host = new_settings.langfuse_host
+        self.opik_api_key = new_settings.opik_api_key
+        self.opik_workspace = new_settings.opik_workspace
+        self.opik_project = new_settings.opik_project
         self.custom_api_base = new_settings.custom_api_base
         self.custom_api_key = new_settings.custom_api_key
         self.custom_model_name = new_settings.custom_model_name
@@ -464,6 +500,21 @@ class Settings:
         """Check if MongoDB credentials are configured."""
         return self.mongodb_uri is not None and self.mongodb_db is not None
 
+    @property
+    def has_langsmith(self) -> bool:
+        """Check if LangSmith API key is configured."""
+        return self.langsmith_api_key is not None
+
+    @property
+    def has_langfuse(self) -> bool:
+        """Check if Langfuse credentials are configured."""
+        return self.langfuse_public_key is not None and self.langfuse_secret_key is not None
+
+    @property
+    def has_opik(self) -> bool:
+        """Check if Opik API key is configured."""
+        return self.opik_api_key is not None
+
     def has_service_credentials(self, service_name: str) -> bool:
         """Check if credentials exist for a specific service.
 
@@ -486,6 +537,9 @@ class Settings:
             "mysql": self.has_mysql,
             "mongodb": self.has_mongodb,
             "tavily": self.has_tavily,
+            "langsmith": self.has_langsmith,
+            "langfuse": self.has_langfuse,
+            "opik": self.has_opik,
         }
         return checks.get(service_name, False)
 

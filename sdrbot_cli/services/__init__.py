@@ -22,7 +22,13 @@ SERVICES = [
     "postgres",
     "mysql",
     "mongodb",
+    "langsmith",
+    "langfuse",
+    "opik",
 ]
+
+# Observability services (provide callbacks, not tools)
+OBSERVABILITY_SERVICES = ["langsmith", "langfuse", "opik"]
 
 # Services that require schema sync (have user-specific schemas)
 SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio", "zohocrm", "pipedrive"]
@@ -315,6 +321,10 @@ def get_enabled_tools() -> list[BaseTool]:
         if not config.is_enabled(service_name):
             continue
 
+        # Observability services provide callbacks, not tools
+        if service_name in OBSERVABILITY_SERVICES:
+            continue
+
         # Import service module and get its tools
         try:
             service_module = __import__(
@@ -335,6 +345,7 @@ def get_enabled_tools() -> list[BaseTool]:
 __all__ = [
     "SERVICES",
     "SYNCABLE_SERVICES",
+    "OBSERVABILITY_SERVICES",
     "enable_service",
     "disable_service",
     "sync_service",
