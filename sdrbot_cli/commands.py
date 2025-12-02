@@ -8,7 +8,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from .config import COLORS, DEEP_AGENTS_ASCII, SessionState, console, settings
 from .services import SYNCABLE_SERVICES, resync_service
-from .setup_wizard import run_setup_wizard
+from .setup import run_setup_wizard
+from .setup.integrations import setup_integrations
+from .setup.mcp import run_mcp_wizard
+from .setup.models import setup_models
 from .ui import TokenTracker, show_interactive_help
 
 
@@ -88,7 +91,34 @@ async def handle_command(
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
         # Reload agent to pick up any new services
-        session_state.reload_agent()
+        await session_state.reload_agent()
+        return True
+
+    if cmd == "mcp":
+        await run_mcp_wizard(return_to_setup=False)
+        # Reload env and settings immediately
+        dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+        settings.reload()
+        # Reload agent to pick up any new MCP tools
+        await session_state.reload_agent()
+        return True
+
+    if cmd == "models":
+        await setup_models()
+        # Reload env and settings immediately
+        dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+        settings.reload()
+        # Reload agent in case model changed
+        await session_state.reload_agent()
+        return True
+
+    if cmd == "integrations":
+        await setup_integrations()
+        # Reload env and settings immediately
+        dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+        settings.reload()
+        # Reload agent to pick up any new service tools
+        await session_state.reload_agent()
         return True
 
     console.print()

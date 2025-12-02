@@ -753,14 +753,19 @@ class SessionState:
         """Set the callback function for reloading the agent."""
         self._reload_callback = callback
 
-    def reload_agent(self) -> bool:
+    async def reload_agent(self) -> bool:
         """Reload the agent with updated tools/config.
 
         Returns:
             True if reload succeeded, False if no callback set.
         """
         if self._reload_callback:
-            self._reload_callback()
+            import inspect
+
+            if inspect.iscoroutinefunction(self._reload_callback):
+                await self._reload_callback()
+            else:
+                self._reload_callback()
             return True
         return False
 

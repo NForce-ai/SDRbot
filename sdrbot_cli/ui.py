@@ -536,11 +536,18 @@ def show_interactive_help() -> None:
     console.print()
 
     console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /setup                      Open full setup wizard", style=COLORS["dim"])
     console.print(
-        "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
+        "  /models                     Configure LLM provider and model", style=COLORS["dim"]
     )
     console.print(
-        "  /sync [name]                      Re-sync service schema (all or specific)",
+        "  /integrations               Configure CRM and service integrations", style=COLORS["dim"]
+    )
+    console.print(
+        "  /mcp                        Configure MCP server connections", style=COLORS["dim"]
+    )
+    console.print(
+        "  /sync [name]                Re-sync service schema (all or specific)",
         style=COLORS["dim"],
     )
     console.print()
@@ -675,11 +682,18 @@ def show_help() -> None:
     console.print()
 
     console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
+    console.print("  /setup                      Open full setup wizard", style=COLORS["dim"])
     console.print(
-        "  /setup                      Configure and enable/disable services", style=COLORS["dim"]
+        "  /models                     Configure LLM provider and model", style=COLORS["dim"]
     )
     console.print(
-        "  /sync [name]                      Re-sync service schema (all or specific)",
+        "  /integrations               Configure CRM and service integrations", style=COLORS["dim"]
+    )
+    console.print(
+        "  /mcp                        Configure MCP server connections", style=COLORS["dim"]
+    )
+    console.print(
+        "  /sync [name]                Re-sync service schema (all or specific)",
         style=COLORS["dim"],
     )
     console.print()
