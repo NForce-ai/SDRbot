@@ -24,7 +24,7 @@ from sdrbot_cli.input import create_prompt_session
 from sdrbot_cli.integrations.sandbox_factory import (
     create_sandbox,
 )
-from sdrbot_cli.setup_wizard import run_setup_wizard
+from sdrbot_cli.setup import run_setup_wizard
 from sdrbot_cli.skills import execute_skills_command, setup_skills_parser
 from sdrbot_cli.tools import fetch_url, http_request, web_search
 from sdrbot_cli.ui import TokenTracker, show_help
@@ -315,8 +315,12 @@ async def _run_agent_session(
     session_state.backend = composite_backend
 
     # Set up reload callback so commands can trigger agent reload
-    def reload_agent():
+    async def reload_agent():
         console.print("[dim]Reloading agent...[/dim]")
+        # Reinitialize MCP servers to pick up any changes
+        from sdrbot_cli.mcp.manager import reinitialize_mcp
+
+        await reinitialize_mcp()
         new_agent, new_backend = create_agent()
         session_state.agent = new_agent
         session_state.backend = new_backend
@@ -376,52 +380,66 @@ async def main(
 
     sync_enabled_services_if_needed()
 
+    # Initialize MCP servers
+    from sdrbot_cli.mcp.manager import initialize_mcp
+
+    await initialize_mcp()
+
     model = create_model()
 
-    # Branch 1: User wants a sandbox
-    if sandbox_type != "none":
-        # Try to create sandbox
-        try:
-            console.print()
-            with create_sandbox(
-                sandbox_type, sandbox_id=sandbox_id, setup_script_path=setup_script_path
-            ) as sandbox_backend:
-                console.print(f"[yellow]⚡ Remote execution enabled ({sandbox_type})[/yellow]")
+    # Import shutdown function for cleanup
+    from sdrbot_cli.mcp.manager import shutdown_mcp
+
+    exit_code = 0
+    try:
+        # Branch 1: User wants a sandbox
+        if sandbox_type != "none":
+            # Try to create sandbox
+            try:
                 console.print()
+                with create_sandbox(
+                    sandbox_type, sandbox_id=sandbox_id, setup_script_path=setup_script_path
+                ) as sandbox_backend:
+                    console.print(f"[yellow]⚡ Remote execution enabled ({sandbox_type})[/yellow]")
+                    console.print()
 
-                await _run_agent_session(
-                    model,
-                    assistant_id,
-                    session_state,
-                    sandbox_backend,
-                    sandbox_type=sandbox_type,
-                    setup_script_path=setup_script_path,
-                )
-        except (ImportError, ValueError, RuntimeError, NotImplementedError) as e:
-            # Sandbox creation failed - fail hard (no silent fallback)
-            console.print()
-            console.print("[red]❌ Sandbox creation failed[/red]")
-            console.print(f"[dim]{e}[/dim]")
-            sys.exit(1)
-        except KeyboardInterrupt:
-            console.print("\n\n[yellow]Interrupted[/yellow]")
-            sys.exit(0)
-        except Exception as e:
-            console.print(f"\n[bold red]❌ Error:[/bold red] {e}\n")
-            console.print_exception()
-            sys.exit(1)
+                    await _run_agent_session(
+                        model,
+                        assistant_id,
+                        session_state,
+                        sandbox_backend,
+                        sandbox_type=sandbox_type,
+                        setup_script_path=setup_script_path,
+                    )
+            except (ImportError, ValueError, RuntimeError, NotImplementedError) as e:
+                # Sandbox creation failed - fail hard (no silent fallback)
+                console.print()
+                console.print("[red]❌ Sandbox creation failed[/red]")
+                console.print(f"[dim]{e}[/dim]")
+                exit_code = 1
+            except KeyboardInterrupt:
+                console.print("\n\n[yellow]Interrupted[/yellow]")
+            except Exception as e:
+                console.print(f"\n[bold red]❌ Error:[/bold red] {e}\n")
+                console.print_exception()
+                exit_code = 1
 
-    # Branch 2: User wants local mode (none or default)
-    else:
-        try:
-            await _run_agent_session(model, assistant_id, session_state, sandbox_backend=None)
-        except KeyboardInterrupt:
-            console.print("\n\n[yellow]Interrupted[/yellow]")
-            sys.exit(0)
-        except Exception as e:
-            console.print(f"\n[bold red]❌ Error:[/bold red] {e}\n")
-            console.print_exception()
-            sys.exit(1)
+        # Branch 2: User wants local mode (none or default)
+        else:
+            try:
+                await _run_agent_session(model, assistant_id, session_state, sandbox_backend=None)
+            except KeyboardInterrupt:
+                console.print("\n\n[yellow]Interrupted[/yellow]")
+            except Exception as e:
+                console.print(f"\n[bold red]❌ Error:[/bold red] {e}\n")
+                console.print_exception()
+                exit_code = 1
+    finally:
+        # Clean up MCP connections on exit
+        await shutdown_mcp()
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 def cli_main() -> None:

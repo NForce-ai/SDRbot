@@ -21,6 +21,7 @@ from langgraph.runtime import Runtime
 from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
+from sdrbot_cli.mcp.manager import get_mcp_manager
 from sdrbot_cli.observability import get_observability_callbacks
 from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
@@ -452,6 +453,11 @@ def create_agent_with_config(
     service_tools = get_enabled_tools()
     tools.extend(service_tools)
 
+    # Load tools from MCP servers
+    mcp_manager = get_mcp_manager()
+    mcp_tools = mcp_manager.get_all_tools()
+    tools.extend(mcp_tools)
+
     # Register interrupt configs for dynamically-loaded service tools
     for tool in service_tools:
         tool_name = tool.name
@@ -495,6 +501,18 @@ def create_agent_with_config(
                     r,
                     name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
+
+    # Register interrupt configs for MCP tools
+    for tool in mcp_tools:
+        tool_name = tool.name
+        if tool_name not in interrupt_on:
+            interrupt_on[tool_name] = {
+                "allowed_decisions": ["approve", "reject"],
+                "description": lambda t,
+                s,
+                r,
+                name=tool_name: f"[MCP] {name}: {str(t['args'])[:150]}...",
+            }
 
     # Get observability callbacks
     observability_callbacks = get_observability_callbacks()

@@ -28,10 +28,11 @@ By using this software, you acknowledge that:
 - **Attio:** Next-gen CRM support using the Attio v2 API (Objects & Attributes).
 
 ### 2. Prospecting & Enrichment
+- **Web Search:** Native web search capability for basic web searching and investigation.
 - **Apollo.io Integration:** Search 210M+ contacts, enrich people and companies with emails, phone numbers, and firmographic data.
 - **Lusha Integration:** Find prospects by role/industry and enrich them with B2B emails and phone numbers.
 - **Hunter.io Integration:** Find and verify email addresses for any domain.
-- **Web Research (Tavily):** Research prospects to find recent news, revenue data, or strategic insights before reaching out.
+- **Tavily:** AI-powered research that can find recent news, revenue data, or strategic insights before reaching out.
 
 ### 3. Safety & Human-in-the-Loop
 - **Safe Mode:** The agent MUST ask for permission before creating, updating, or deleting records.
@@ -341,6 +342,121 @@ Run `/sync` when:
 - You modify field types or picklist values
 
 Service configuration is stored in `.sdrbot/services.json` in your project directory.
+
+---
+
+## 🔌 MCP Server Integration
+
+SDRbot supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), allowing you to connect to external MCP servers and use their tools directly within the agent.
+
+### What is MCP?
+
+MCP is a standardized protocol for AI/tool communication. Many services now offer MCP servers that expose their APIs as tools. SDRbot can connect to these servers as a client and make their tools available to the agent.
+
+### Configuring MCP Servers
+
+Use the MCP wizard to add, manage, and test MCP server connections:
+
+```bash
+# Open MCP configuration
+/mcp
+```
+
+Or access it from the main setup wizard via `/setup` → MCP Servers.
+
+### Supported Transports
+
+| Transport | Description | Use Case |
+|-----------|-------------|----------|
+| **stdio** | Run MCP server as a subprocess | Local servers (npx, uvx, python) |
+| **HTTP** | Streamable HTTP (modern) | Hosted services like Composio |
+| **SSE** | Server-Sent Events (legacy) | Older MCP servers |
+
+### Adding an MCP Server
+
+**Example: Hosted MCP Service (HTTP)**
+```
+Server name: gmail
+Transport: HTTP
+URL: https://mcp.example.com/gmail
+Authentication: API Key
+API Key: your-api-key-here
+```
+
+**Example: Local MCP Server (stdio)**
+```
+Server name: filesystem
+Transport: stdio
+Command: npx
+Arguments: -y @modelcontextprotocol/server-filesystem /path/to/allowed/dir
+```
+
+### Authentication Options
+
+For HTTP/SSE servers, SDRbot supports:
+- **None** - No authentication
+- **Bearer Token** - `Authorization: Bearer <token>`
+- **API Key** - `X-API-Key: <key>`
+- **Custom Headers** - Define your own headers
+
+Use `${VAR_NAME}` syntax to reference environment variables instead of storing secrets in plaintext.
+
+### Auto-Recovery
+
+If an MCP connection fails during use, SDRbot will:
+1. Automatically attempt to reconnect once
+2. If reconnection fails, disable the server and notify you
+3. Use `/mcp` to re-enable after fixing the issue
+
+### Configuration Storage
+
+MCP server configuration is stored in `~/.sdrbot/mcp_servers.json`.
+
+---
+
+## 📊 Observability
+
+SDRbot integrates with popular observability platforms to trace and debug agent runs.
+
+### Supported Platforms
+
+| Platform | Description |
+|----------|-------------|
+| **LangSmith** | LangChain's native tracing platform |
+| **Langfuse** | Open-source LLM observability (cloud or self-hosted) |
+| **Opik** | Comet's LLM tracing and evaluation tool |
+
+### Configuration
+
+Enable observability tools through the setup wizard:
+
+```bash
+/setup  # Navigate to Observability
+```
+
+Or set environment variables directly:
+
+**LangSmith:**
+```bash
+LANGSMITH_API_KEY=your-api-key
+LANGSMITH_PROJECT=SDRbot  # optional
+```
+
+**Langfuse:**
+```bash
+LANGFUSE_PUBLIC_KEY=your-public-key
+LANGFUSE_SECRET_KEY=your-secret-key
+LANGFUSE_HOST=https://cloud.langfuse.com  # optional, for self-hosted
+```
+
+**Opik:**
+```bash
+OPIK_API_KEY=your-api-key
+OPIK_WORKSPACE=your-workspace  # optional
+OPIK_PROJECT=SDRbot  # optional
+```
+
+When enabled, traces are automatically sent to the configured platform for every agent interaction.
 
 ---
 

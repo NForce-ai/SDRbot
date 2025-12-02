@@ -25,6 +25,7 @@ dependencies = [
     "langsmith>=0.1.0",
     "langfuse>=3.0.0",
     "opik>=1.0.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
