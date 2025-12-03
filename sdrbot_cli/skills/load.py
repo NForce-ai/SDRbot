@@ -1,12 +1,11 @@
-"""Skill loader for parsing and loading agent skills from SKILL.md files.
+"""Skill loader for parsing and loading agent skills from .md files.
 
 This module implements Anthropic's agent skills pattern with YAML frontmatter parsing.
-Each skill is a directory containing a SKILL.md file with:
+Each skill is a markdown file in the skills directory with:
 - YAML frontmatter (name, description required)
 - Markdown instructions for the agent
-- Optional supporting files (scripts, configs, etc.)
 
-Example SKILL.md structure:
+Example skill file structure:
 ```markdown
 ---
 name: web-research
@@ -145,15 +144,12 @@ def _parse_skill_metadata(skill_md_path: Path, source: str) -> SkillMetadata | N
 def _list_skills(skills_dir: Path, source: str) -> list[SkillMetadata]:
     """List all skills from a single skills directory (internal helper).
 
-    Scans the skills directory for subdirectories containing SKILL.md files,
-    parses YAML frontmatter, and returns skill metadata.
+    Scans the skills directory for .md files, parses YAML frontmatter,
+    and returns skill metadata.
 
     Skills are organized as:
     skills/
-    ├── skill-name/
-    │   ├── SKILL.md        # Required: instructions with YAML frontmatter
-    │   ├── script.py       # Optional: supporting files
-    │   └── config.json     # Optional: supporting files
+    ├── skill-name.md       # Skill with YAML frontmatter
 
     Args:
         skills_dir: Path to the skills directory.
@@ -176,27 +172,18 @@ def _list_skills(skills_dir: Path, source: str) -> list[SkillMetadata]:
 
     skills: list[SkillMetadata] = []
 
-    # Iterate through subdirectories
-    for skill_dir in skills_dir.iterdir():
+    # Iterate through .md files in the skills directory
+    for skill_path in skills_dir.iterdir():
         # Security: Catch symlinks pointing outside the skills directory
-        if not _is_safe_path(skill_dir, resolved_base):
+        if not _is_safe_path(skill_path, resolved_base):
             continue
 
-        if not skill_dir.is_dir():
-            continue
-
-        # Look for SKILL.md file
-        skill_md_path = skill_dir / "SKILL.md"
-        if not skill_md_path.exists():
-            continue
-
-        # Security: Validate SKILL.md path is safe before reading
-        # This catches SKILL.md files that are symlinks pointing outside
-        if not _is_safe_path(skill_md_path, resolved_base):
+        # Only process .md files (not directories)
+        if skill_path.is_dir() or not skill_path.suffix == ".md":
             continue
 
         # Parse metadata
-        metadata = _parse_skill_metadata(skill_md_path, source=source)
+        metadata = _parse_skill_metadata(skill_path, source=source)
         if metadata:
             skills.append(metadata)
 

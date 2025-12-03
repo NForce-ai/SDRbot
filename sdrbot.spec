@@ -26,6 +26,10 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('mcp')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# Collect Textual (TUI framework) - includes CSS and default themes
+tmp_ret = collect_all('textual')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
 # Collect certifi CA certificates (required for SSL on macOS/Windows)
 datas += collect_data_files('certifi')
 

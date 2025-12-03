@@ -22,10 +22,11 @@ from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.mcp.manager import get_mcp_manager
-from sdrbot_cli.observability import get_observability_callbacks
 from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
+from sdrbot_cli.skills.load import list_skills
+from sdrbot_cli.tracing import get_tracing_callbacks
 
 
 def list_agents() -> None:
@@ -153,27 +154,15 @@ Some tool calls require user approval before execution. When a tool call is reje
 
 Respect the user's decisions and work with them collaboratively.
 
-### Web Search Tool Usage
+### Action Plan Management
 
-When you use the web_search tool:
-1. The tool will return search results with titles, URLs, and content excerpts
-2. You MUST read and process these results, then respond naturally to the user
-3. NEVER show raw JSON or tool results directly to the user
-4. Synthesize the information from multiple sources into a coherent answer
-5. Cite your sources by mentioning page titles or URLs when relevant
-6. If the search doesn't find what you need, explain what you found and ask clarifying questions
+Only use action plans for genuinely complex operations (5+ steps) or when the user asks you to plan. For most tasks, just execute directly.
 
-The user only sees your text responses - not tool results. Always provide a complete, natural language answer after using web_search.
-
-### Todo List Management
-
-Only use todos for genuinely complex operations (5+ steps). For most tasks, just execute directly.
-
-If you do use todos:
-1. Keep it minimal - 3-6 items max
-2. Start working immediately - don't ask for plan approval
-3. Update status as you complete each item
-
+If you do use an action plan:
+1. Use the write_todos tool to document your plan.
+2. Unless instructed otherwise try to keep it reasonable (3-6 items).
+3. If the user asked you to plan confirm it before executing, otherwise you may proceed without approval.
+4. Update the plan status as you complete each item.
 """
         + _get_enabled_services_prompt()
     )
@@ -261,17 +250,6 @@ def _format_edit_file_description(
     )
 
 
-def _format_web_search_description(
-    tool_call: ToolCall, _state: AgentState, _runtime: Runtime
-) -> str:
-    """Format web_search tool call for approval prompt."""
-    args = tool_call["args"]
-    query = args.get("query", "unknown")
-    max_results = args.get("max_results", 5)
-
-    return f"Query: {query}\nMax results: {max_results}\n\n⚠️  This will use Tavily API credits"
-
-
 def _format_fetch_url_description(
     tool_call: ToolCall, _state: AgentState, _runtime: Runtime
 ) -> str:
@@ -344,11 +322,6 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "description": _format_edit_file_description,
     }
 
-    web_search_interrupt_config: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": _format_web_search_description,
-    }
-
     fetch_url_interrupt_config: InterruptOnConfig = {
         "allowed_decisions": ["approve", "reject"],
         "description": _format_fetch_url_description,
@@ -367,7 +340,6 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "execute": execute_interrupt_config,
         "write_file": write_file_interrupt_config,
         "edit_file": edit_file_interrupt_config,
-        "web_search": web_search_interrupt_config,
         "fetch_url": fetch_url_interrupt_config,
         "task": task_interrupt_config,
     }
@@ -478,10 +450,10 @@ def create_agent_with_config(
                     name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
                 }
             elif (
-                "_search_" in tool_name
-                or "_query_" in tool_name
-                or "_soql_" in tool_name
-                or "_sosl_" in tool_name
+                "_search" in tool_name
+                or "_query" in tool_name
+                or "_soql" in tool_name
+                or "_sosl" in tool_name
             ):
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
@@ -512,13 +484,13 @@ def create_agent_with_config(
                 name=tool_name: f"[MCP] {name}: {str(t['args'])[:150]}...",
             }
 
-    # Get observability callbacks
-    observability_callbacks = get_observability_callbacks()
+    # Get tracing callbacks
+    tracing_callbacks = get_tracing_callbacks()
 
     # Build config with callbacks if any are configured
     agent_config = dict(config)
-    if observability_callbacks:
-        agent_config["callbacks"] = observability_callbacks
+    if tracing_callbacks:
+        agent_config["callbacks"] = tracing_callbacks
 
     agent = create_deep_agent(
         model=model,
@@ -531,4 +503,12 @@ def create_agent_with_config(
 
     agent.checkpointer = InMemorySaver()
 
-    return agent, composite_backend
+    # Count skills
+    skill_count = len(
+        list_skills(
+            user_skills_dir=skills_dir,
+            project_skills_dir=settings.get_project_skills_dir(),
+        )
+    )
+
+    return agent, composite_backend, len(tools), skill_count

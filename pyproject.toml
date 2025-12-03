@@ -1,6 +1,6 @@
 [project]
 name = "sdrbot"
-version = "0.1.0-alpha.1"
+version = "0.1.0a1"
 description = "AI SDR Agent for RevOps"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,7 @@ dependencies = [
     "langfuse>=3.0.0",
     "opik>=1.0.0",
     "mcp>=1.0.0",
+    "textual>=0.40.0",
 ]
 
 [project.optional-dependencies]

@@ -25,6 +25,7 @@ COLORS = {
     "agent": "#10b981",
     "thinking": "#34d399",
     "tool": "#fbbf24",
+    "command": "#60a5fa",
 }
 
 # ASCII art banner
@@ -226,7 +227,7 @@ class Settings:
     mongodb_db: str | None
     mongodb_tls: bool  # Enable TLS (default: False)
 
-    # Observability Config
+    # Tracing Config
     langsmith_api_key: str | None
     langsmith_project: str | None
     langfuse_public_key: str | None
@@ -306,7 +307,7 @@ class Settings:
         mongodb_db = os.environ.get("MONGODB_DB")
         mongodb_tls = os.environ.get("MONGODB_TLS", "").lower() == "true"
 
-        # Observability
+        # Tracing
         langsmith_api_key = os.environ.get("LANGSMITH_API_KEY")
         langsmith_project = os.environ.get("LANGSMITH_PROJECT")
         langfuse_public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
@@ -736,17 +737,24 @@ settings = Settings.from_environment()
 class SessionState:
     """Holds mutable session state (auto-approve mode, agent, etc)."""
 
-    def __init__(self, auto_approve: bool = False, no_splash: bool = False) -> None:
+    def __init__(
+        self, auto_approve: bool = False, no_splash: bool = False, is_tui: bool = False
+    ) -> None:
         self.auto_approve = auto_approve
         self.no_splash = no_splash
+        self.is_tui = is_tui
         self.exit_hint_until: float | None = None
         self.exit_hint_handle = None
         self.thread_id = str(uuid.uuid4())
         # Agent and backend can be swapped at runtime for hot-reloading
         self.agent = None
         self.backend = None
+        self.tool_count = 0  # Number of tools loaded
+        self.skill_count = 0  # Number of skills loaded
         # Reload callback - set by main.py to allow commands to trigger agent reload
         self._reload_callback = None
+        # Post-reload callback - called after agent reload completes (for UI updates)
+        self._post_reload_callback = None
 
     def toggle_auto_approve(self) -> bool:
         """Toggle auto-approve and return new state."""
@@ -756,6 +764,10 @@ class SessionState:
     def set_reload_callback(self, callback) -> None:
         """Set the callback function for reloading the agent."""
         self._reload_callback = callback
+
+    def set_post_reload_callback(self, callback) -> None:
+        """Set the callback function called after agent reload completes."""
+        self._post_reload_callback = callback
 
     async def reload_agent(self) -> bool:
         """Reload the agent with updated tools/config.
@@ -770,6 +782,11 @@ class SessionState:
                 await self._reload_callback()
             else:
                 self._reload_callback()
+
+            # Call post-reload callback (e.g., to update tool count in UI)
+            if self._post_reload_callback:
+                self._post_reload_callback()
+
             return True
         return False
 

@@ -272,6 +272,42 @@ Start the agent:
 sdrbot
 ```
 
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | View the user guide with commands and shortcuts |
+| `/setup` | Configure models and services |
+| `/agents` | Manage agent profiles |
+| `/skills` | Manage agent skills |
+| `/services` | Manage CRM integrations |
+| `/mcp` | Manage MCP servers |
+| `/tools` | View all loaded tools (built-in, services, MCP) |
+| `/sync` | Re-sync service schemas |
+| `/tokens` | View token usage stats |
+| `/models` | Configure LLM provider |
+| `/tracing` | Configure tracing/observability |
+| `/exit` | Exit SDRbot |
+
+### Keyboard Shortcuts
+
+| Shortcut | Description |
+|----------|-------------|
+| `Enter` | Submit message |
+| `Ctrl+J` | New line in input |
+| `Ctrl+T` | Toggle auto-approve mode |
+| `Ctrl+C` | Interrupt agent |
+
+**Note:** For copy/paste, use `Cmd+C`/`Cmd+V` on macOS or `Ctrl+Shift+C`/`Ctrl+Shift+V` on Windows/Linux.
+
+### Auto-approve Mode
+
+When enabled, tools run without confirmation prompts. Toggle with `Ctrl+T` or start with `--auto-approve`:
+
+```bash
+sdrbot --auto-approve
+```
+
 ### Authentication Flows
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
@@ -414,9 +450,9 @@ MCP server configuration is stored in `~/.sdrbot/mcp_servers.json`.
 
 ---
 
-## 📊 Observability
+## 📊 Tracing
 
-SDRbot integrates with popular observability platforms to trace and debug agent runs.
+SDRbot integrates with popular tracing platforms to debug and monitor agent runs.
 
 ### Supported Platforms
 
@@ -428,10 +464,10 @@ SDRbot integrates with popular observability platforms to trace and debug agent 
 
 ### Configuration
 
-Enable observability tools through the setup wizard:
+Enable tracing through the setup wizard:
 
 ```bash
-/setup  # Navigate to Observability
+/tracing
 ```
 
 Or set environment variables directly:
@@ -471,29 +507,18 @@ agents/
 └── support.md    # custom agent for support tasks
 ```
 
-### Agent Commands
+### Managing Agents
 
-```bash
-# Start with a specific agent
-sdrbot --agent sales
+Use the `/agents` command to manage agent profiles directly within the app:
 
-# List all available agents
-sdrbot list
+- **Create** new agent profiles
+- **Edit** agent prompts with the built-in editor
+- **Switch** between different agents
+- **Delete** agents you no longer need
 
-# Reset an agent to the default prompt
-sdrbot reset --agent agent
+You can also click on the agent name in the status bar to open the agents manager.
 
-# Copy one agent's prompt to another
-sdrbot reset --agent mybot --target sales
-```
-
-### Editing the Agent Prompt
-
-To customize how the agent behaves, edit `./agents/agent.md`. This file controls the agent's personality, guidelines, and operational rules.
-
-### Multiple Agents
-
-You can create different agents for different purposes:
+### Starting with a Specific Agent
 
 ```bash
 sdrbot --agent sales      # Uses ./agents/sales.md
@@ -509,7 +534,7 @@ SDRbot creates these folders in your working directory (all gitignored):
 | Folder | Purpose |
 |--------|---------|
 | `agents/` | Agent prompt files (`{name}.md`) - created on first run |
-| `skills/` | Custom skill scripts and workflows - created when you add skills |
+| `skills/` | Custom skills (`{name}/SKILL.md`) - created when you add skills |
 | `files/` | Agent-generated exports, reports, CSVs - created on first run |
 | `generated/` | Schema-synced CRM tools (hubspot_tools.py, etc.) - created on sync |
 | `.sdrbot/` | Service configuration (`services.json`) |
@@ -522,22 +547,33 @@ Skills are reusable workflows or scripts that extend the agent's capabilities. T
 
 ### Managing Skills
 
-```bash
-# List available skills
-sdrbot skills list
+Use the `/skills` command to manage skills directly within the app:
 
-# Create a new skill
-sdrbot skills create my-workflow
+- **Create** new skills with a template
+- **Edit** skill instructions with the built-in editor
+- **Delete** skills you no longer need
 
-# View skill details
-sdrbot skills info my-workflow
-```
+You can also click on the skills count in the status bar to open the skills manager.
 
 ### Skill Structure
 
 Each skill is a folder containing:
-- `skill.md` - Instructions and description for the agent
+- `SKILL.md` - Instructions and description for the agent (with YAML frontmatter)
 - Optional scripts, templates, or data files
+
+Example `SKILL.md`:
+```markdown
+---
+name: web-research
+description: Structured approach to conducting thorough web research
+---
+
+# Web Research Skill
+
+## When to Use
+- User asks you to research a topic
+...
+```
 
 The agent can invoke skills during conversations to perform specialized tasks.
 
