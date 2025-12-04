@@ -5,12 +5,12 @@ import os
 import time
 import urllib.parse
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import keyring
 import requests
 from simple_salesforce import Salesforce
 
+from sdrbot_cli.auth.oauth_server import wait_for_callback
 from sdrbot_cli.config import COLORS, console
 
 SERVICE_NAME = "sdrbot_salesforce"
@@ -31,35 +31,6 @@ def is_configured() -> bool:
     return bool(CLIENT_ID and CLIENT_SECRET)
 
 
-class OAuthHandler(BaseHTTPRequestHandler):
-    """Handle the OAuth callback."""
-
-    auth_code: str | None = None
-
-    def do_GET(self):
-        """Handle the callback request."""
-        parsed_path = urllib.parse.urlparse(self.path)
-        if parsed_path.path == "/callback/salesforce":
-            query_params = urllib.parse.parse_qs(parsed_path.query)
-            if "code" in query_params:
-                OAuthHandler.auth_code = query_params["code"][0]
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(
-                    b"<h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p>"
-                )
-            else:
-                self.send_response(400)
-                self.wfile.write(b"Authorization failed.")
-        else:
-            self.send_response(404)
-
-    def log_message(self, format, *args):
-        """Silence logs."""
-        pass
-
-
 def get_auth_url() -> str:
     """Generate the Salesforce OAuth URL."""
     params = {
@@ -71,7 +42,7 @@ def get_auth_url() -> str:
     return f"{SF_LOGIN_URL}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"
 
 
-def login() -> dict:
+def login() -> dict | None:
     """Perform the full OAuth login flow."""
     if not CLIENT_ID or not CLIENT_SECRET:
         raise ValueError("SF_CLIENT_ID and SF_CLIENT_SECRET environment variables must be set.")
@@ -84,15 +55,21 @@ def login() -> dict:
     console.print(f"Opening browser to: {auth_url}")
     webbrowser.open(auth_url)
 
-    # Start local server to catch callback
-    server_address = ("", 8080)
-    httpd = HTTPServer(server_address, OAuthHandler)
-
     console.print(f"[{COLORS['dim']}]Waiting for callback...[/{COLORS['dim']}]")
-    while OAuthHandler.auth_code is None:
-        httpd.handle_request()
 
-    code = OAuthHandler.auth_code
+    # Use shared OAuth server with timeout support
+    code, _ = wait_for_callback(
+        callback_path="/callback/salesforce",
+        port=8080,
+        timeout=300.0,
+    )
+
+    if not code:
+        console.print(
+            f"[{COLORS['tool']}]OAuth flow timed out or was cancelled.[/{COLORS['tool']}]"
+        )
+        return None
+
     console.print(
         f"[{COLORS['primary']}]Authorization code received! Exchanging for token...[/{COLORS['primary']}]"
     )
@@ -189,7 +166,7 @@ def _refresh_token(token_data: dict) -> dict | None:
         return None
 
 
-def get_client() -> Salesforce:
+def get_client() -> Salesforce | None:
     """Get an authenticated Salesforce client, handling refresh if needed."""
     token_data = get_stored_token()
 
@@ -198,6 +175,8 @@ def get_client() -> Salesforce:
             f"[{COLORS['tool']}]No stored Salesforce credentials found. Login required.[/{COLORS['tool']}]"
         )
         token_data = login()
+        if not token_data:
+            return None
 
     # Proactive refresh if token is expired or about to expire
     if _is_token_expired(token_data):
@@ -208,6 +187,8 @@ def get_client() -> Salesforce:
                 f"[{COLORS['tool']}]Token refresh failed. Re-authenticating...[/{COLORS['tool']}]"
             )
             token_data = login()
+            if not token_data:
+                return None
 
     try:
         # Attempt to create client with existing token
@@ -231,6 +212,8 @@ def get_client() -> Salesforce:
         # Refresh failed, re-login
         console.print(f"[{COLORS['tool']}]Refresh failed. Re-authenticating...[/{COLORS['tool']}]")
         token_data = login()
+        if not token_data:
+            return None
         return Salesforce(
             instance_url=token_data["instance_url"], session_id=token_data["access_token"]
         )

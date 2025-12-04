@@ -1,4 +1,4 @@
-"""Observability callback handlers for LangSmith, Langfuse, and Opik."""
+"""Tracing callback handlers for LangSmith, Langfuse, and Opik."""
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.tracers import LangChainTracer
@@ -10,14 +10,14 @@ from sdrbot_cli.config import COLORS, console, settings
 from sdrbot_cli.services.registry import load_config
 
 
-def get_observability_callbacks() -> list[BaseCallbackHandler]:
-    """Create and return configured observability callback handlers.
+def get_tracing_callbacks() -> list[BaseCallbackHandler]:
+    """Create and return configured tracing callback handlers.
 
     Only returns callbacks for services that are enabled in the registry
     AND have credentials configured.
 
     Returns:
-        List of callback handlers for enabled observability tools.
+        List of callback handlers for enabled tracing tools.
     """
     callbacks: list[BaseCallbackHandler] = []
     config = load_config()

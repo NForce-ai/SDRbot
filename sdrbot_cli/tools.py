@@ -1,23 +1,9 @@
 """Custom tools for the CLI agent."""
 
-from typing import Any, Literal
+from typing import Any
 
 import requests
 from markdownify import markdownify
-from tavily import TavilyClient
-
-from sdrbot_cli.config import settings
-
-# Tavily client - lazily initialized to allow .env to be loaded first
-_tavily_client: TavilyClient | None = None
-
-
-def _get_tavily_client() -> TavilyClient | None:
-    """Get or create the Tavily client (lazy initialization)."""
-    global _tavily_client
-    if _tavily_client is None and settings.has_tavily:
-        _tavily_client = TavilyClient(api_key=settings.tavily_api_key)
-    return _tavily_client
 
 
 def http_request(
@@ -93,57 +79,6 @@ def http_request(
             "content": f"Error making request: {e!s}",
             "url": url,
         }
-
-
-def web_search(
-    query: str,
-    max_results: int = 5,
-    topic: Literal["general", "news", "finance"] = "general",
-    include_raw_content: bool = False,
-):
-    """Search the web using Tavily for current information and documentation.
-
-    This tool searches the web and returns relevant results. After receiving results,
-    you MUST synthesize the information into a natural, helpful response for the user.
-
-    Args:
-        query: The search query (be specific and detailed)
-        max_results: Number of results to return (default: 5)
-        topic: Search topic type - "general" for most queries, "news" for current events
-        include_raw_content: Include full page content (warning: uses more tokens)
-
-    Returns:
-        Dictionary containing:
-        - results: List of search results, each with:
-            - title: Page title
-            - url: Page URL
-            - content: Relevant excerpt from the page
-            - score: Relevance score (0-1)
-        - query: The original search query
-
-    IMPORTANT: After using this tool:
-    1. Read through the 'content' field of each result
-    2. Extract relevant information that answers the user's question
-    3. Synthesize this into a clear, natural language response
-    4. Cite sources by mentioning the page titles or URLs
-    5. NEVER show the raw JSON to the user - always provide a formatted response
-    """
-    client = _get_tavily_client()
-    if client is None:
-        return {
-            "error": "Tavily API key not configured. Please set TAVILY_API_KEY environment variable.",
-            "query": query,
-        }
-
-    try:
-        return client.search(
-            query,
-            max_results=max_results,
-            include_raw_content=include_raw_content,
-            topic=topic,
-        )
-    except Exception as e:
-        return {"error": f"Web search error: {e!s}", "query": query}
 
 
 def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:

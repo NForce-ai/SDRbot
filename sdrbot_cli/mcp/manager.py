@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 
 from langchain_core.tools import BaseTool
 
-from sdrbot_cli.config import console
-
 from .client import MCP_AVAILABLE, MCPServerConnection
 from .config import load_mcp_config, update_server_tool_count
 from .tools import create_langchain_tool
@@ -20,20 +18,23 @@ class MCPManager:
     connections: dict[str, MCPServerConnection] = field(default_factory=dict)
     _started: bool = False
 
-    async def connect_enabled_servers(self) -> int:
+    async def connect_enabled_servers(self) -> tuple[int, list[str]]:
         """
         Connect to all enabled MCP servers.
 
         Returns:
-            Number of successfully connected servers
+            Tuple of (number of successfully connected servers, list of failed server names)
         """
         if not MCP_AVAILABLE:
-            return 0
+            return 0, []
+
+        from .config import disable_mcp_server
 
         config = load_mcp_config()
         servers = config.get("servers", {})
 
         connected_count = 0
+        failed_servers: list[str] = []
 
         for name, server_config in servers.items():
             if not server_config.get("enabled", False):
@@ -41,28 +42,26 @@ class MCPManager:
 
             conn = MCPServerConnection(name=name, config=server_config)
 
-            console.print(f"[dim]Connecting to MCP server: {name}...[/dim]")
-
             if await conn.connect():
                 self.connections[name] = conn
                 tool_count = len(conn.tools)
                 update_server_tool_count(name, tool_count)
-                console.print(f"[green]✓ Connected to {name} ({tool_count} tools)[/green]")
                 connected_count += 1
             else:
-                console.print(f"[yellow]⚠ Failed to connect to {name}[/yellow]")
+                # Disable the server since it failed to connect
+                disable_mcp_server(name)
+                failed_servers.append(name)
 
         self._started = True
-        return connected_count
+        return connected_count, failed_servers
 
     async def disconnect_all(self) -> None:
         """Disconnect from all MCP servers."""
-        for name, conn in list(self.connections.items()):
+        for _name, conn in list(self.connections.items()):
             try:
                 await conn.disconnect()
-                console.print(f"[dim]Disconnected from MCP server: {name}[/dim]")
-            except Exception as e:
-                console.print(f"[yellow]Error disconnecting from {name}: {e}[/yellow]")
+            except Exception:
+                pass  # Ignore disconnect errors on shutdown
 
         self.connections.clear()
         self._started = False
@@ -154,12 +153,17 @@ def get_mcp_manager() -> MCPManager:
     return _manager
 
 
-async def initialize_mcp() -> MCPManager:
-    """Initialize MCP and connect to enabled servers."""
+async def initialize_mcp() -> tuple[MCPManager, list[str]]:
+    """Initialize MCP and connect to enabled servers.
+
+    Returns:
+        Tuple of (manager, list of failed server names)
+    """
     manager = get_mcp_manager()
+    failed_servers: list[str] = []
     if not manager._started:
-        await manager.connect_enabled_servers()
-    return manager
+        _, failed_servers = await manager.connect_enabled_servers()
+    return manager, failed_servers
 
 
 async def shutdown_mcp() -> None:
@@ -170,9 +174,13 @@ async def shutdown_mcp() -> None:
         _manager = None
 
 
-async def reinitialize_mcp() -> MCPManager:
-    """Reinitialize MCP - disconnect and reconnect to enabled servers."""
+async def reinitialize_mcp() -> tuple[MCPManager, list[str]]:
+    """Reinitialize MCP - disconnect and reconnect to enabled servers.
+
+    Returns:
+        Tuple of (manager, list of failed server names)
+    """
     manager = get_mcp_manager()
     await manager.disconnect_all()
-    await manager.connect_enabled_servers()
-    return manager
+    _, failed_servers = await manager.connect_enabled_servers()
+    return manager, failed_servers

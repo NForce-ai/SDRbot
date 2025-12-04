@@ -6,12 +6,11 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from rich import box
+from rich.console import RenderableType
 from rich.markup import escape
-from rich.panel import Panel
 from rich.text import Text
 
-from .config import COLORS, COMMANDS, DEEP_AGENTS_ASCII, MAX_ARG_LENGTH, console
+from .config import COLORS, COMMANDS, DEEP_AGENTS_ASCII, MAX_ARG_LENGTH
 from .file_ops import FileOperationRecord
 
 
@@ -36,7 +35,6 @@ def format_tool_display(tool_name: str, tool_args: dict) -> str:
 
     Examples:
         read_file(path="/long/path/file.py") → "read_file(file.py)"
-        web_search(query="how to code", max_results=5) → 'web_search("how to code")'
         shell(command="pip install foo") → 'shell("pip install foo")'
     """
 
@@ -78,13 +76,6 @@ def format_tool_display(tool_name: str, tool_args: dict) -> str:
         if path_value is not None:
             path = abbreviate_path(str(path_value))
             return f"{tool_name}({path})"
-
-    elif tool_name == "web_search":
-        # Web search: show the query string
-        if "query" in tool_args:
-            query = str(tool_args["query"])
-            query = truncate_value(query, 100)
-            return f'{tool_name}("{query}")'
 
     elif tool_name == "grep":
         # Grep: show the search pattern
@@ -198,46 +189,65 @@ class TokenTracker:
         self.current_context = input_tokens
         self.last_output = output_tokens
 
-    def display_last(self) -> None:
+    def display_last(self) -> list[Text]:
         """Display current context size after this turn."""
+        output_lines = []
         if self.last_output and self.last_output >= 1000:
-            console.print(f"  Generated: {self.last_output:,} tokens", style="dim")
+            output_lines.append(Text(f"  Generated: {self.last_output:,} tokens", style="dim"))
         if self.current_context:
-            console.print(f"  Current context: {self.current_context:,} tokens", style="dim")
+            output_lines.append(
+                Text(f"  Current context: {self.current_context:,} tokens", style="dim")
+            )
+        return output_lines
 
-    def display_session(self) -> None:
+    def display_session(self) -> list[Text]:
         """Display current context size."""
-        console.print("\n[bold]Token Usage:[/bold]", style=COLORS["primary"])
+        output_lines = []
+        output_lines.append(Text("\n[bold]Token Usage:[/bold]", style=COLORS["primary"]))
 
         # Check if we've had any actual API calls yet (current > baseline means we have conversation)
         has_conversation = self.current_context > self.baseline_context
 
         if self.baseline_context > 0:
-            console.print(
-                f"  Baseline: {self.baseline_context:,} tokens [dim](system + agent.md)[/dim]",
-                style=COLORS["dim"],
+            output_lines.append(
+                Text(
+                    f"  Baseline: {self.baseline_context:,} tokens [dim](system + agent.md)[/dim]",
+                    style=COLORS["dim"],
+                )
             )
 
             if not has_conversation:
                 # Before first message - warn that tools aren't counted yet
-                console.print(
-                    "  [dim]Note: Tool definitions (~5k tokens) included after first message[/dim]"
+                output_lines.append(
+                    Text(
+                        "  [dim]Note: Tool definitions (~5k tokens) included after first message[/dim]"
+                    )
                 )
 
         if has_conversation:
             tools_and_conversation = self.current_context - self.baseline_context
-            console.print(
-                f"  Tools + conversation: {tools_and_conversation:,} tokens", style=COLORS["dim"]
+            output_lines.append(
+                Text(
+                    f"  Tools + conversation: {tools_and_conversation:,} tokens",
+                    style=COLORS["dim"],
+                )
             )
 
-        console.print(f"  Total: {self.current_context:,} tokens", style="bold " + COLORS["dim"])
-        console.print()
+        output_lines.append(
+            Text(f"  Total: {self.current_context:,} tokens", style="bold " + COLORS["dim"])
+        )
+        output_lines.append(Text(""))
+        return output_lines
 
 
-def render_todo_list(todos: list[dict]) -> None:
-    """Render todo list as a rich Panel with checkboxes."""
+def render_todo_list(todos: list[dict]) -> str | None:
+    """Render todo list as formatted text with checkboxes.
+
+    Returns plain markup text (not a Panel) to avoid nested borders
+    when displayed in a Textual container with its own border.
+    """
     if not todos:
-        return
+        return None
 
     lines = []
     for todo in todos:
@@ -245,25 +255,18 @@ def render_todo_list(todos: list[dict]) -> None:
         content = todo.get("content", "")
 
         if status == "completed":
-            icon = "☑"
-            style = "green"
+            icon = "[#24FF6A]✔[/#24FF6A]"
+            style = "#24FF6A dim"
         elif status == "in_progress":
-            icon = "⏳"
-            style = "yellow"
+            icon = "[cyan bold]▶[/cyan bold]"
+            style = "white"
         else:  # pending
-            icon = "☐"
+            icon = "[dim]○[/dim]"
             style = "dim"
 
-        lines.append(f"[{style}]{icon} {content}[/{style}]")
+        lines.append(f"{icon} [{style}]{content}[/{style}]")
 
-    panel = Panel(
-        "\n".join(lines),
-        title="[bold]Task List[/bold]",
-        border_style="cyan",
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    console.print(panel)
+    return "\n".join(lines)
 
 
 def _format_line_span(start: int | None, end: int | None) -> str:
@@ -278,8 +281,9 @@ def _format_line_span(start: int | None, end: int | None) -> str:
     return f"(lines {start}-{end})"
 
 
-def render_file_operation(record: FileOperationRecord) -> None:
+def render_file_operation(record: FileOperationRecord) -> list[RenderableType]:
     """Render a concise summary of a filesystem tool call."""
+    output_renderables = []
     label_lookup = {
         "read_file": "Read",
         "write_file": "Write",
@@ -289,17 +293,19 @@ def render_file_operation(record: FileOperationRecord) -> None:
     header = Text()
     header.append("⏺ ", style=COLORS["tool"])
     header.append(f"{label}({record.display_path})", style=f"bold {COLORS['tool']}")
-    console.print(header)
+    output_renderables.append(header)
 
-    def _print_detail(message: str, *, style: str = COLORS["dim"]) -> None:
+    def _get_detail_text(message: str, *, style: str = COLORS["dim"]) -> Text:
         detail = Text()
         detail.append("  ⎿  ", style=style)
         detail.append(message, style=style)
-        console.print(detail)
+        return detail
 
     if record.status == "error":
-        _print_detail(record.error or "Error executing file operation", style="red")
-        return
+        output_renderables.append(
+            _get_detail_text(record.error or "Error executing file operation", style="red")
+        )
+        return output_renderables
 
     if record.tool_name == "read_file":
         lines = record.metrics.lines_read
@@ -307,7 +313,10 @@ def render_file_operation(record: FileOperationRecord) -> None:
         detail = f"Read {lines} line{'s' if lines != 1 else ''}"
         if span:
             detail = f"{detail} {span}"
-        _print_detail(detail)
+        detail = f"Read {lines} line{'s' if lines != 1 else ''}"
+        if span:
+            detail = f"{detail} {span}"
+        output_renderables.append(_get_detail_text(detail))
     else:
         if record.tool_name == "write_file":
             added = record.metrics.lines_added
@@ -322,19 +331,21 @@ def render_file_operation(record: FileOperationRecord) -> None:
             detail = f"Edited {record.metrics.lines_written} total line{'s' if record.metrics.lines_written != 1 else ''}"
             if added or removed:
                 detail = f"{detail} (+{added} / -{removed})"
-        _print_detail(detail)
+        output_renderables.append(_get_detail_text(detail))
 
     # Skip diff display for HIL-approved operations that succeeded
     # (user already saw the diff during approval)
     if record.diff and not (record.hitl_approved and record.status == "success"):
-        render_diff(record)
+        output_renderables.extend(render_diff(record))
+
+    return output_renderables
 
 
-def render_diff(record: FileOperationRecord) -> None:
+def render_diff(record: FileOperationRecord) -> list[RenderableType]:
     """Render diff for a file operation."""
     if not record.diff:
-        return
-    render_diff_block(record.diff, f"Diff {record.display_path}")
+        return []
+    return render_diff_block(record.diff, f"Diff {record.display_path}")
 
 
 def _wrap_diff_line(
@@ -468,258 +479,410 @@ def format_diff_rich(diff_lines: list[str]) -> str:
     return "\n".join(formatted_lines)
 
 
-def render_diff_block(diff: str, title: str) -> None:
+def render_diff_block(diff: str, title: str) -> list[RenderableType]:
     """Render a diff string with line numbers and colors."""
+    output_renderables = []
     try:
         # Parse diff into lines and format with line numbers
         diff_lines = diff.splitlines()
         formatted_diff = format_diff_rich(diff_lines)
 
         # Print with a simple header
-        console.print()
-        console.print(f"[bold {COLORS['primary']}]═══ {title} ═══[/bold {COLORS['primary']}]")
-        console.print(formatted_diff)
-        console.print()
+        output_renderables.append(Text(""))
+        output_renderables.append(
+            Text(f"[bold {COLORS['primary']}]═══ {title} ═══[/bold {COLORS['primary']}]")
+        )
+        output_renderables.append(Text(formatted_diff))
+        output_renderables.append(Text(""))
     except (ValueError, AttributeError, IndexError, OSError):
         # Fallback to simple rendering if formatting fails
-        console.print()
-        console.print(f"[bold {COLORS['primary']}]{title}[/bold {COLORS['primary']}]")
-        console.print(diff)
-        console.print()
+        output_renderables.append(Text(""))
+        output_renderables.append(
+            Text(f"[bold {COLORS['primary']}]{title}[/bold {COLORS['primary']}]")
+        )
+        output_renderables.append(Text(diff))
+        output_renderables.append(Text(""))
+    return output_renderables
 
 
-def show_interactive_help() -> None:
+def show_interactive_help() -> list[RenderableType]:
     """Show available commands during interactive session."""
-    console.print()
-    console.print("[bold]Interactive Commands:[/bold]", style=COLORS["primary"])
-    console.print()
+    output_renderables = []
+    output_renderables.append(Text(""))
+    output_renderables.append(Text("[bold]Interactive Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(Text(""))
 
     for cmd, desc in COMMANDS.items():
-        console.print(f"  /{cmd:<12} {desc}", style=COLORS["dim"])
+        output_renderables.append(Text(f"  /{cmd:<12} {desc}", style=COLORS["dim"]))
 
-    console.print()
-    console.print("[bold]Editing Features:[/bold]", style=COLORS["primary"])
-    console.print("  Enter           Submit your message", style=COLORS["dim"])
-    console.print(
-        "  Alt+Enter       Insert newline (Option+Enter on Mac, or ESC then Enter)",
-        style=COLORS["dim"],
+    output_renderables.append(Text(""))
+    output_renderables.append(Text("[bold]Editing Features:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(Text("  Enter           Submit your message", style=COLORS["dim"]))
+    output_renderables.append(
+        Text(
+            "  Alt+Enter       Insert newline (Option+Enter on Mac, or ESC then Enter)",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  Ctrl+E          Open in external editor (nano by default)", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  Ctrl+E          Open in external editor (nano by default)", style=COLORS["dim"])
     )
-    console.print("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
-    console.print("  Arrow keys      Navigate input", style=COLORS["dim"])
-    console.print("  Ctrl+C          Cancel input or interrupt agent mid-work", style=COLORS["dim"])
-    console.print()
-    console.print("[bold]Special Features:[/bold]", style=COLORS["primary"])
-    console.print(
-        "  @filename       Type @ to auto-complete files and inject content", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
     )
-    console.print("  /command        Type / to see available commands", style=COLORS["dim"])
-    console.print(
-        "  !command        Type ! to run bash commands (e.g., !ls, !git status)",
-        style=COLORS["dim"],
+    output_renderables.append(Text("  Arrow keys      Navigate input", style=COLORS["dim"]))
+    output_renderables.append(
+        Text("  Ctrl+C          Cancel input or interrupt agent mid-work", style=COLORS["dim"])
     )
-    console.print(
-        "                  Completions appear automatically as you type", style=COLORS["dim"]
+    output_renderables.append(Text(""))
+    output_renderables.append(Text("[bold]Special Features:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text(
+            "  @filename       Type @ to auto-complete files and inject content",
+            style=COLORS["dim"],
+        )
     )
-    console.print()
-    console.print("[bold]Auto-Approve Mode:[/bold]", style=COLORS["primary"])
-    console.print("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
-    console.print(
-        "  --auto-approve  Start CLI with auto-approve enabled (via command line)",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text("  /command        Type / to see available commands", style=COLORS["dim"])
     )
-    console.print(
-        "  When enabled, tool actions execute without confirmation prompts", style=COLORS["dim"]
+    output_renderables.append(
+        Text(
+            "  !command        Type ! to run bash commands (e.g., !ls, !git status)",
+            style=COLORS["dim"],
+        )
     )
-    console.print()
+    output_renderables.append(
+        Text("                  Completions appear automatically as you type", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
+    output_renderables.append(Text("[bold]Auto-Approve Mode:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text(
+            "  --auto-approve  Start CLI with auto-approve enabled (via command line)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(
+        Text(
+            "  When enabled, tool actions execute without confirmation prompts", style=COLORS["dim"]
+        )
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
-    console.print("  /setup                      Open full setup wizard", style=COLORS["dim"])
-    console.print(
-        "  /models                     Configure LLM provider and model", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Configuration Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  /setup                      Open full setup wizard", style=COLORS["dim"])
     )
-    console.print(
-        "  /integrations               Configure CRM and service integrations", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  /models                     Configure LLM provider and model", style=COLORS["dim"])
     )
-    console.print(
-        "  /mcp                        Configure MCP server connections", style=COLORS["dim"]
+    output_renderables.append(
+        Text(
+            "  /integrations               Configure CRM and service integrations",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  /sync [name]                Re-sync service schema (all or specific)",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text("  /mcp                        Configure MCP server connections", style=COLORS["dim"])
     )
-    console.print()
+    output_renderables.append(
+        Text(
+            "  /sync [name]                Re-sync service schema (all or specific)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Agent Commands:[/bold]", style=COLORS["primary"])
-    console.print("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
-    console.print("  sdrbot list                 List all available agents", style=COLORS["dim"])
-    console.print(
-        "  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Agent Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
     )
-    console.print()
-
-    console.print("[bold]Skills Commands:[/bold]", style=COLORS["primary"])
-    console.print("  sdrbot skills list          List available skills", style=COLORS["dim"])
-    console.print("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
-    console.print("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
-    console.print()
-
-    console.print("[bold]Local Data Folders:[/bold]", style=COLORS["primary"])
-    console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
-    console.print(
-        "  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  sdrbot list                 List all available agents", style=COLORS["dim"])
     )
-    console.print("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
-    console.print(
-        "  ./generated/    Schema-synced CRM tools (created on /services sync)", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"])
     )
-    console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
-    console.print()
+    output_renderables.append(Text(""))
+
+    output_renderables.append(Text("[bold]Skills Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  sdrbot skills list          List available skills", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
+
+    output_renderables.append(Text("[bold]Local Data Folders:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text(
+            "  ./skills/       Custom skills (created via 'sdrbot skills create')",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(
+        Text("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text(
+            "  ./generated/    Schema-synced CRM tools (created on /services sync)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(
+        Text("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
+    return output_renderables
 
 
-def show_help() -> None:
+def show_help() -> list[RenderableType]:
     """Show help information."""
-    console.print()
-    console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
-    console.print()
+    output_renderables = []
+    output_renderables.append(Text(""))
+    output_renderables.append(Text(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}"))
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Usage:[/bold]", style=COLORS["primary"])
-    console.print("  deepagents [OPTIONS]                           Start interactive session")
-    console.print("  deepagents list                                List all available agents")
-    console.print("  deepagents reset --agent AGENT                 Reset agent to default prompt")
-    console.print(
-        "  deepagents reset --agent AGENT --target SOURCE Reset agent to copy of another agent"
+    output_renderables.append(Text("[bold]Usage:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  deepagents [OPTIONS]                           Start interactive session")
     )
-    console.print("  deepagents help                                Show this help message")
-    console.print()
+    output_renderables.append(
+        Text("  deepagents list                                List all available agents")
+    )
+    output_renderables.append(
+        Text("  deepagents reset --agent AGENT                 Reset agent to default prompt")
+    )
+    output_renderables.append(
+        Text(
+            "  deepagents reset --agent AGENT --target SOURCE Reset agent to copy of another agent"
+        )
+    )
+    output_renderables.append(
+        Text("  deepagents help                                Show this help message")
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Options:[/bold]", style=COLORS["primary"])
-    console.print("  --agent NAME                  Agent identifier (default: agent)")
-    console.print("  --auto-approve                Auto-approve tool usage without prompting")
-    console.print(
-        "  --sandbox TYPE                Remote sandbox for execution (modal, runloop, daytona)"
+    output_renderables.append(Text("[bold]Options:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  --agent NAME                  Agent identifier (default: agent)")
     )
-    console.print("  --sandbox-id ID               Reuse existing sandbox (skips creation/cleanup)")
-    console.print()
+    output_renderables.append(
+        Text("  --auto-approve                Auto-approve tool usage without prompting")
+    )
+    output_renderables.append(
+        Text(
+            "  --sandbox TYPE                Remote sandbox for execution (modal, runloop, daytona)"
+        )
+    )
+    output_renderables.append(
+        Text("  --sandbox-id ID               Reuse existing sandbox (skips creation/cleanup)")
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Examples:[/bold]", style=COLORS["primary"])
-    console.print(
-        "  deepagents                              # Start with default agent", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Examples:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text(
+            "  deepagents                              # Start with default agent",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents --agent mybot                # Start with agent named 'mybot'",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents --agent mybot                # Start with agent named 'mybot'",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents --auto-approve               # Start with auto-approve enabled",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents --auto-approve               # Start with auto-approve enabled",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents --sandbox runloop            # Execute code in Runloop sandbox",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents --sandbox runloop            # Execute code in Runloop sandbox",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents --sandbox modal              # Execute code in Modal sandbox",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents --sandbox modal              # Execute code in Modal sandbox",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents --sandbox runloop --sandbox-id dbx_123  # Reuse existing sandbox",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents --sandbox runloop --sandbox-id dbx_123  # Reuse existing sandbox",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents list                         # List all agents", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  deepagents list                         # List all agents", style=COLORS["dim"])
     )
-    console.print(
-        "  deepagents reset --agent mybot          # Reset mybot to default", style=COLORS["dim"]
+    output_renderables.append(
+        Text(
+            "  deepagents reset --agent mybot          # Reset mybot to default",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  deepagents reset --agent mybot --target other # Reset mybot to copy of 'other' agent",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text(
+            "  deepagents reset --agent mybot --target other # Reset mybot to copy of 'other' agent",
+            style=COLORS["dim"],
+        )
     )
-    console.print()
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Long-term Memory:[/bold]", style=COLORS["primary"])
-    console.print(
-        "  By default, long-term memory is ENABLED using agent name 'agent'.", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Long-term Memory:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text(
+            "  By default, long-term memory is ENABLED using agent name 'agent'.",
+            style=COLORS["dim"],
+        )
     )
-    console.print("  Memory includes:", style=COLORS["dim"])
-    console.print("  - Persistent agent.md file with your instructions", style=COLORS["dim"])
-    console.print("  - /memories/ folder for storing context across sessions", style=COLORS["dim"])
-    console.print()
+    output_renderables.append(Text("  Memory includes:", style=COLORS["dim"]))
+    output_renderables.append(
+        Text("  - Persistent agent.md file with your instructions", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  - /memories/ folder for storing context across sessions", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Agent Storage:[/bold]", style=COLORS["primary"])
-    console.print("  Agents are stored in: ~/.deepagents/AGENT_NAME/", style=COLORS["dim"])
-    console.print("  Each agent has an agent.md file containing its prompt", style=COLORS["dim"])
-    console.print()
+    output_renderables.append(Text("[bold]Agent Storage:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  Agents are stored in: ~/.deepagents/AGENT_NAME/", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  Each agent has an agent.md file containing its prompt", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Interactive Features:[/bold]", style=COLORS["primary"])
-    console.print("  Enter           Submit your message", style=COLORS["dim"])
-    console.print(
-        "  Alt+Enter       Insert newline for multi-line (Option+Enter or ESC then Enter)",
-        style=COLORS["dim"],
+    output_renderables.append(Text("[bold]Interactive Features:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(Text("  Enter           Submit your message", style=COLORS["dim"]))
+    output_renderables.append(
+        Text(
+            "  Alt+Enter       Insert newline for multi-line (Option+Enter or ESC then Enter)",
+            style=COLORS["dim"],
+        )
     )
-    console.print("  Ctrl+J          Insert newline (alternative)", style=COLORS["dim"])
-    console.print("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
-    console.print("  Arrow keys      Navigate input", style=COLORS["dim"])
-    console.print(
-        "  @filename       Type @ to auto-complete files and inject content", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  Ctrl+J          Insert newline (alternative)", style=COLORS["dim"])
     )
-    console.print(
-        "  /command        Type / to see available commands (auto-completes)", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  Ctrl+T          Toggle auto-approve mode", style=COLORS["dim"])
     )
-    console.print()
+    output_renderables.append(Text("  Arrow keys      Navigate input", style=COLORS["dim"]))
+    output_renderables.append(
+        Text(
+            "  @filename       Type @ to auto-complete files and inject content",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(
+        Text(
+            "  /command        Type / to see available commands (auto-completes)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Interactive Commands:[/bold]", style=COLORS["primary"])
-    console.print("  /help           Show available commands and features", style=COLORS["dim"])
-    console.print("  /clear          Clear screen and reset conversation", style=COLORS["dim"])
-    console.print("  /tokens         Show token usage for current session", style=COLORS["dim"])
-    console.print("  /quit, /exit    Exit the session", style=COLORS["dim"])
-    console.print(
-        "  quit, exit, q   Exit the session (just type and press Enter)", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Interactive Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  /help           Show available commands and features", style=COLORS["dim"])
     )
-    console.print()
+    output_renderables.append(
+        Text("  /clear          Clear screen and reset conversation", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  /tokens         Show token usage for current session", style=COLORS["dim"])
+    )
+    output_renderables.append(Text("  /quit, /exit    Exit the session", style=COLORS["dim"]))
+    output_renderables.append(
+        Text("  quit, exit, q   Exit the session (just type and press Enter)", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Configuration Commands:[/bold]", style=COLORS["primary"])
-    console.print("  /setup                      Open full setup wizard", style=COLORS["dim"])
-    console.print(
-        "  /models                     Configure LLM provider and model", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Configuration Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  /setup                      Open full setup wizard", style=COLORS["dim"])
     )
-    console.print(
-        "  /integrations               Configure CRM and service integrations", style=COLORS["dim"]
+    output_renderables.append(
+        Text("  /models                     Configure LLM provider and model", style=COLORS["dim"])
     )
-    console.print(
-        "  /mcp                        Configure MCP server connections", style=COLORS["dim"]
+    output_renderables.append(
+        Text(
+            "  /integrations               Configure CRM and service integrations",
+            style=COLORS["dim"],
+        )
     )
-    console.print(
-        "  /sync [name]                Re-sync service schema (all or specific)",
-        style=COLORS["dim"],
+    output_renderables.append(
+        Text("  /mcp                        Configure MCP server connections", style=COLORS["dim"])
     )
-    console.print()
+    output_renderables.append(
+        Text(
+            "  /sync [name]                Re-sync service schema (all or specific)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Agent Commands:[/bold]", style=COLORS["primary"])
-    console.print("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
-    console.print("  sdrbot list                 List all available agents", style=COLORS["dim"])
-    console.print(
-        "  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Agent Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  sdrbot --agent NAME         Start with a specific agent", style=COLORS["dim"])
     )
-    console.print()
+    output_renderables.append(
+        Text("  sdrbot list                 List all available agents", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  sdrbot reset --agent NAME   Reset agent to default prompt", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Skills Commands:[/bold]", style=COLORS["primary"])
-    console.print("  sdrbot skills list          List available skills", style=COLORS["dim"])
-    console.print("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
-    console.print("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
-    console.print()
+    output_renderables.append(Text("[bold]Skills Commands:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  sdrbot skills list          List available skills", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  sdrbot skills create NAME   Create a new skill", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text("  sdrbot skills info NAME     Show skill details", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
 
-    console.print("[bold]Local Data Folders:[/bold]", style=COLORS["primary"])
-    console.print("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
-    console.print(
-        "  ./skills/       Custom skills (created via 'sdrbot skills create')", style=COLORS["dim"]
+    output_renderables.append(Text("[bold]Local Data Folders:[/bold]", style=COLORS["primary"]))
+    output_renderables.append(
+        Text("  ./agents/       Agent prompt files (e.g., agent.md)", style=COLORS["dim"])
     )
-    console.print("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
-    console.print(
-        "  ./generated/    Schema-synced CRM tools (created on /services sync)", style=COLORS["dim"]
+    output_renderables.append(
+        Text(
+            "  ./skills/       Custom skills (created via 'sdrbot skills create')",
+            style=COLORS["dim"],
+        )
     )
-    console.print("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
-    console.print()
+    output_renderables.append(
+        Text("  ./files/        Agent-generated exports, reports, CSVs", style=COLORS["dim"])
+    )
+    output_renderables.append(
+        Text(
+            "  ./generated/    Schema-synced CRM tools (created on /services sync)",
+            style=COLORS["dim"],
+        )
+    )
+    output_renderables.append(
+        Text("  ./.sdrbot/      Service configuration (services.json)", style=COLORS["dim"])
+    )
+    output_renderables.append(Text(""))
+    return output_renderables

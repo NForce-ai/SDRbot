@@ -1,4 +1,4 @@
-"""Observability services setup for the setup wizard."""
+"""Tracing services setup for the setup wizard."""
 
 import os
 
@@ -9,17 +9,17 @@ from sdrbot_cli.services.registry import load_config
 from .env import get_or_prompt, reload_env_and_settings, save_env_vars
 from .menu import CancelledError, show_menu
 
-# Observability services
-OBSERVABILITY_SERVICES = [
+# Tracing services
+TRACING_SERVICES = [
     ("langsmith", "LangSmith"),
     ("langfuse", "Langfuse"),
     ("opik", "Opik"),
 ]
 
 
-def get_observability_service_status(service_name: str) -> tuple[bool, bool]:
+def get_tracing_service_status(service_name: str) -> tuple[bool, bool]:
     """
-    Check observability service status.
+    Check tracing service status.
 
     Returns:
         (is_configured, is_enabled)
@@ -42,12 +42,12 @@ def get_observability_service_status(service_name: str) -> tuple[bool, bool]:
     return configured, enabled
 
 
-def get_observability_status() -> str:
-    """Get overall status string for observability."""
+def get_tracing_status() -> str:
+    """Get overall status string for tracing."""
     config = load_config()
     enabled_count = 0
 
-    for service_code, _ in OBSERVABILITY_SERVICES:
+    for service_code, _ in TRACING_SERVICES:
         if config.is_enabled(service_code):
             enabled_count += 1
 
@@ -56,27 +56,27 @@ def get_observability_status() -> str:
     return "[dim]• None configured[/dim]"
 
 
-async def setup_observability() -> str | None:
+async def setup_tracing() -> str | None:
     """
-    Run the Observability setup wizard.
+    Run the Tracing setup wizard.
 
     Returns:
         "back" to return to main menu, None if exited
     """
     try:
-        return await _setup_observability_impl()
+        return await _setup_tracing_impl()
     except CancelledError:
         console.print(f"\n[{COLORS['dim']}]Configuration cancelled.[/{COLORS['dim']}]")
         return "back"
 
 
-async def _setup_observability_impl() -> str | None:
-    """Implementation of observability setup."""
+async def _setup_tracing_impl() -> str | None:
+    """Implementation of tracing setup."""
     while True:
         menu_items = []
 
-        for service_code, service_label in OBSERVABILITY_SERVICES:
-            configured, enabled = get_observability_service_status(service_code)
+        for service_code, service_label in TRACING_SERVICES:
+            configured, enabled = get_tracing_service_status(service_code)
 
             if configured:
                 if enabled:
@@ -91,22 +91,22 @@ async def _setup_observability_impl() -> str | None:
         menu_items.append(("---", "──────────────", ""))
         menu_items.append(("back", "← Back", ""))
 
-        selected = await show_menu(menu_items, title="Observability")
+        selected = await show_menu(menu_items, title="Tracing")
 
         if selected == "back" or selected is None:
             return "back"
 
         # Configure selected service
-        await _configure_observability_service(selected)
+        await _configure_tracing_service(selected)
 
 
-async def _configure_observability_service(service_name: str) -> None:
-    """Configure a specific observability service."""
-    configured, enabled = get_observability_service_status(service_name)
+async def _configure_tracing_service(service_name: str) -> None:
+    """Configure a specific tracing service."""
+    configured, enabled = get_tracing_service_status(service_name)
 
     if not configured:
         # Not configured -> configure directly
-        await _setup_observability_service(service_name, force=True)
+        await _setup_tracing_service(service_name, force=True)
     else:
         # Configured -> offer toggle and reconfigure
         action_items = []
@@ -120,15 +120,15 @@ async def _configure_observability_service(service_name: str) -> None:
         action = await show_menu(action_items, title=f"Manage {service_name.capitalize()}")
 
         if action == "reconfigure":
-            await _setup_observability_service(service_name, force=True)
+            await _setup_tracing_service(service_name, force=True)
         elif action == "enable":
             enable_service(service_name, verbose=True)
         elif action == "disable":
             disable_service(service_name, verbose=True)
 
 
-async def _setup_observability_service(service_name: str, force: bool = False) -> bool:
-    """Setup a specific observability service."""
+async def _setup_tracing_service(service_name: str, force: bool = False) -> bool:
+    """Setup a specific tracing service."""
     env_vars = {}
 
     if service_name == "langsmith":
@@ -169,7 +169,7 @@ async def _setup_observability_service(service_name: str, force: bool = False) -
             env_vars["OPIK_API_KEY"] = api_key
 
     else:
-        console.print(f"[red]Unknown observability service: {service_name}[/red]")
+        console.print(f"[red]Unknown tracing service: {service_name}[/red]")
         return False
 
     if env_vars:

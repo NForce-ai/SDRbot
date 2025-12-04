@@ -1,0 +1,104 @@
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+#app_grid {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#chat_log {
+    background: $panel;
+    border: heavy $primary;
+    padding: 1;
+    width: 1fr;
+    scrollbar-gutter: stable;
+    overflow-x: hidden;
+}
+
+#task_list_container {
+    background: $surface;
+    border: heavy #00a2c7;
+    border-title-color: #00a2c7;
+    border-title-style: bold;
+    color: #00a2c7;
+    width: 0;
+    min-width: 0;
+    display: none;
+}
+
+#task_list_container.visible {
+    display: block;
+    width: 1fr;
+    min-width: 30;
+    max-width: 50;
+    margin-left: 1;
+}
+
+#task_list_display {
+    padding: 1;
+}
+
+#app_grid.has-tasks #chat_log {
+    width: 3fr;
+}
+
+#main_input {
+    height: auto;
+    min-height: 3;
+    max-height: 10;
+    margin: 0;
+    border: heavy $accent;
+}
+
+#main_input:focus-within {
+    border: heavy #00CCA3;
+}
+
+#main_input .text-area--placeholder {
+    color: #00a2c7;
+    text-style: bold;
+}
+
+Header {
+    dock: top;
+    height: 1;
+    background: $panel;
+    color: $primary;
+}
+
+Footer {
+    dock: bottom;
+    height: 1;
+    background: $panel;
+    color: $primary;
+}
+
+#status_bar {
+    height: 1;
+    dock: top;
+    background: $surface;
+    padding: 0 1;
+}
+
+#agent_info {
+    width: 1fr;
+    content-align: left middle;
+    link-color: #00a2c7;
+    link-style: none;
+}
+
+#status_display {
+    width: 1fr;
+    content-align: right middle;
+    link-color: #00a2c7;
+    link-style: none;
+}
+
+/* Command suggestions dropdown */
+#command_suggestions {
+    dock: bottom;
+    offset: 0 -4;
+    margin-left: 1;
+}

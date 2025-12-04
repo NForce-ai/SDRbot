@@ -9,8 +9,8 @@ from sdrbot_cli.config import COLORS, console, load_model_config
 from .mcp import get_mcp_status, run_mcp_wizard
 from .menu import CancelledError, show_menu
 from .models import get_model_status, setup_models
-from .observability import get_observability_status, setup_observability
 from .services import get_services_status
+from .tracing import get_tracing_status, setup_tracing
 
 
 async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None:
@@ -21,7 +21,7 @@ async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None
     - Models (LLM providers)
     - Services (CRMs, Prospecting, Databases)
     - MCP Servers (external tool servers)
-    - Observability (LangSmith, Langfuse, Opik)
+    - Tracing (LangSmith, Langfuse, Opik)
 
     Args:
         force: If True, run the wizard even if credentials already exist.
@@ -65,14 +65,14 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
         _, _, model_status = get_model_status()
         services_status = get_services_status()
         mcp_status = get_mcp_status()
-        observability_status = get_observability_status()
+        tracing_status = get_tracing_status()
 
         # Build menu items
         menu_items = [
             ("models", "Models", model_status),
             ("services", "Services", services_status),
             ("mcp", "MCP Servers", mcp_status),
-            ("observability", "Observability", observability_status),
+            ("tracing", "Tracing", tracing_status),
             ("---", "──────────────", ""),
             ("done", "Done / Continue", ""),
         ]
@@ -128,8 +128,8 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
             await run_mcp_wizard(return_to_setup=True)
             # Returns "setup" if user clicked back, we just continue the loop
 
-        elif selected == "observability":
-            await setup_observability()
+        elif selected == "tracing":
+            await setup_tracing()
 
     console.print(f"\n[{COLORS['primary']}][bold]Setup Complete![/bold][/]")
     console.print(f"[{COLORS['dim']}]You can now run SDRbot.[/{COLORS['dim']}]\n")

@@ -8,11 +8,11 @@ import os
 import time
 import urllib.parse
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import keyring
 import requests
 
+from sdrbot_cli.auth.oauth_server import wait_for_callback
 from sdrbot_cli.config import COLORS, console
 
 SERVICE_NAME = "sdrbot_pipedrive"
@@ -52,39 +52,6 @@ def is_configured() -> bool:
     return False
 
 
-class OAuthHandler(BaseHTTPRequestHandler):
-    """Handle the OAuth callback."""
-
-    auth_code: str | None = None
-
-    def do_GET(self):
-        """Handle the callback request."""
-        parsed_path = urllib.parse.urlparse(self.path)
-        if parsed_path.path == "/callback/pipedrive":
-            query_params = urllib.parse.parse_qs(parsed_path.query)
-            if "code" in query_params:
-                OAuthHandler.auth_code = query_params["code"][0]
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(
-                    b"<h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p>"
-                )
-            else:
-                self.send_response(400)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                error = query_params.get("error", ["Unknown error"])[0]
-                self.wfile.write(f"<h1>Authorization Failed</h1><p>{error}</p>".encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        """Silence logs."""
-        pass
-
-
 def get_auth_url() -> str:
     """Generate the Pipedrive OAuth URL."""
     params = {
@@ -112,18 +79,21 @@ def login() -> dict | None:
     console.print(f"Opening browser to: {auth_url}")
     webbrowser.open(auth_url)
 
-    # Start local server to catch callback
-    server_address = ("", 8080)
-    HTTPServer.allow_reuse_address = True
-    httpd = HTTPServer(server_address, OAuthHandler)
-
     console.print(f"[{COLORS['dim']}]Waiting for callback...[/{COLORS['dim']}]")
-    OAuthHandler.auth_code = None
 
-    while OAuthHandler.auth_code is None:
-        httpd.handle_request()
+    # Use shared OAuth server with timeout support
+    code, _ = wait_for_callback(
+        callback_path="/callback/pipedrive",
+        port=8080,
+        timeout=300.0,
+    )
 
-    code = OAuthHandler.auth_code
+    if not code:
+        console.print(
+            f"[{COLORS['tool']}]OAuth flow timed out or was cancelled.[/{COLORS['tool']}]"
+        )
+        return None
+
     console.print(
         f"[{COLORS['primary']}]Authorization code received! Exchanging for token...[/{COLORS['primary']}]"
     )

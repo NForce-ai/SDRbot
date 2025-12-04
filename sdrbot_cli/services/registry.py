@@ -265,15 +265,6 @@ def get_config_path() -> Path:
     return Path.cwd() / _CONFIG_DIR / _CONFIG_FILE
 
 
-def get_sdrbot_dir() -> Path:
-    """Get path to .sdrbot directory.
-
-    Returns:
-        Path to .sdrbot/
-    """
-    return Path.cwd() / _CONFIG_DIR
-
-
 def load_config(force_reload: bool = False) -> ServiceConfig:
     """Load the service configuration.
 

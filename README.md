@@ -125,7 +125,7 @@ nano .env
 ```
 
 **Required for Agent Brain:**
-- `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`)
+- At least one LLM provider (see [LLM Providers](#-llm-providers) below)
 - `TAVILY_API_KEY` (Recommended for web research)
 
 **CRM & Tools (Fill only what you use):**
@@ -140,6 +140,53 @@ nano .env
 - **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
 - **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
+
+---
+
+## 🧠 LLM Providers
+
+SDRbot supports multiple LLM providers. Configure your preferred provider through the setup wizard (`/setup` → Models) or by setting environment variables.
+
+### Supported Providers
+
+| Provider | Type | Environment Variables |
+|----------|------|----------------------|
+| **OpenAI** | Cloud | `OPENAI_API_KEY` |
+| **Anthropic** | Cloud | `ANTHROPIC_API_KEY` |
+| **Google Gemini** | Cloud | `GOOGLE_API_KEY` |
+| **Azure OpenAI** | Cloud | `AZURE_OPENAI_API_KEY` |
+| **Amazon Bedrock** | Cloud | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` |
+| **HuggingFace** | Cloud | `HUGGINGFACE_API_KEY` |
+| **Ollama** | Local | — (runs locally) |
+| **vLLM** | Local | `CUSTOM_API_KEY` (optional) |
+| **Custom Endpoint** | Any | `CUSTOM_API_KEY` (optional) |
+
+### Primary vs. Secondary Providers
+
+**Primary providers** (thoroughly tested):
+- OpenAI
+- Anthropic
+- Google Gemini
+
+**Secondary providers** (functional but less tested):
+- Azure OpenAI
+- Amazon Bedrock
+- HuggingFace
+- Ollama
+- vLLM
+- Custom endpoints
+
+### Important Notes
+
+⚠️ **Custom models and secondary providers**: Your mileage may vary. These providers use OpenAI-compatible APIs or provider-specific SDKs, but not all models behave identically. Tool calling, streaming, and token counting may work differently depending on the model and endpoint.
+
+⚠️ **Not all vendors thoroughly tested**: We have not exhaustively tested every model from every provider. Bugs and inconsistencies outside of the primary inference vendors (OpenAI, Anthropic, Google) are more likely. If you encounter issues, please report them on GitHub.
+
+⚠️ **Model capabilities vary**: Some models may not support tool/function calling, which is required for SDRbot to work effectively. Ensure your chosen model supports the OpenAI-style function calling API.
+
+### Switching Providers
+
+You can switch between providers at any time using `/models` or `/setup`. Your configuration for each provider is saved, so you can easily switch back without re-entering credentials.
 
 ---
 
@@ -272,6 +319,42 @@ Start the agent:
 sdrbot
 ```
 
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | View the user guide with commands and shortcuts |
+| `/setup` | Configure models and services |
+| `/agents` | Manage agent profiles |
+| `/skills` | Manage agent skills |
+| `/services` | Manage CRM integrations |
+| `/mcp` | Manage MCP servers |
+| `/tools` | View all loaded tools (built-in, services, MCP) |
+| `/sync` | Re-sync service schemas |
+| `/tokens` | View token usage stats |
+| `/models` | Configure LLM provider |
+| `/tracing` | Configure tracing/observability |
+| `/exit` | Exit SDRbot |
+
+### Keyboard Shortcuts
+
+| Shortcut | Description |
+|----------|-------------|
+| `Enter` | Submit message |
+| `Ctrl+J` | New line in input |
+| `Ctrl+T` | Toggle auto-approve mode |
+| `Ctrl+C` | Interrupt agent |
+
+**Note:** For copy/paste, use `Cmd+C`/`Cmd+V` on macOS or `Ctrl+Shift+C`/`Ctrl+Shift+V` on Windows/Linux.
+
+### Auto-approve Mode
+
+When enabled, tools run without confirmation prompts. Toggle with `Ctrl+T` or start with `--auto-approve`:
+
+```bash
+sdrbot --auto-approve
+```
+
 ### Authentication Flows
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
@@ -306,7 +389,7 @@ All service configuration is done through the interactive setup wizard:
 ```
 
 The wizard allows you to:
-- Configure and switch LLM providers (OpenAI, Anthropic, Google, Custom)
+- Configure and switch LLM providers (OpenAI, Anthropic, Google, Azure, Bedrock, HuggingFace, Ollama, vLLM, Custom)
 - Enable/disable services
 - Configure service credentials
 - View service status
@@ -414,9 +497,9 @@ MCP server configuration is stored in `~/.sdrbot/mcp_servers.json`.
 
 ---
 
-## 📊 Observability
+## 📊 Tracing
 
-SDRbot integrates with popular observability platforms to trace and debug agent runs.
+SDRbot integrates with popular tracing platforms to debug and monitor agent runs.
 
 ### Supported Platforms
 
@@ -428,10 +511,10 @@ SDRbot integrates with popular observability platforms to trace and debug agent 
 
 ### Configuration
 
-Enable observability tools through the setup wizard:
+Enable tracing through the setup wizard:
 
 ```bash
-/setup  # Navigate to Observability
+/tracing
 ```
 
 Or set environment variables directly:
@@ -462,45 +545,40 @@ When enabled, traces are automatically sent to the configured platform for every
 
 ## 🤖 Customizing the Agent
 
-SDRbot stores agent prompts in the `./agents/` folder in your current directory. This folder is created automatically on first run.
+SDRbot stores agent profiles in the `./agents/` folder in your current directory. Each agent is a folder containing a prompt and memory file.
 
 ```
 agents/
-├── agent.md      # default agent
-├── sales.md      # custom agent for sales workflows
-└── support.md    # custom agent for support tasks
+├── agent/           # default agent
+│   ├── prompt.md    # agent instructions
+│   └── memory.md    # learned preferences (persistent)
+├── sales/           # custom agent for sales workflows
+│   ├── prompt.md
+│   └── memory.md
+└── support/         # custom agent for support tasks
+    ├── prompt.md
+    └── memory.md
 ```
 
-### Agent Commands
+### Managing Agents
+
+Use the `/agents` command to manage agent profiles directly within the app:
+
+- **Create** new agent profiles
+- **Edit** agent prompts and memory with the tabbed editor
+- **Switch** between different agents
+- **Delete** agents you no longer need
+
+You can also click on the agent name in the status bar to open the agents manager.
+
+### Starting with a Specific Agent
 
 ```bash
-# Start with a specific agent
-sdrbot --agent sales
-
-# List all available agents
-sdrbot list
-
-# Reset an agent to the default prompt
-sdrbot reset --agent agent
-
-# Copy one agent's prompt to another
-sdrbot reset --agent mybot --target sales
+sdrbot --agent sales      # Uses ./agents/sales/
+sdrbot --agent support    # Uses ./agents/support/
 ```
 
-### Editing the Agent Prompt
-
-To customize how the agent behaves, edit `./agents/agent.md`. This file controls the agent's personality, guidelines, and operational rules.
-
-### Multiple Agents
-
-You can create different agents for different purposes:
-
-```bash
-sdrbot --agent sales      # Uses ./agents/sales.md
-sdrbot --agent support    # Uses ./agents/support.md
-```
-
-If the agent file doesn't exist, it will be created with the default prompt.
+If the agent folder doesn't exist, it will be created with the default prompt.
 
 ### Local Data Folders
 
@@ -508,11 +586,69 @@ SDRbot creates these folders in your working directory (all gitignored):
 
 | Folder | Purpose |
 |--------|---------|
-| `agents/` | Agent prompt files (`{name}.md`) - created on first run |
-| `skills/` | Custom skill scripts and workflows - created when you add skills |
+| `agents/` | Agent profiles (`{name}/prompt.md` + `memory.md`) |
+| `skills/` | Custom skills (`{name}/SKILL.md`) - created when you add skills |
 | `files/` | Agent-generated exports, reports, CSVs - created on first run |
 | `generated/` | Schema-synced CRM tools (hubspot_tools.py, etc.) - created on sync |
 | `.sdrbot/` | Service configuration (`services.json`) |
+
+---
+
+## 🧠 Agent Memory
+
+Each agent has a **persistent memory** that survives across sessions. This allows the agent to learn your preferences, remember important context, and improve over time.
+
+### How It Works
+
+- **Memory file**: Each agent stores memory in `./agents/{name}/memory.md`
+- **Auto-loaded**: Memory is automatically loaded into the agent's context at startup
+- **No approval needed**: The agent can update its memory freely using dedicated memory tools
+
+### Memory Tools
+
+The agent has three tools for managing its memory (no approval required):
+
+| Tool | Description |
+|------|-------------|
+| `read_memory()` | Read the current memory file |
+| `write_memory(content)` | Overwrite the entire memory file |
+| `append_memory(content)` | Add to the end of the memory file |
+
+### When the Agent Updates Memory
+
+The agent is instructed to update its memory:
+
+- **Immediately** when you describe how it should behave or its role
+- **Immediately** when you give feedback on its work
+- When you explicitly ask it to remember something
+- When patterns or preferences emerge during conversations
+
+### Example Memory Content
+
+```markdown
+## Preferences
+- User prefers concise responses without lengthy explanations
+- Always use metric units for measurements
+
+## Learned Patterns
+- When creating HubSpot contacts, always set lifecycle_stage to "lead"
+- User's company uses "ACME-" prefix for all deal names
+
+## Project Context
+- Main CRM is Salesforce, HubSpot is used for marketing only
+- Q4 pipeline review happens every Friday
+```
+
+### Editing Memory Manually
+
+You can edit an agent's memory directly:
+
+1. Use `/agents` command
+2. Select the agent
+3. Switch to the **Memory** tab
+4. Edit and save
+
+Or edit the file directly at `./agents/{name}/memory.md`.
 
 ---
 
@@ -522,22 +658,33 @@ Skills are reusable workflows or scripts that extend the agent's capabilities. T
 
 ### Managing Skills
 
-```bash
-# List available skills
-sdrbot skills list
+Use the `/skills` command to manage skills directly within the app:
 
-# Create a new skill
-sdrbot skills create my-workflow
+- **Create** new skills with a template
+- **Edit** skill instructions with the built-in editor
+- **Delete** skills you no longer need
 
-# View skill details
-sdrbot skills info my-workflow
-```
+You can also click on the skills count in the status bar to open the skills manager.
 
 ### Skill Structure
 
 Each skill is a folder containing:
-- `skill.md` - Instructions and description for the agent
+- `SKILL.md` - Instructions and description for the agent (with YAML frontmatter)
 - Optional scripts, templates, or data files
+
+Example `SKILL.md`:
+```markdown
+---
+name: web-research
+description: Structured approach to conducting thorough web research
+---
+
+# Web Research Skill
+
+## When to Use
+- User asks you to research a topic
+...
+```
 
 The agent can invoke skills during conversations to perform specialized tasks.
 

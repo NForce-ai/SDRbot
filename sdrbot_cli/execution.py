@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-import sys
+import re
+from collections.abc import Callable
 
 try:
     import termios
@@ -12,7 +13,6 @@ except ImportError:
     tty = None  # type: ignore
 
 from langchain.agents.middleware.human_in_the_loop import (
-    ActionRequest,
     ApproveDecision,
     Decision,
     HITLRequest,
@@ -22,172 +22,73 @@ from langchain.agents.middleware.human_in_the_loop import (
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.types import Command, Interrupt
 from pydantic import TypeAdapter, ValidationError
-from rich import box
-from rich.markdown import Markdown
-from rich.panel import Panel
+from rich.markdown import Markdown as RichMarkdown
+from rich.text import Text
 
-from sdrbot_cli.config import COLORS, console
-from sdrbot_cli.file_ops import FileOpTracker, build_approval_preview
+from sdrbot_cli.config import COLORS
+from sdrbot_cli.file_ops import FileOpTracker
 from sdrbot_cli.input import parse_file_mentions
 from sdrbot_cli.ui import (
     TokenTracker,
     format_tool_display,
     format_tool_message_content,
-    render_diff_block,
     render_file_operation,
-    render_todo_list,
 )
+
+
+class Markdown(RichMarkdown):
+    """Custom Markdown that uses white bullets instead of orange."""
+
+    def __rich_console__(self, console, options):
+        """Override to inject custom styles for bullets."""
+        # Temporarily override the bullet style
+        original_get_style = console.get_style
+
+        def patched_get_style(name, default=None):
+            if name in ("markdown.item.bullet", "markdown.item.number"):
+                return console.get_style("white", default=default)
+            return original_get_style(name, default=default)
+
+        console.get_style = patched_get_style
+        try:
+            yield from super().__rich_console__(console, options)
+        finally:
+            console.get_style = original_get_style
+
 
 _HITL_REQUEST_ADAPTER = TypeAdapter(HITLRequest)
 
 
-def prompt_for_tool_approval(
-    action_request: ActionRequest,
-    assistant_id: str | None,
+async def prompt_for_tool_approval(
+    ui_callback: Callable | None,
+    approval_callback: Callable,
 ) -> Decision | dict:
-    """Prompt user to approve/reject a tool action with arrow key navigation.
+    """Prompt user to approve/reject a tool action via the TUI approval bar.
 
     Returns:
-        Decision (ApproveDecision or RejectDecision) OR
-        dict with {"type": "auto_approve_all"} to switch to auto-approve mode
+        Decision (ApproveDecision or RejectDecision)
     """
-    description = action_request.get("description", "No description available")
-    name = action_request["name"]
-    args = action_request["args"]
-    preview = build_approval_preview(name, args, assistant_id) if name else None
+    result = await approval_callback()
 
-    body_lines = []
-    if preview:
-        body_lines.append(f"[bold]{preview.title}[/bold]")
-        body_lines.extend(preview.details)
-        if preview.error:
-            body_lines.append(f"[red]{preview.error}[/red]")
-    else:
-        body_lines.append(description)
-
-    # Display action info first
-    console.print(
-        Panel(
-            "[bold yellow]⚠️  Tool Action Requires Approval[/bold yellow]\n\n"
-            + "\n".join(body_lines),
-            border_style="yellow",
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
-    )
-    if preview and preview.diff and not preview.error:
-        console.print()
-        render_diff_block(preview.diff, preview.diff_title or preview.title)
-
-    options = ["approve", "reject", "auto-accept all going forward"]
-    selected = 0  # Start with approve selected
-
-    try:
-        if termios is None or tty is None:
-            raise ImportError("termios/tty not available")
-
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-
-        try:
-            tty.setraw(fd)
-            # Hide cursor during menu interaction
-            sys.stdout.write("\033[?25l")
-            sys.stdout.flush()
-
-            # Initial render flag
-            first_render = True
-
-            while True:
-                if not first_render:
-                    # Move cursor back to start of menu (up 3 lines, then to start of line)
-                    sys.stdout.write("\033[3A\r")
-
-                first_render = False
-
-                # Display options vertically with ANSI color codes
-                for i, option in enumerate(options):
-                    sys.stdout.write("\r\033[K")  # Clear line from cursor to end
-
-                    if i == selected:
-                        if option == "approve":
-                            # Green bold with filled checkbox
-                            sys.stdout.write("\033[1;32m☑ Approve\033[0m\n")
-                        elif option == "reject":
-                            # Red bold with filled checkbox
-                            sys.stdout.write("\033[1;31m☑ Reject\033[0m\n")
-                        else:
-                            # Blue bold with filled checkbox for auto-accept
-                            sys.stdout.write("\033[1;34m☑ Auto-accept all going forward\033[0m\n")
-                    elif option == "approve":
-                        # Dim with empty checkbox
-                        sys.stdout.write("\033[2m☐ Approve\033[0m\n")
-                    elif option == "reject":
-                        # Dim with empty checkbox
-                        sys.stdout.write("\033[2m☐ Reject\033[0m\n")
-                    else:
-                        # Dim with empty checkbox
-                        sys.stdout.write("\033[2m☐ Auto-accept all going forward\033[0m\n")
-
-                sys.stdout.flush()
-
-                # Read key
-                char = sys.stdin.read(1)
-
-                if char == "\x1b":  # ESC sequence (arrow keys)
-                    next1 = sys.stdin.read(1)
-                    next2 = sys.stdin.read(1)
-                    if next1 == "[":
-                        if next2 == "B":  # Down arrow
-                            selected = (selected + 1) % len(options)
-                        elif next2 == "A":  # Up arrow
-                            selected = (selected - 1) % len(options)
-                elif char in {"\r", "\n"}:  # Enter
-                    sys.stdout.write("\r\n")  # Move to start of line and add newline
-                    break
-                elif char == "\x03":  # Ctrl+C
-                    sys.stdout.write("\r\n")  # Move to start of line and add newline
-                    raise KeyboardInterrupt
-                elif char.lower() == "a":
-                    selected = 0
-                    sys.stdout.write("\r\n")  # Move to start of line and add newline
-                    break
-                elif char.lower() == "r":
-                    selected = 1
-                    sys.stdout.write("\r\n")  # Move to start of line and add newline
-                    break
-
-        finally:
-            # Show cursor again
-            sys.stdout.write("\033[?25h")
-            sys.stdout.flush()
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-    except (ImportError, AttributeError, Exception) as e:
-        # Check if it's a termios error (only if termios exists)
-        is_termios_error = termios is not None and isinstance(e, termios.error)
-        if not (isinstance(e, ImportError | AttributeError) or is_termios_error):
-            raise e
-
-        # Fallback for non-Unix systems
-        console.print("  ☐ (A)pprove  (default)")
-        console.print("  ☐ (R)eject")
-        console.print("  ☐ (Auto)-accept all going forward")
-        choice = input("\nChoice (A/R/Auto, default=Approve): ").strip().lower()
-        if choice in {"r", "reject"}:
-            selected = 1
-        elif choice in {"auto", "auto-accept"}:
-            selected = 2
-        else:
-            selected = 0
-
-    # Return decision based on selection
-    if selected == 0:
+    if result == "approve":
+        if ui_callback:
+            ui_callback(Text.from_markup("  [green]✓ Tool action approved.[/green]", style="dim"))
+            ui_callback(Text("\n"))
         return ApproveDecision(type="approve")
-    if selected == 1:
+    elif result == "auto_approve_all":
+        if ui_callback:
+            ui_callback(
+                Text.from_markup(
+                    "  [blue]⚡ Auto-approve enabled for future actions.[/blue]", style="dim"
+                )
+            )
+            ui_callback(Text("\n"))
+        return {"type": "auto_approve_all"}
+    else:  # reject
+        if ui_callback:
+            ui_callback(Text.from_markup("  [red]❌ Tool action rejected.[/red]", style="dim"))
+            ui_callback(Text("\n"))
         return RejectDecision(type="reject", message="User rejected the command")
-    # Return special marker for auto-approve mode
-    return {"type": "auto_approve_all"}
 
 
 async def execute_task(
@@ -197,6 +98,12 @@ async def execute_task(
     session_state,
     token_tracker: TokenTracker | None = None,
     backend=None,
+    ui_callback: Callable | None = None,
+    todo_callback: Callable | None = None,
+    approval_callback: Callable | None = None,
+    auto_approve_callback: Callable | None = None,
+    token_callback: Callable | None = None,
+    status_callback: Callable | None = None,
 ) -> None:
     """Execute any task by passing it directly to the AI agent."""
     # Parse file mentions and inject content if any
@@ -230,8 +137,25 @@ async def execute_task(
     captured_output_tokens = 0
     current_todos = None  # Track current todo list state
 
-    status = console.status(f"[bold {COLORS['thinking']}]Agent is thinking...", spinner="dots")
-    status.start()
+    # Status tracker - updates ChatInput placeholder via status_callback
+    class DummyStatus:
+        def __init__(self):
+            self.active = False
+
+        def start(self):
+            self.active = True
+
+        def stop(self):
+            self.active = False
+
+        def update(self, message: str):
+            if status_callback:
+                # Extract just the text content from markup like "[bold cyan]Executing..."
+                # Strip the markup tags for cleaner display
+                clean_message = re.sub(r"\[/?[^\]]+\]", "", message)
+                status_callback(clean_message)
+
+    status = DummyStatus()
     spinner_active = True
 
     tool_icons = {
@@ -243,7 +167,6 @@ async def execute_task(
         "grep": "🔎",
         "shell": "⚡",
         "execute": "🔧",
-        "web_search": "🌐",
         "http_request": "🌍",
         "task": "🤖",
         "write_todos": "📋",
@@ -267,10 +190,10 @@ async def execute_task(
             status.stop()
             spinner_active = False
         if not has_responded:
-            console.print("●", style=COLORS["agent"], markup=False, end=" ")
             has_responded = True
         markdown = Markdown(pending_text.rstrip())
-        console.print(markdown, style=COLORS["agent"])
+        if ui_callback:
+            ui_callback(markdown)
         pending_text = ""
 
     # Stream input - may need to loop if there are interrupts
@@ -316,10 +239,13 @@ async def execute_task(
                                     pending_interrupts[interrupt_obj.id] = validated_request
                                     interrupt_occurred = True
                                 except ValidationError as e:
-                                    console.print(
-                                        f"[yellow]Warning: Invalid HITL request data: {e}[/yellow]",
-                                        style="dim",
-                                    )
+                                    if ui_callback:
+                                        ui_callback(
+                                            Text(
+                                                f"[yellow]Warning: Invalid HITL request data: {e}[/yellow]",
+                                                style="dim",
+                                            )
+                                        )
                                     raise
 
                     # Extract chunk_data from updates for todo checking
@@ -334,9 +260,8 @@ async def execute_task(
                                 if spinner_active:
                                     status.stop()
                                     spinner_active = False
-                                console.print()
-                                render_todo_list(new_todos)
-                                console.print()
+                                if todo_callback:
+                                    todo_callback(new_todos)
 
                 # Handle MESSAGES stream - for content and tool calls
                 elif current_stream_mode == "messages":
@@ -354,11 +279,10 @@ async def execute_task(
                                 status.stop()
                                 spinner_active = False
                             if not has_responded:
-                                console.print("●", style=COLORS["agent"], markup=False, end=" ")
                                 has_responded = True
                             markdown = Markdown(content)
-                            console.print(markdown, style=COLORS["agent"])
-                            console.print()
+                            if ui_callback:
+                                ui_callback(markdown)
                         continue
 
                     if isinstance(message, ToolMessage):
@@ -371,7 +295,7 @@ async def execute_task(
 
                         # Reset spinner message after tool completes
                         if spinner_active:
-                            status.update(f"[bold {COLORS['thinking']}]Agent is thinking...")
+                            status.update(f"[bold {COLORS['thinking']}]Thinking...")
 
                         if tool_name == "shell" and tool_status != "success":
                             flush_text_buffer(final=True)
@@ -379,9 +303,8 @@ async def execute_task(
                                 if spinner_active:
                                     status.stop()
                                     spinner_active = False
-                                console.print()
-                                console.print(tool_content, style="red", markup=False)
-                                console.print()
+                                if ui_callback:
+                                    ui_callback(Text(tool_content, style="red"))
                         elif tool_content and isinstance(tool_content, str):
                             stripped = tool_content.lstrip()
                             if stripped.lower().startswith("error"):
@@ -389,23 +312,22 @@ async def execute_task(
                                 if spinner_active:
                                     status.stop()
                                     spinner_active = False
-                                console.print()
-                                console.print(tool_content, style="red", markup=False)
-                                console.print()
+                                if ui_callback:
+                                    ui_callback(Text(tool_content, style="red"))
 
                         if record:
                             flush_text_buffer(final=True)
                             if spinner_active:
                                 status.stop()
                                 spinner_active = False
-                            console.print()
-                            render_file_operation(record)
-                            console.print()
+                            if ui_callback:
+                                for renderable in render_file_operation(record):
+                                    ui_callback(renderable)
                             if not spinner_active:
                                 status.start()
                                 spinner_active = True
 
-                        # For all other tools (web_search, http_request, etc.),
+                        # For all other tools (http_request, etc.),
                         # results are hidden from user - agent will process and respond
                         continue
 
@@ -415,14 +337,33 @@ async def execute_task(
                         continue
 
                     # Extract token usage if available
-                    if token_tracker and hasattr(message, "usage_metadata"):
-                        usage = message.usage_metadata
-                        if usage:
+                    if token_tracker:
+                        input_toks = 0
+                        output_toks = 0
+
+                        # Try usage_metadata first (LangChain standard)
+                        if hasattr(message, "usage_metadata") and message.usage_metadata:
+                            usage = message.usage_metadata
                             input_toks = usage.get("input_tokens", 0)
                             output_toks = usage.get("output_tokens", 0)
-                            if input_toks or output_toks:
-                                captured_input_tokens = max(captured_input_tokens, input_toks)
-                                captured_output_tokens = max(captured_output_tokens, output_toks)
+
+                        # Fallback: check response_metadata for OpenAI-compatible endpoints
+                        if not (input_toks or output_toks):
+                            if hasattr(message, "response_metadata") and message.response_metadata:
+                                resp_meta = message.response_metadata
+                                # Try common usage locations
+                                usage = resp_meta.get("usage") or resp_meta.get("token_usage") or {}
+                                # OpenAI format uses prompt_tokens/completion_tokens
+                                input_toks = usage.get("input_tokens") or usage.get(
+                                    "prompt_tokens", 0
+                                )
+                                output_toks = usage.get("output_tokens") or usage.get(
+                                    "completion_tokens", 0
+                                )
+
+                        if input_toks or output_toks:
+                            captured_input_tokens = max(captured_input_tokens, input_toks)
+                            captured_output_tokens = max(captured_output_tokens, output_toks)
 
                     # Process content blocks (this is the key fix!)
                     for block in message.content_blocks:
@@ -521,14 +462,24 @@ async def execute_task(
                                 status.stop()
 
                             if has_responded:
-                                console.print()
+                                if ui_callback:
+                                    ui_callback(Text(""))
 
                             display_str = format_tool_display(buffer_name, parsed_args)
-                            console.print(
-                                f"  {icon} {display_str}",
-                                style=f"dim {COLORS['tool']}",
-                                markup=False,
-                            )
+                            if ui_callback:
+                                ui_callback(
+                                    Text(
+                                        f"  {icon} {display_str}",
+                                        style=f"dim {COLORS['tool']}",
+                                    )
+                                )
+
+                            # Update task list panel when write_todos is called
+                            if buffer_name == "write_todos":
+                                new_todos = parsed_args.get("todos", [])
+                                if todo_callback and new_todos:
+                                    current_todos = new_todos
+                                    todo_callback(new_todos)
 
                             # Restart spinner with context about which tool is executing
                             status.update(f"[bold {COLORS['thinking']}]Executing {display_str}...")
@@ -557,8 +508,10 @@ async def execute_task(
                                 spinner_active = False
 
                             description = action_request.get("description", "tool action")
-                            console.print()
-                            console.print(f"  [dim]⚡ {description}[/dim]")
+                            if ui_callback:
+                                ui_callback(Text("\n"))
+                            if ui_callback:
+                                ui_callback(Text.from_markup(f"  [dim]⚡ {description}[/dim]"))
 
                             decisions.append({"type": "approve"})
 
@@ -579,9 +532,9 @@ async def execute_task(
                         for action_index, action_request in enumerate(
                             hitl_request["action_requests"]
                         ):
-                            decision = prompt_for_tool_approval(
-                                action_request,
-                                assistant_id,
+                            decision = await prompt_for_tool_approval(
+                                ui_callback,
+                                approval_callback,
                             )
 
                             # Check if user wants to switch to auto-approve mode
@@ -591,12 +544,25 @@ async def execute_task(
                             ):
                                 # Switch to auto-approve mode
                                 session_state.auto_approve = True
-                                console.print()
-                                console.print("[bold blue]✓ Auto-approve mode enabled[/bold blue]")
-                                console.print(
-                                    "[dim]All future tool actions will be automatically approved.[/dim]"
-                                )
-                                console.print()
+                                # Notify UI to update auto-approve indicator
+                                if auto_approve_callback:
+                                    auto_approve_callback(True)
+                                if ui_callback:
+                                    ui_callback(Text("\n"))
+                                if ui_callback:
+                                    ui_callback(
+                                        Text.from_markup(
+                                            "[bold blue]✓ Auto-approve mode enabled[/bold blue]"
+                                        )
+                                    )
+                                if ui_callback:
+                                    ui_callback(
+                                        Text.from_markup(
+                                            "[dim]All future tool actions will be automatically approved.[/dim]"
+                                        )
+                                    )
+                                if ui_callback:
+                                    ui_callback(Text("\n"))
 
                                 # Approve this action and all remaining actions in the batch
                                 decisions.append({"type": "approve"})
@@ -628,9 +594,14 @@ async def execute_task(
                         status.stop()
                         spinner_active = False
 
-                    console.print("[yellow]Command rejected.[/yellow]", style="bold")
-                    console.print("Tell the agent what you'd like to do differently.")
-                    console.print()
+                    if ui_callback:
+                        ui_callback(
+                            Text.from_markup("[yellow]Command rejected.[/yellow]", style="bold")
+                        )
+                    if ui_callback:
+                        ui_callback(Text("Tell the agent what you'd like to do differently."))
+                    if ui_callback:
+                        ui_callback(Text("\n"))
                     return
 
                 # Resume the agent with the human decision
@@ -644,8 +615,10 @@ async def execute_task(
         # Event loop cancelled the task (e.g. Ctrl+C during streaming) - clean up and return
         if spinner_active:
             status.stop()
-        console.print("\n[yellow]Interrupted by user[/yellow]")
-        console.print("Updating agent state...", style="dim")
+        if ui_callback:
+            ui_callback(Text.from_markup("\n[yellow]Interrupted by user[/yellow]"))
+        if ui_callback:
+            ui_callback(Text("Updating agent state...", style="dim"))
 
         try:
             await agent.aupdate_state(
@@ -656,9 +629,13 @@ async def execute_task(
                     ]
                 },
             )
-            console.print("Ready for next command.\n", style="dim")
+            if ui_callback:
+                ui_callback(Text("Ready for next command.\n", style="dim"))
         except Exception as e:
-            console.print(f"[red]Warning: Failed to update agent state: {e}[/red]\n")
+            if ui_callback:
+                ui_callback(
+                    Text.from_markup(f"[red]Warning: Failed to update agent state: {e}[/red]\n")
+                )
 
         return
 
@@ -666,8 +643,10 @@ async def execute_task(
         # User pressed Ctrl+C - clean up and exit gracefully
         if spinner_active:
             status.stop()
-        console.print("\n[yellow]Interrupted by user[/yellow]")
-        console.print("Updating agent state...", style="dim")
+        if ui_callback:
+            ui_callback(Text.from_markup("\n[yellow]Interrupted by user[/yellow]"))
+        if ui_callback:
+            ui_callback(Text("Updating agent state...", style="dim"))
 
         # Inform the agent synchronously (in async context)
         try:
@@ -679,9 +658,58 @@ async def execute_task(
                     ]
                 },
             )
-            console.print("Ready for next command.\n", style="dim")
+            if ui_callback:
+                ui_callback(Text("Ready for next command.\n", style="dim"))
         except Exception as e:
-            console.print(f"[red]Warning: Failed to update agent state: {e}[/red]\n")
+            if ui_callback:
+                ui_callback(
+                    Text.from_markup(f"[red]Warning: Failed to update agent state: {e}[/red]\n")
+                )
+
+        return
+
+    except Exception as e:
+        # Handle API errors (authentication, rate limits, network issues, etc.)
+        if spinner_active:
+            status.stop()
+
+        error_str = str(e)
+        error_type = type(e).__name__
+
+        # Provide user-friendly messages for common errors
+        if "401" in error_str or "Unauthorized" in error_str or "AuthenticationError" in error_type:
+            if ui_callback:
+                ui_callback(Text.from_markup("\n[red]Authentication Error[/red]"))
+                ui_callback(Text("Your API key is invalid or expired.", style="dim"))
+                ui_callback(Text("Use /models to update your API key.\n", style="dim"))
+        elif "429" in error_str or "RateLimitError" in error_type:
+            if ui_callback:
+                ui_callback(Text.from_markup("\n[red]Rate Limit Error[/red]"))
+                ui_callback(
+                    Text("Too many requests. Please wait a moment and try again.\n", style="dim")
+                )
+        elif "timeout" in error_str.lower() or "TimeoutError" in error_type:
+            if ui_callback:
+                ui_callback(Text.from_markup("\n[red]Timeout Error[/red]"))
+                ui_callback(Text("The request timed out. Please try again.\n", style="dim"))
+        elif "Connection" in error_str or "NetworkError" in error_type:
+            if ui_callback:
+                ui_callback(Text.from_markup("\n[red]Connection Error[/red]"))
+                ui_callback(
+                    Text(
+                        "Could not connect to the API. Check your internet connection.\n",
+                        style="dim",
+                    )
+                )
+        else:
+            # Generic error
+            if ui_callback:
+                ui_callback(Text.from_markup(f"\n[red]Error: {error_type}[/red]"))
+                # Truncate very long error messages
+                if len(error_str) > 200:
+                    error_str = error_str[:197] + "..."
+                ui_callback(Text(error_str, style="dim"))
+                ui_callback(Text(""))
 
         return
 
@@ -689,7 +717,10 @@ async def execute_task(
         status.stop()
 
     if has_responded:
-        console.print()
-        # Track token usage (display only via /tokens command)
+        if ui_callback:
+            ui_callback(Text("\n"))
+        # Track token usage
         if token_tracker and (captured_input_tokens or captured_output_tokens):
             token_tracker.add(captured_input_tokens, captured_output_tokens)
+            if token_callback:
+                token_callback(token_tracker.current_context)

@@ -5,11 +5,11 @@ import os
 import time
 import urllib.parse
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import keyring
 import requests
 
+from sdrbot_cli.auth.oauth_server import wait_for_callback
 from sdrbot_cli.config import COLORS, console
 
 SERVICE_NAME = "sdrbot_zohocrm"
@@ -55,43 +55,6 @@ def _get_region_config() -> dict | None:
     return ZOHO_REGIONS.get(REGION)
 
 
-class OAuthHandler(BaseHTTPRequestHandler):
-    """Handle the OAuth callback."""
-
-    auth_code: str | None = None
-    location: str | None = None
-    accounts_server: str | None = None
-
-    def do_GET(self):
-        """Handle the callback request."""
-        parsed_path = urllib.parse.urlparse(self.path)
-        if parsed_path.path == "/callback/zohocrm":
-            query_params = urllib.parse.parse_qs(parsed_path.query)
-            if "code" in query_params:
-                OAuthHandler.auth_code = query_params["code"][0]
-                # Zoho returns location and accounts-server in callback
-                OAuthHandler.location = query_params.get("location", [None])[0]
-                OAuthHandler.accounts_server = query_params.get("accounts-server", [None])[0]
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                self.wfile.write(
-                    b"<h1>Authorization Successful!</h1><p>You can close this window and return to the terminal.</p>"
-                )
-            else:
-                self.send_response(400)
-                self.send_header("Content-type", "text/html")
-                self.end_headers()
-                error = query_params.get("error", ["Unknown error"])[0]
-                self.wfile.write(f"<h1>Authorization Failed</h1><p>{error}</p>".encode())
-        else:
-            self.send_response(404)
-
-    def log_message(self, format, *args):
-        """Silence logs."""
-        pass
-
-
 def get_auth_url() -> str:
     """Generate the Zoho OAuth URL."""
     region_config = _get_region_config()
@@ -129,23 +92,23 @@ def login() -> dict | None:
     console.print(f"Opening browser to: {auth_url}")
     webbrowser.open(auth_url)
 
-    # Start local server to catch callback
-    server_address = ("", 8080)
-    HTTPServer.allow_reuse_address = True
-    httpd = HTTPServer(server_address, OAuthHandler)
-
     console.print(f"[{COLORS['dim']}]Waiting for callback...[/{COLORS['dim']}]")
-    # Reset from any previous runs
-    OAuthHandler.auth_code = None
-    OAuthHandler.location = None
-    OAuthHandler.accounts_server = None
 
-    while OAuthHandler.auth_code is None:
-        httpd.handle_request()
+    # Use shared OAuth server with timeout support
+    code, extra_params = wait_for_callback(
+        callback_path="/callback/zohocrm",
+        port=8080,
+        timeout=300.0,
+    )
 
-    code = OAuthHandler.auth_code
+    if not code:
+        console.print(
+            f"[{COLORS['tool']}]OAuth flow timed out or was cancelled.[/{COLORS['tool']}]"
+        )
+        return None
+
     # Use accounts server from callback, or fall back to region config
-    accounts_server = OAuthHandler.accounts_server or f"https://{region_config['accounts']}"
+    accounts_server = extra_params.get("accounts-server") or f"https://{region_config['accounts']}"
     if not accounts_server.startswith("https://"):
         accounts_server = f"https://{accounts_server}"
 

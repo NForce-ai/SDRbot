@@ -11,7 +11,7 @@ def calculate_baseline_tokens(model, agent_dir: Path, system_prompt: str, assist
     """Calculate baseline context tokens using the model's official tokenizer.
 
     This uses the model's get_num_tokens_from_messages() method to get
-    accurate token counts for the initial context (system prompt + agent.md).
+    accurate token counts for the initial context (system prompt + memory).
 
     Note: Tool definitions cannot be accurately counted before the first API call
     due to LangChain limitations. They will be included in the total after the
@@ -19,47 +19,28 @@ def calculate_baseline_tokens(model, agent_dir: Path, system_prompt: str, assist
 
     Args:
         model: LangChain model instance (ChatAnthropic or ChatOpenAI)
-        agent_dir: Path to agent directory containing agent.md
+        agent_dir: Path to agent directory (unused, kept for compatibility)
         system_prompt: The base system prompt string
         assistant_id: The agent identifier for path references
 
     Returns:
-        Token count for system prompt + agent.md (tools not included)
+        Token count for system prompt + memory (tools not included)
     """
-    # Load user agent.md content
-    agent_md_path = agent_dir / "agent.md"
-    user_memory = ""
-    if agent_md_path.exists():
-        user_memory = agent_md_path.read_text()
-
-    # Load project agent.md content
-    from .config import _find_project_agent_md, _find_project_root
-
-    project_memory = ""
-    project_root = _find_project_root()
-    if project_root:
-        project_md_paths = _find_project_agent_md(project_root)
-        if project_md_paths:
-            try:
-                # Combine all project agent.md files (if multiple exist)
-                contents = []
-                for path in project_md_paths:
-                    contents.append(path.read_text())
-                project_memory = "\n\n".join(contents)
-            except Exception:
-                pass
+    # Load memory content from ./agents/{agent}/memory.md
+    memory_path = settings.get_agent_memory_path(assistant_id)
+    memory = ""
+    if memory_path.exists():
+        try:
+            memory = memory_path.read_text()
+        except Exception:
+            pass
 
     # Build the complete system prompt as it will be sent
     # This mimics what AgentMemoryMiddleware.wrap_model_call() does
-    memory_section = (
-        f"<user_memory>\n{user_memory or '(No user agent.md)'}\n</user_memory>\n\n"
-        f"<project_memory>\n{project_memory or '(No project agent.md)'}\n</project_memory>"
-    )
+    memory_section = f"<agent_memory>\n{memory or '(No memory.md file yet)'}\n</agent_memory>"
 
     # Get the long-term memory system prompt
-    memory_system_prompt = get_memory_system_prompt(
-        assistant_id, project_root, bool(project_memory)
-    )
+    memory_system_prompt = get_memory_system_prompt(assistant_id)
 
     # Combine all parts in the same order as the middleware
     full_system_prompt = memory_section + "\n\n" + system_prompt + "\n\n" + memory_system_prompt
@@ -77,30 +58,17 @@ def calculate_baseline_tokens(model, agent_dir: Path, system_prompt: str, assist
         return 0
 
 
-def get_memory_system_prompt(
-    assistant_id: str, project_root: Path | None = None, has_project_memory: bool = False
-) -> str:
+def get_memory_system_prompt(assistant_id: str) -> str:
     """Get the long-term memory system prompt text.
 
     Args:
         assistant_id: The agent identifier for path references
-        project_root: Unused, kept for backwards compatibility
-        has_project_memory: Unused, kept for backwards compatibility
     """
     # Import from agent_memory middleware
     from .agent_memory import LONGTERM_MEMORY_SYSTEM_PROMPT
 
-    agent_md_path = settings.get_agent_md_path(assistant_id)
-    agent_dir = settings.get_agent_dir(assistant_id)
-    agent_dir_absolute = str(agent_dir)
-    agent_md_display = f"./agents/{assistant_id}.md"
-
-    # Build project memory info (simplified - just agent.md now)
-    project_memory_info = f"`{agent_md_path}`"
+    memory_path = settings.get_agent_memory_path(assistant_id)
 
     return LONGTERM_MEMORY_SYSTEM_PROMPT.format(
-        agent_dir_absolute=agent_dir_absolute,
-        agent_dir_display=agent_md_display,
-        project_memory_info=project_memory_info,
-        project_deepagents_dir=str(settings.agents_dir),
+        memory_path=str(memory_path),
     )

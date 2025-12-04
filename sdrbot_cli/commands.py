@@ -5,8 +5,10 @@ from pathlib import Path
 
 import dotenv
 from langgraph.checkpoint.memory import InMemorySaver
+from rich.console import RenderableType
+from rich.text import Text
 
-from .config import COLORS, DEEP_AGENTS_ASCII, SessionState, console, settings
+from .config import COLORS, SessionState, console, settings
 from .services import SYNCABLE_SERVICES, resync_service
 from .setup import run_setup_wizard
 from .setup.mcp import run_mcp_wizard
@@ -17,13 +19,14 @@ from .ui import TokenTracker, show_interactive_help
 
 async def handle_command(
     command: str, session_state: SessionState, token_tracker: TokenTracker
-) -> str | bool:
+) -> str | list[RenderableType] | None:
     """
     Handle slash commands.
     Returns:
     - 'exit': to exit the CLI
-    - True: if command handled
-    - False: if not handled (pass to agent)
+    - list[RenderableType] or str: output to display
+    - None: if not handled (pass to agent) - Wait, logic says False if not handled.
+      Let's stick to returning None if not handled.
     """
     cmd_parts = command.strip().lstrip("/").split()
     cmd = cmd_parts[0].lower()
@@ -33,13 +36,31 @@ async def handle_command(
         return "exit"
 
     if cmd == "sync":
+        # Check TUI mode - sync might print to console, we should capture it or ensure it's TUI safe
+        # resync_service uses console.print.
+        # For now, let's allow it but warn it might output to stdout (which might break TUI layout or be hidden)
+        # Ideally we'd redirect stdout to a string buffer.
+
+        output_lines = []
+        output_lines.append(Text("Syncing enabled services...", style=COLORS["primary"]))
+
+        # We can't easily capture console.print from resync_service without refactoring it.
+        # For the TUI overhaul, let's just trigger it and hope for the best or disable it.
+        # It's better to disable complex console-printing commands in TUI for this iteration.
+
+        if session_state.is_tui:
+            return Text(
+                "Command '/sync' is not yet fully supported in TUI mode. Please use the terminal.",
+                style="yellow",
+            )
+
         if args:
             # Sync specific service
             service_name = args[0]
             if service_name not in SYNCABLE_SERVICES:
                 console.print(f"[red]Service '{service_name}' does not support syncing.[/red]")
                 console.print(f"[dim]Syncable services: {', '.join(SYNCABLE_SERVICES)}[/dim]")
-                return True
+                return "Sync failed (invalid service)"
             resync_service(service_name, verbose=True)
         else:
             # Sync all enabled syncable services
@@ -59,7 +80,7 @@ async def handle_command(
                 console.print("[dim]No enabled services require syncing.[/dim]")
         # Reload agent to pick up newly generated tools
         await session_state.reload_agent()
-        return True
+        return "Services synced."
 
     if cmd == "clear":
         # Reset agent conversation state
@@ -69,65 +90,57 @@ async def handle_command(
         # Reset token tracking to baseline
         token_tracker.reset()
 
-        # Clear screen and show fresh UI
-        console.clear()
-        console.print(DEEP_AGENTS_ASCII, style=f"bold {COLORS['primary']}")
-        console.print()
-        console.print(
-            "... Fresh start! Screen cleared and conversation reset.", style=COLORS["agent"]
-        )
-        console.print()
-        return True
+        # Return clear message
+        return [
+            Text("Conversation cleared.", style=COLORS["primary"]),
+            Text("... Fresh start! Memory reset.", style=COLORS["agent"]),
+        ]
 
     if cmd == "help":
-        show_interactive_help()
-        return True
+        return show_interactive_help()
 
     if cmd == "tokens":
-        token_tracker.display_session()
-        return True
+        return token_tracker.display_session()
+
+    # Setup commands - DISABLE IN TUI
+    if session_state.is_tui and cmd in ["setup", "mcp", "models", "services"]:
+        return Text(
+            f"Command '/{cmd}' requires interactive setup. Please run 'sdrbot setup' or 'sdrbot {cmd}' from the terminal.",
+            style="yellow",
+        )
 
     if cmd == "setup":
         await run_setup_wizard(force=True, allow_exit=False)
-        # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
-        # Reload agent to pick up any new services
         await session_state.reload_agent()
-        return True
+        return "Setup complete."
 
     if cmd == "mcp":
         await run_mcp_wizard(return_to_setup=False)
-        # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
-        # Reload agent to pick up any new MCP tools
         await session_state.reload_agent()
-        return True
+        return "MCP configuration complete."
 
     if cmd == "models":
         await setup_models()
-        # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
-        # Reload agent in case model changed
         await session_state.reload_agent()
-        return True
+        return "Models configuration complete."
 
     if cmd == "services":
         await setup_services()
-        # Reload env and settings immediately
         dotenv.load_dotenv(Path.cwd() / ".env", override=True)
         settings.reload()
-        # Reload agent to pick up any new service tools
         await session_state.reload_agent()
-        return True
+        return "Services configuration complete."
 
-    console.print()
-    console.print(f"[yellow]Unknown command: /{cmd}[/yellow]")
-    console.print("[dim]Type /help for available commands.[/dim]")
-    console.print()
-    return True
+    return [
+        Text(f"Unknown command: /{cmd}", style="yellow"),
+        Text("Type /help for available commands.", style="dim"),
+    ]
 
 
 def execute_bash_command(command: str) -> bool:

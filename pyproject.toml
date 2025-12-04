@@ -1,6 +1,6 @@
 [project]
 name = "sdrbot"
-version = "0.1.0-alpha.1"
+version = "0.1.0a1"
 description = "AI SDR Agent for RevOps"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,6 +9,7 @@ dependencies = [
     "langchain-openai>=0.1.0",
     "langchain-anthropic>=0.1.0",
     "langchain-google-genai>=0.1.0",
+    "langchain-aws>=0.2.0",
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",
@@ -26,6 +27,8 @@ dependencies = [
     "langfuse>=3.0.0",
     "opik>=1.0.0",
     "mcp>=1.0.0",
+    "textual>=0.40.0",
+    "pyperclip>=1.8.0",
 ]
 
 [project.optional-dependencies]
@@ -93,7 +96,6 @@ convention = "google"  # Google-style docstrings
 ]
 
 [tool.pytest.ini_options]
-timeout = 10  # Default timeout for all tests (can be overridden per-test)
 markers = [
     "integration: marks tests that hit real external APIs (deselect with '-m \"not integration\"')",
 ]

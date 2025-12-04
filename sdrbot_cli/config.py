@@ -25,6 +25,7 @@ COLORS = {
     "agent": "#10b981",
     "thinking": "#34d399",
     "tool": "#fbbf24",
+    "command": "#60a5fa",
 }
 
 # ASCII art banner
@@ -39,7 +40,7 @@ DEEP_AGENTS_ASCII = """
 [VERSION_PLACEHOLDER]
 """
 
-# Interactive commands
+# Interactive commands (shared between CLI and TUI)
 COMMANDS = {
     "clear": "Clear screen and reset conversation",
     "help": "Show help information",
@@ -48,6 +49,24 @@ COMMANDS = {
     "exit": "Exit the CLI",
     "setup": "Re-run the setup wizard",
     "sync": "Re-sync service schemas (hubspot, salesforce, attio)",
+}
+
+# TUI-specific commands (superset of COMMANDS)
+TUI_COMMANDS = {
+    "help": "Show help information",
+    "tokens": "Show token usage for current session",
+    "tools": "Show tools management screen",
+    "models": "Open model configuration",
+    "services": "Open services setup screen",
+    "mcp": "Open MCP server configuration",
+    "setup": "Re-run the setup wizard",
+    "tracing": "Open tracing setup screen",
+    "agents": "Open agents management screen",
+    "skills": "Open skills management screen",
+    "sync": "Sync service schemas",
+    "clear": "Clear screen and reset conversation",
+    "quit": "Exit the application",
+    "exit": "Exit the application",
 }
 
 
@@ -64,12 +83,24 @@ _theme = Theme({"dim": COLORS["dim"]})
 console = Console(highlight=False, theme=_theme)
 
 
-class ModelConfig(TypedDict):
-    """Structure for the active model configuration file."""
+class ModelConfig(TypedDict, total=False):
+    """Structure for the active model configuration file.
 
-    provider: str
-    model_name: str
-    api_base: str | None
+    Providers:
+    - openai, anthropic, google: Cloud providers with API keys
+    - ollama: Local Ollama server
+    - vllm: Local vLLM server
+    - azure: Azure OpenAI Service
+    - custom: Generic OpenAI-compatible endpoint
+    """
+
+    provider: str  # Required: openai, anthropic, google, ollama, vllm, azure, custom
+    model_name: str  # Required: model identifier
+    api_base: str | None  # Base URL for custom/vllm endpoints
+    # Azure-specific fields
+    azure_endpoint: str | None  # Azure OpenAI endpoint URL
+    azure_deployment: str | None  # Azure deployment name
+    azure_api_version: str | None  # Azure API version
 
 
 def get_config_dir() -> Path:
@@ -79,22 +110,89 @@ def get_config_dir() -> Path:
     return config_dir
 
 
-def load_model_config() -> ModelConfig | None:
-    """Load the active model configuration from .sdrbot/model.json."""
+def _load_raw_model_config() -> dict:
+    """Load raw model config file."""
     config_file = get_config_dir() / "model.json"
     if not config_file.exists():
-        return None
+        return {"active_provider": None, "providers": {}}
+
     try:
         return json.loads(config_file.read_text())
     except Exception:
+        return {"active_provider": None, "providers": {}}
+
+
+def load_model_config() -> ModelConfig | None:
+    """Load the active model configuration from .sdrbot/model.json."""
+    data = _load_raw_model_config()
+    active_provider = data.get("active_provider")
+    if not active_provider:
         return None
 
+    providers = data.get("providers", {})
+    provider_config = providers.get(active_provider, {})
 
-def save_model_config(provider: str, model_name: str, api_base: str | None = None) -> None:
-    """Save the active model configuration."""
-    config: ModelConfig = {"provider": provider, "model_name": model_name, "api_base": api_base}
+    if not provider_config:
+        return None
+
+    # Build ModelConfig with provider included
+    config: ModelConfig = {"provider": active_provider, **provider_config}
+    return config
+
+
+def load_provider_config(provider: str) -> dict:
+    """Load saved configuration for a specific provider (for pre-filling forms).
+
+    Returns empty dict if no saved config exists for that provider.
+    """
+    data = _load_raw_model_config()
+    return data.get("providers", {}).get(provider, {})
+
+
+def save_model_config(
+    provider: str,
+    model_name: str,
+    api_base: str | None = None,
+    *,
+    azure_endpoint: str | None = None,
+    azure_deployment: str | None = None,
+    azure_api_version: str | None = None,
+) -> None:
+    """Save the active model configuration.
+
+    Saves the config for this provider and sets it as active.
+    Previously saved configs for other providers are preserved.
+
+    Args:
+        provider: Provider name (openai, anthropic, google, ollama, vllm, azure, custom)
+        model_name: Model identifier
+        api_base: Base URL for custom/vllm/ollama endpoints
+        azure_endpoint: Azure OpenAI endpoint URL
+        azure_deployment: Azure deployment name
+        azure_api_version: Azure API version
+    """
+    # Load existing config to preserve other providers
+    data = _load_raw_model_config()
+
+    # Build provider config (without provider key - that's stored separately)
+    provider_config: dict = {"model_name": model_name}
+    if api_base:
+        provider_config["api_base"] = api_base
+    if azure_endpoint:
+        provider_config["azure_endpoint"] = azure_endpoint
+    if azure_deployment:
+        provider_config["azure_deployment"] = azure_deployment
+    if azure_api_version:
+        provider_config["azure_api_version"] = azure_api_version
+
+    # Update the providers dict
+    if "providers" not in data:
+        data["providers"] = {}
+    data["providers"][provider] = provider_config
+    data["active_provider"] = provider
+
     config_file = get_config_dir() / "model.json"
-    config_file.write_text(json.dumps(config, indent=2))
+    config_file.write_text(json.dumps(data, indent=2))
 
 
 def _find_project_root(start_path: Path | None = None) -> Path | None:
@@ -118,36 +216,6 @@ def _find_project_root(start_path: Path | None = None) -> Path | None:
             return parent
 
     return None
-
-
-def _find_project_agent_md(project_root: Path) -> list[Path]:
-    """Find project-specific agent.md file(s).
-
-    Checks two locations and returns ALL that exist:
-    1. project_root/.deepagents/agent.md
-    2. project_root/agent.md
-
-    Both files will be loaded and combined if both exist.
-
-    Args:
-        project_root: Path to the project root directory.
-
-    Returns:
-        List of paths to project agent.md files (may contain 0, 1, or 2 paths).
-    """
-    paths = []
-
-    # Check .deepagents/agent.md (preferred)
-    deepagents_md = project_root / ".deepagents" / "agent.md"
-    if deepagents_md.exists():
-        paths.append(deepagents_md)
-
-    # Check root agent.md (fallback, but also include if both exist)
-    root_md = project_root / "agent.md"
-    if root_md.exists():
-        paths.append(root_md)
-
-    return paths
 
 
 @dataclass
@@ -226,7 +294,7 @@ class Settings:
     mongodb_db: str | None
     mongodb_tls: bool  # Enable TLS (default: False)
 
-    # Observability Config
+    # Tracing Config
     langsmith_api_key: str | None
     langsmith_project: str | None
     langfuse_public_key: str | None
@@ -240,6 +308,12 @@ class Settings:
     custom_api_base: str | None
     custom_api_key: str | None
     custom_model_name: str | None
+
+    # Azure OpenAI
+    azure_api_key: str | None
+
+    # HuggingFace
+    huggingface_api_key: str | None
 
     # Project information
     project_root: Path | None
@@ -264,6 +338,12 @@ class Settings:
         custom_base = os.environ.get("CUSTOM_API_BASE")
         custom_key = os.environ.get("CUSTOM_API_KEY")
         custom_model = os.environ.get("CUSTOM_MODEL_NAME")
+
+        # Azure OpenAI
+        azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+
+        # HuggingFace
+        huggingface_key = os.environ.get("HUGGINGFACE_API_KEY")
 
         sf_client_id = os.environ.get("SF_CLIENT_ID")
         sf_client_secret = os.environ.get("SF_CLIENT_SECRET")
@@ -306,7 +386,7 @@ class Settings:
         mongodb_db = os.environ.get("MONGODB_DB")
         mongodb_tls = os.environ.get("MONGODB_TLS", "").lower() == "true"
 
-        # Observability
+        # Tracing
         langsmith_api_key = os.environ.get("LANGSMITH_API_KEY")
         langsmith_project = os.environ.get("LANGSMITH_PROJECT")
         langfuse_public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
@@ -365,6 +445,8 @@ class Settings:
             custom_api_base=custom_base,
             custom_api_key=custom_key,
             custom_model_name=custom_model,
+            azure_api_key=azure_key,
+            huggingface_api_key=huggingface_key,
             project_root=project_root,
         )
 
@@ -416,6 +498,8 @@ class Settings:
         self.custom_api_base = new_settings.custom_api_base
         self.custom_api_key = new_settings.custom_api_key
         self.custom_model_name = new_settings.custom_model_name
+        self.azure_api_key = new_settings.azure_api_key
+        self.huggingface_api_key = new_settings.huggingface_api_key
         self.project_root = new_settings.project_root
 
     @property
@@ -569,31 +653,14 @@ class Settings:
         # Allow only alphanumeric, hyphens, underscores, and whitespace
         return bool(re.match(r"^[a-zA-Z0-9_\-\s]+$", agent_name))
 
-    def get_agent_md_path(self, agent_name: str) -> Path:
-        """Get the path to an agent's markdown file.
-
-        Args:
-            agent_name: Name of the agent
-
-        Returns:
-            Path to ./agents/{agent_name}.md
-        """
-        if not self._is_valid_agent_name(agent_name):
-            msg = (
-                f"Invalid agent name: {agent_name!r}. "
-                "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
-            )
-            raise ValueError(msg)
-        return self.agents_dir / f"{agent_name}.md"
-
     def get_agent_dir(self, agent_name: str) -> Path:
-        """Get the data directory for an agent (for memory, tokens, etc.).
+        """Get the directory for an agent.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ./.sdrbot/{agent_name}/
+            Path to ./agents/{agent_name}/
         """
         if not self._is_valid_agent_name(agent_name):
             msg = (
@@ -601,38 +668,80 @@ class Settings:
                 "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
             )
             raise ValueError(msg)
-        return Path.cwd() / ".sdrbot" / agent_name
+        return self.agents_dir / agent_name
+
+    def get_agent_prompt_path(self, agent_name: str) -> Path:
+        """Get the path to an agent's prompt file.
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Path to ./agents/{agent_name}/prompt.md
+        """
+        return self.get_agent_dir(agent_name) / "prompt.md"
+
+    def get_agent_memory_path(self, agent_name: str) -> Path:
+        """Get the path to an agent's memory file.
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Path to ./agents/{agent_name}/memory.md
+        """
+        return self.get_agent_dir(agent_name) / "memory.md"
 
     def ensure_agent_dir(self, agent_name: str) -> Path:
-        """Ensure agent data directory exists.
+        """Ensure agent directory exists.
+
+        Creates ./agents/{agent_name}/ if it doesn't exist.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ./.sdrbot/{agent_name}/
+            Path to ./agents/{agent_name}/
         """
         agent_dir = self.get_agent_dir(agent_name)
         agent_dir.mkdir(parents=True, exist_ok=True)
         return agent_dir
 
-    def ensure_agent_md(self, agent_name: str, default_content: str) -> Path:
-        """Ensure agent markdown file exists, creating with default content if needed.
+    def ensure_agent_prompt(self, agent_name: str, default_content: str) -> Path:
+        """Ensure agent prompt file exists, creating with default content if needed.
 
-        Creates ./agents/ directory and {agent_name}.md if they don't exist.
+        Creates ./agents/{agent_name}/ directory and prompt.md if they don't exist.
 
         Args:
             agent_name: Name of the agent
             default_content: Content to write if file doesn't exist
 
         Returns:
-            Path to ./agents/{agent_name}.md
+            Path to ./agents/{agent_name}/prompt.md
         """
-        agent_md = self.get_agent_md_path(agent_name)
-        self.agents_dir.mkdir(parents=True, exist_ok=True)
-        if not agent_md.exists():
-            agent_md.write_text(default_content)
-        return agent_md
+        self.ensure_agent_dir(agent_name)
+        prompt_path = self.get_agent_prompt_path(agent_name)
+        if not prompt_path.exists():
+            prompt_path.write_text(default_content)
+        return prompt_path
+
+    def ensure_agent_memory(self, agent_name: str, default_content: str = "") -> Path:
+        """Ensure agent memory file exists, creating with default content if needed.
+
+        Creates ./agents/{agent_name}/ directory and memory.md if they don't exist.
+
+        Args:
+            agent_name: Name of the agent
+            default_content: Content to write if file doesn't exist (default: empty)
+
+        Returns:
+            Path to ./agents/{agent_name}/memory.md
+        """
+        self.ensure_agent_dir(agent_name)
+        memory_path = self.get_agent_memory_path(agent_name)
+        if not memory_path.exists():
+            memory_path.write_text(default_content)
+        return memory_path
 
     def get_skills_dir(self) -> Path:
         """Get shared skills directory path.
@@ -736,17 +845,24 @@ settings = Settings.from_environment()
 class SessionState:
     """Holds mutable session state (auto-approve mode, agent, etc)."""
 
-    def __init__(self, auto_approve: bool = False, no_splash: bool = False) -> None:
+    def __init__(
+        self, auto_approve: bool = False, no_splash: bool = False, is_tui: bool = False
+    ) -> None:
         self.auto_approve = auto_approve
         self.no_splash = no_splash
+        self.is_tui = is_tui
         self.exit_hint_until: float | None = None
         self.exit_hint_handle = None
         self.thread_id = str(uuid.uuid4())
         # Agent and backend can be swapped at runtime for hot-reloading
         self.agent = None
         self.backend = None
+        self.tool_count = 0  # Number of tools loaded
+        self.skill_count = 0  # Number of skills loaded
         # Reload callback - set by main.py to allow commands to trigger agent reload
         self._reload_callback = None
+        # Post-reload callback - called after agent reload completes (for UI updates)
+        self._post_reload_callback = None
 
     def toggle_auto_approve(self) -> bool:
         """Toggle auto-approve and return new state."""
@@ -756,6 +872,10 @@ class SessionState:
     def set_reload_callback(self, callback) -> None:
         """Set the callback function for reloading the agent."""
         self._reload_callback = callback
+
+    def set_post_reload_callback(self, callback) -> None:
+        """Set the callback function called after agent reload completes."""
+        self._post_reload_callback = callback
 
     async def reload_agent(self) -> bool:
         """Reload the agent with updated tools/config.
@@ -770,6 +890,11 @@ class SessionState:
                 await self._reload_callback()
             else:
                 self._reload_callback()
+
+            # Call post-reload callback (e.g., to update tool count in UI)
+            if self._post_reload_callback:
+                self._post_reload_callback()
+
             return True
         return False
 
@@ -802,6 +927,78 @@ def create_model() -> BaseChatModel:
         provider = model_config["provider"]
         model_name = model_config["model_name"]
 
+        if provider == "ollama":
+            from langchain_openai import ChatOpenAI
+
+            api_base = model_config.get("api_base") or "http://localhost:11434/v1"
+            console.print(f"[dim]Using Ollama: {model_name}[/dim]")
+            return ChatOpenAI(
+                base_url=api_base,
+                api_key="ollama",  # Ollama doesn't require a real key
+                model=model_name,
+                stream_usage=True,
+            )
+
+        if provider == "vllm":
+            from langchain_openai import ChatOpenAI
+
+            api_base = model_config.get("api_base") or "http://localhost:8000/v1"
+            console.print(f"[dim]Using vLLM: {model_name}[/dim]")
+            return ChatOpenAI(
+                base_url=api_base,
+                api_key=settings.custom_api_key or "dummy",
+                model=model_name,
+                stream_usage=True,
+            )
+
+        if provider == "huggingface":
+            from langchain_openai import ChatOpenAI
+
+            api_base = model_config.get("api_base")
+            console.print(f"[dim]Using HuggingFace: {model_name}[/dim]")
+            return ChatOpenAI(
+                base_url=api_base,
+                api_key=settings.huggingface_api_key or "dummy",
+                model=model_name,
+                stream_usage=True,
+            )
+
+        if provider == "bedrock":
+            from langchain_aws import ChatBedrock
+
+            console.print(f"[dim]Using Amazon Bedrock: {model_name}[/dim]")
+            return ChatBedrock(
+                model_id=model_name,
+                region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+            )
+
+        if provider == "azure":
+            from langchain_openai import AzureChatOpenAI
+
+            azure_endpoint = model_config.get("azure_endpoint")
+            azure_deployment = model_config.get("azure_deployment")
+            azure_api_version = model_config.get("azure_api_version") or "2024-02-15-preview"
+
+            if not azure_endpoint or not azure_deployment:
+                console.print(
+                    "[bold red]Error:[/bold red] Azure selected but endpoint/deployment not configured"
+                )
+                sys.exit(1)
+            if not settings.azure_api_key:
+                console.print(
+                    "[bold red]Error:[/bold red] Azure selected but AZURE_OPENAI_API_KEY missing in .env"
+                )
+                sys.exit(1)
+
+            console.print(f"[dim]Using Azure OpenAI: {azure_deployment}[/dim]")
+            return AzureChatOpenAI(
+                azure_endpoint=azure_endpoint,
+                azure_deployment=azure_deployment,
+                api_version=azure_api_version,
+                api_key=settings.azure_api_key,
+                stream_usage=True,
+            )
+
         if provider == "custom":
             from langchain_openai import ChatOpenAI
 
@@ -810,6 +1007,7 @@ def create_model() -> BaseChatModel:
                 base_url=model_config.get("api_base"),
                 api_key=settings.custom_api_key or "dummy",
                 model=model_name,
+                stream_usage=True,
             )
 
         if provider == "openai":
@@ -821,7 +1019,7 @@ def create_model() -> BaseChatModel:
             from langchain_openai import ChatOpenAI
 
             console.print(f"[dim]Using OpenAI model: {model_name}[/dim]")
-            return ChatOpenAI(model=model_name)
+            return ChatOpenAI(model=model_name, stream_usage=True)
 
         if provider == "anthropic":
             if not settings.has_anthropic:
@@ -835,6 +1033,7 @@ def create_model() -> BaseChatModel:
             return ChatAnthropic(
                 model_name=model_name,
                 max_tokens=20_000,  # type: ignore[arg-type]
+                stream_usage=True,
             )
 
         if provider == "google":
@@ -861,6 +1060,7 @@ def create_model() -> BaseChatModel:
             base_url=settings.custom_api_base,
             api_key=settings.custom_api_key or "dummy",
             model=settings.custom_model_name,
+            stream_usage=True,
         )
     if settings.has_openai:
         from langchain_openai import ChatOpenAI
@@ -869,6 +1069,7 @@ def create_model() -> BaseChatModel:
         console.print(f"[dim]Using OpenAI model: {model_name}[/dim]")
         return ChatOpenAI(
             model=model_name,
+            stream_usage=True,
         )
     if settings.has_anthropic:
         from langchain_anthropic import ChatAnthropic
@@ -880,6 +1081,7 @@ def create_model() -> BaseChatModel:
             # The attribute exists, but it has a Pydantic alias which
             # causes issues in IDEs/type checkers.
             max_tokens=20_000,  # type: ignore[arg-type]
+            stream_usage=True,
         )
     if settings.has_google:
         from langchain_google_genai import ChatGoogleGenerativeAI

@@ -1,0 +1,124 @@
+/* Common CSS for setup screens */
+
+/* Dialog containers */
+.setup-dialog {
+    width: 60;
+    height: auto;
+    max-height: 80%;
+    border: heavy $accent;
+    background: $panel;
+    padding: 1 2 2 2;  /* top right bottom left - extra bottom padding for buttons */
+}
+
+.setup-dialog-wide {
+    width: 70;
+    height: auto;
+    max-height: 80%;
+    border: heavy $accent;
+    background: $panel;
+    padding: 1 2 2 2;  /* top right bottom left - extra bottom padding for buttons */
+}
+
+/* Titles */
+.setup-title {
+    text-align: center;
+    text-style: bold;
+    padding-bottom: 1;
+    height: 2;
+}
+
+/* Hints/help text */
+.setup-hint {
+    text-align: center;
+    color: $text-muted;
+    height: auto;
+}
+
+/* Form fields */
+.setup-field {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.setup-field-label {
+    height: 1;
+    padding-left: 1;
+}
+
+.setup-field-input {
+    width: 100%;
+}
+
+/* List views */
+.setup-list {
+    height: auto;
+    max-height: 10;
+    border: solid $primary;
+}
+
+.setup-list > ListItem {
+    height: 1;
+    padding: 0 1;
+}
+
+.setup-list > ListItem:hover {
+    background: $accent 20%;
+}
+
+.setup-list > ListItem.-highlight {
+    background: $accent 20%;
+    text-style: none;
+}
+
+.setup-list:focus > ListItem.-highlight {
+    background: $accent 20%;
+    text-style: none;
+}
+
+/* Button containers */
+.setup-buttons {
+    width: 100%;
+    height: 3;
+    align: center middle;
+    margin-top: 1;
+}
+
+.setup-btn {
+    margin: 0 1;
+}
+
+/* Error messages */
+.setup-error {
+    color: $error;
+    text-style: bold;
+    text-align: center;
+    height: auto;
+}
+
+/* Status indicators */
+.status-active {
+    color: #24FF6A;
+}
+
+.status-configured {
+    color: $primary;
+}
+
+.status-missing {
+    color: $text-muted;
+}
+
+/* Two-column list item layout */
+.setup-list-item {
+    width: 100%;
+    height: 1;
+}
+
+.setup-list-item-label {
+    width: 30;
+}
+
+.setup-list-item-status {
+    width: 1fr;
+    text-align: right;
+}

@@ -22,10 +22,12 @@ from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.mcp.manager import get_mcp_manager
-from sdrbot_cli.observability import get_observability_callbacks
+from sdrbot_cli.memory_tools import create_memory_tools
 from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
+from sdrbot_cli.skills.load import list_skills
+from sdrbot_cli.tracing import get_tracing_callbacks
 
 
 def list_agents() -> None:
@@ -40,8 +42,8 @@ def list_agents() -> None:
         )
         return
 
-    agent_files = list(agents_dir.glob("*.md"))
-    if not agent_files:
+    agent_dirs = [d for d in agents_dir.iterdir() if d.is_dir()]
+    if not agent_dirs:
         console.print("[yellow]No agents found.[/yellow]")
         console.print(
             "[dim]Agents will be created in ./agents/ when you first use them.[/dim]",
@@ -51,11 +53,11 @@ def list_agents() -> None:
 
     console.print("\n[bold]Available Agents:[/bold]\n", style=COLORS["primary"])
 
-    for agent_path in sorted(agent_files):
-        agent_name = agent_path.stem  # filename without .md
+    for agent_dir in sorted(agent_dirs):
+        agent_name = agent_dir.name
         display_name = "default" if agent_name == "agent" else agent_name
         console.print(f"  • [bold]{display_name}[/bold]", style=COLORS["primary"])
-        console.print(f"    {agent_path}", style=COLORS["dim"])
+        console.print(f"    {agent_dir}", style=COLORS["dim"])
 
     console.print()
 
@@ -63,27 +65,26 @@ def list_agents() -> None:
 def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
     """Reset an agent to default or copy from another agent."""
     if source_agent:
-        source_md = settings.get_agent_md_path(source_agent)
+        source_prompt = settings.get_agent_prompt_path(source_agent)
 
-        if not source_md.exists():
+        if not source_prompt.exists():
             console.print(
                 f"[bold red]Error:[/bold red] Source agent '{source_agent}' not found "
-                f"at {source_md}"
+                f"at {source_prompt}"
             )
             return
 
-        source_content = source_md.read_text()
+        source_content = source_prompt.read_text()
         action_desc = f"contents of agent '{source_agent}'"
     else:
         source_content = get_default_coding_instructions()
         action_desc = "default"
 
-    agent_md = settings.get_agent_md_path(agent_name)
-    settings.agents_dir.mkdir(parents=True, exist_ok=True)
-    agent_md.write_text(source_content)
+    settings.ensure_agent_prompt(agent_name, source_content)
 
+    agent_dir = settings.get_agent_dir(agent_name)
     console.print(f"✓ Agent '{agent_name}' reset to {action_desc}", style=COLORS["primary"])
-    console.print(f"Location: {agent_md}\n", style=COLORS["dim"])
+    console.print(f"Location: {agent_dir}\n", style=COLORS["dim"])
 
 
 def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str:
@@ -153,27 +154,14 @@ Some tool calls require user approval before execution. When a tool call is reje
 
 Respect the user's decisions and work with them collaboratively.
 
-### Web Search Tool Usage
+### Action Plan Management
 
-When you use the web_search tool:
-1. The tool will return search results with titles, URLs, and content excerpts
-2. You MUST read and process these results, then respond naturally to the user
-3. NEVER show raw JSON or tool results directly to the user
-4. Synthesize the information from multiple sources into a coherent answer
-5. Cite your sources by mentioning page titles or URLs when relevant
-6. If the search doesn't find what you need, explain what you found and ask clarifying questions
+If the user explicitly asks you to plan something, or if you're being asked to carry out a task with more than 3 steps, use the write_todos tool to document the plan and present it to them.
 
-The user only sees your text responses - not tool results. Always provide a complete, natural language answer after using web_search.
-
-### Todo List Management
-
-Only use todos for genuinely complex operations (5+ steps). For most tasks, just execute directly.
-
-If you do use todos:
-1. Keep it minimal - 3-6 items max
-2. Start working immediately - don't ask for plan approval
-3. Update status as you complete each item
-
+If you do use the write_todos:
+1. Aim for 3-6 action items unless the task is truly complex in which case its fine to plan more extensively.
+2. Update the plan status as you complete each item.
+3. You can keep your final response succint since the plan will be presented to them in a separate widget.
 """
         + _get_enabled_services_prompt()
     )
@@ -261,17 +249,6 @@ def _format_edit_file_description(
     )
 
 
-def _format_web_search_description(
-    tool_call: ToolCall, _state: AgentState, _runtime: Runtime
-) -> str:
-    """Format web_search tool call for approval prompt."""
-    args = tool_call["args"]
-    query = args.get("query", "unknown")
-    max_results = args.get("max_results", 5)
-
-    return f"Query: {query}\nMax results: {max_results}\n\n⚠️  This will use Tavily API credits"
-
-
 def _format_fetch_url_description(
     tool_call: ToolCall, _state: AgentState, _runtime: Runtime
 ) -> str:
@@ -344,11 +321,6 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "description": _format_edit_file_description,
     }
 
-    web_search_interrupt_config: InterruptOnConfig = {
-        "allowed_decisions": ["approve", "reject"],
-        "description": _format_web_search_description,
-    }
-
     fetch_url_interrupt_config: InterruptOnConfig = {
         "allowed_decisions": ["approve", "reject"],
         "description": _format_fetch_url_description,
@@ -367,7 +339,6 @@ def _add_interrupt_on() -> dict[str, InterruptOnConfig]:
         "execute": execute_interrupt_config,
         "write_file": write_file_interrupt_config,
         "edit_file": edit_file_interrupt_config,
-        "web_search": web_search_interrupt_config,
         "fetch_url": fetch_url_interrupt_config,
         "task": task_interrupt_config,
     }
@@ -394,9 +365,10 @@ def create_agent_with_config(
     Returns:
         2-tuple of graph and backend
     """
-    # Setup agent markdown file (creates ./agents/ and {agent}.md if needed)
+    # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
-    settings.ensure_agent_md(assistant_id, default_content)
+    settings.ensure_agent_prompt(assistant_id, default_content)
+    settings.ensure_agent_memory(assistant_id)
 
     # Ensure skills and files directories exist
     skills_dir = settings.ensure_skills_dir()
@@ -447,6 +419,10 @@ def create_agent_with_config(
 
     interrupt_on = _add_interrupt_on()
 
+    # Load memory tools (no approval required)
+    memory_tools = create_memory_tools(assistant_id)
+    tools.extend(memory_tools)
+
     # Load tools from enabled services
     service_tools = get_enabled_tools()
     tools.extend(service_tools)
@@ -478,10 +454,10 @@ def create_agent_with_config(
                     name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
                 }
             elif (
-                "_search_" in tool_name
-                or "_query_" in tool_name
-                or "_soql_" in tool_name
-                or "_sosl_" in tool_name
+                "_search" in tool_name
+                or "_query" in tool_name
+                or "_soql" in tool_name
+                or "_sosl" in tool_name
             ):
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
@@ -512,13 +488,13 @@ def create_agent_with_config(
                 name=tool_name: f"[MCP] {name}: {str(t['args'])[:150]}...",
             }
 
-    # Get observability callbacks
-    observability_callbacks = get_observability_callbacks()
+    # Get tracing callbacks
+    tracing_callbacks = get_tracing_callbacks()
 
     # Build config with callbacks if any are configured
     agent_config = dict(config)
-    if observability_callbacks:
-        agent_config["callbacks"] = observability_callbacks
+    if tracing_callbacks:
+        agent_config["callbacks"] = tracing_callbacks
 
     agent = create_deep_agent(
         model=model,
@@ -531,4 +507,12 @@ def create_agent_with_config(
 
     agent.checkpointer = InMemorySaver()
 
-    return agent, composite_backend
+    # Count skills
+    skill_count = len(
+        list_skills(
+            user_skills_dir=skills_dir,
+            project_skills_dir=settings.get_project_skills_dir(),
+        )
+    )
+
+    return agent, composite_backend, len(tools), skill_count
