@@ -518,6 +518,13 @@ class OAuthChoiceScreen(ModalScreen[bool]):
             yield Static(f"{self.service_label} Authentication", classes="setup-title")
             yield Static("Choose authentication method:", classes="setup-hint")
             yield ListView(id="choice-list", classes="setup-list")
+            with Horizontal(classes="setup-buttons"):
+                yield Button("Back", variant="default", id="btn-back", classes="setup-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "btn-back":
+            self.dismiss(False)
 
     def on_mount(self) -> None:
         """Populate choices."""
