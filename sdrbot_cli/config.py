@@ -111,29 +111,15 @@ def get_config_dir() -> Path:
 
 
 def _load_raw_model_config() -> dict:
-    """Load raw model config file, handling migration from old format."""
+    """Load raw model config file."""
     config_file = get_config_dir() / "model.json"
     if not config_file.exists():
         return {"active_provider": None, "providers": {}}
 
     try:
-        data = json.loads(config_file.read_text())
+        return json.loads(config_file.read_text())
     except Exception:
         return {"active_provider": None, "providers": {}}
-
-    # Check if it's the old format (has "provider" at top level)
-    if "provider" in data and "providers" not in data:
-        # Migrate old format to new format
-        provider = data.pop("provider")
-        new_data = {
-            "active_provider": provider,
-            "providers": {provider: data},
-        }
-        # Save migrated format
-        config_file.write_text(json.dumps(new_data, indent=2))
-        return new_data
-
-    return data
 
 
 def load_model_config() -> ModelConfig | None:
