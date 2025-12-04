@@ -40,7 +40,7 @@ DEEP_AGENTS_ASCII = """
 [VERSION_PLACEHOLDER]
 """
 
-# Interactive commands
+# Interactive commands (shared between CLI and TUI)
 COMMANDS = {
     "clear": "Clear screen and reset conversation",
     "help": "Show help information",
@@ -49,6 +49,24 @@ COMMANDS = {
     "exit": "Exit the CLI",
     "setup": "Re-run the setup wizard",
     "sync": "Re-sync service schemas (hubspot, salesforce, attio)",
+}
+
+# TUI-specific commands (superset of COMMANDS)
+TUI_COMMANDS = {
+    "help": "Show help information",
+    "tokens": "Show token usage for current session",
+    "tools": "Show tools management screen",
+    "models": "Open model configuration",
+    "services": "Open services setup screen",
+    "mcp": "Open MCP server configuration",
+    "setup": "Re-run the setup wizard",
+    "tracing": "Open tracing setup screen",
+    "agents": "Open agents management screen",
+    "skills": "Open skills management screen",
+    "sync": "Sync service schemas",
+    "clear": "Clear screen and reset conversation",
+    "quit": "Exit the application",
+    "exit": "Exit the application",
 }
 
 

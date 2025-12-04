@@ -95,3 +95,10 @@ Footer {
     link-color: #00a2c7;
     link-style: none;
 }
+
+/* Command suggestions dropdown */
+#command_suggestions {
+    dock: bottom;
+    offset: 0 -4;
+    margin-left: 1;
+}

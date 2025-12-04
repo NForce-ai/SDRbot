@@ -5,10 +5,11 @@ import sys
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
-from textual.widgets import Footer, Header, RichLog, Static, TextArea
+from textual.widgets import Footer, Header, OptionList, RichLog, Static, TextArea
+from textual.widgets.option_list import Option
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
-from sdrbot_cli.config import SessionState
+from sdrbot_cli.config import TUI_COMMANDS, SessionState
 from sdrbot_cli.tui.agent_worker import AgentWorker
 from sdrbot_cli.tui.approval_bar import ApprovalBar
 from sdrbot_cli.tui.loading_screen import LoadingScreen
@@ -27,6 +28,73 @@ from sdrbot_cli.tui.widgets import AgentInfo, StatusDisplay, ThinkingIndicator
 from sdrbot_cli.ui import render_todo_list
 
 
+class CommandSuggestions(OptionList):
+    """Dropdown widget showing slash command suggestions."""
+
+    DEFAULT_CSS = """
+    CommandSuggestions {
+        layer: overlay;
+        height: auto;
+        max-height: 10;
+        width: auto;
+        min-width: 30;
+        background: $surface;
+        border: round $accent;
+        display: none;
+        padding: 0;
+    }
+
+    CommandSuggestions:focus {
+        border: round $accent;
+    }
+
+    CommandSuggestions.visible {
+        display: block;
+    }
+
+    CommandSuggestions > .option-list--option-highlighted {
+        background: $accent 30%;
+    }
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._commands = TUI_COMMANDS
+
+    def filter_commands(self, prefix: str) -> list[tuple[str, str]]:
+        """Filter commands that match the given prefix."""
+        # Remove leading slash if present
+        search = prefix.lstrip("/").lower()
+        matches = []
+        for cmd, desc in self._commands.items():
+            if cmd.startswith(search):
+                matches.append((cmd, desc))
+        # Sort by command name
+        return sorted(matches, key=lambda x: x[0])
+
+    def update_suggestions(self, prefix: str) -> bool:
+        """Update the suggestions based on prefix. Returns True if there are matches."""
+        matches = self.filter_commands(prefix)
+        self.clear_options()
+        if matches:
+            for cmd, desc in matches:
+                # Create a rich text prompt with command and description
+                prompt = Text()
+                prompt.append(f"/{cmd}", style="bold #00CCA3")
+                prompt.append(f"  {desc}", style="dim")
+                self.add_option(Option(prompt, id=cmd))
+            self.highlighted = 0
+            return True
+        return False
+
+    def get_selected_command(self) -> str | None:
+        """Get the currently highlighted command."""
+        if self.highlighted is not None and self.option_count > 0:
+            option = self.get_option_at_index(self.highlighted)
+            return f"/{option.id}"
+        return None
+
+
 class ChatInput(TextArea):
     """Custom TextArea that submits on Enter and adds newline on Alt/Shift+Enter."""
 
@@ -43,12 +111,15 @@ class ChatInput(TextArea):
         kwargs.setdefault("placeholder", self.DEFAULT_PLACEHOLDER)
         super().__init__(*args, **kwargs)
         self._is_locked = False
+        self._suggestions_visible = False
 
     def set_locked(self, status: str = "Thinking...") -> None:
         """Lock the input and show a status message."""
         self._is_locked = True
         self.placeholder = status
         self.disabled = True
+        # Hide suggestions when locked
+        self._hide_suggestions()
 
     def set_unlocked(self) -> None:
         """Unlock the input and restore normal state."""
@@ -62,19 +133,115 @@ class ChatInput(TextArea):
         if self._is_locked:
             self.placeholder = status
 
+    def _get_suggestions_widget(self) -> CommandSuggestions | None:
+        """Get the command suggestions widget from the app."""
+        try:
+            return self.app.query_one("#command_suggestions", CommandSuggestions)
+        except Exception:
+            return None
+
+    def _show_suggestions(self) -> None:
+        """Show the suggestions dropdown."""
+        suggestions = self._get_suggestions_widget()
+        if suggestions:
+            suggestions.add_class("visible")
+            self._suggestions_visible = True
+
+    def _hide_suggestions(self) -> None:
+        """Hide the suggestions dropdown."""
+        suggestions = self._get_suggestions_widget()
+        if suggestions:
+            suggestions.remove_class("visible")
+            self._suggestions_visible = False
+
+    def _update_suggestions(self) -> None:
+        """Update suggestions based on current input."""
+        text = self.text.strip()
+        suggestions = self._get_suggestions_widget()
+        if not suggestions:
+            return
+
+        # Check if input starts with / and is a single line (command mode)
+        if text.startswith("/") and "\n" not in text:
+            has_matches = suggestions.update_suggestions(text)
+            if has_matches:
+                self._show_suggestions()
+            else:
+                self._hide_suggestions()
+        else:
+            self._hide_suggestions()
+
+    def _complete_with_suggestion(self) -> bool:
+        """Complete the input with the selected suggestion. Returns True if completed."""
+        suggestions = self._get_suggestions_widget()
+        if suggestions and self._suggestions_visible:
+            cmd = suggestions.get_selected_command()
+            if cmd:
+                self.text = cmd
+                # Move cursor to end of line
+                self.action_cursor_line_end()
+                self._hide_suggestions()
+                return True
+        return False
+
+    def complete_with_command(self, command: str) -> None:
+        """Complete the input with a specific command (used for click handling)."""
+        self.text = command
+        self.action_cursor_line_end()
+        self._hide_suggestions()
+        self.focus()
+
     async def _on_key(self, event) -> None:
         """Handle key events, intercepting Enter for submission."""
+        # Handle suggestions navigation when visible
+        if self._suggestions_visible:
+            suggestions = self._get_suggestions_widget()
+            if suggestions:
+                if event.key == "down":
+                    # Move to next suggestion
+                    if suggestions.highlighted is not None:
+                        next_idx = (suggestions.highlighted + 1) % suggestions.option_count
+                        suggestions.highlighted = next_idx
+                    event.prevent_default()
+                    event.stop()
+                    return
+                elif event.key == "up":
+                    # Move to previous suggestion
+                    if suggestions.highlighted is not None:
+                        prev_idx = (suggestions.highlighted - 1) % suggestions.option_count
+                        suggestions.highlighted = prev_idx
+                    event.prevent_default()
+                    event.stop()
+                    return
+                elif event.key == "tab":
+                    # Complete with selected suggestion
+                    if self._complete_with_suggestion():
+                        event.prevent_default()
+                        event.stop()
+                        return
+                elif event.key == "escape":
+                    # Hide suggestions
+                    self._hide_suggestions()
+                    event.prevent_default()
+                    event.stop()
+                    return
+
         # Ctrl+J inserts newline (Ctrl+Enter sends ctrl+j in most terminals)
         if event.key == "ctrl+j":
             self.insert("\n")
             event.prevent_default()
             event.stop()
             return
-        # Plain enter submits
+        # Plain enter: complete suggestion if visible and submit
         if event.key == "enter":
+            # If suggestions visible, complete with selection first
+            if self._suggestions_visible:
+                self._complete_with_suggestion()
+            # Then submit
             value = self.text.strip()
             if value and not self._is_locked:
                 self.clear()
+                self._hide_suggestions()
                 self.post_message(self.Submitted(self, value))
             event.prevent_default()
             event.stop()
@@ -82,11 +249,16 @@ class ChatInput(TextArea):
         # Let parent handle all other keys
         await super()._on_key(event)
 
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
+        """React to text changes to update suggestions."""
+        self._update_suggestions()
+
 
 class SDRBotTUI(App[None]):
     """SDRbot Textual application."""
 
     CSS_PATH = ["sdrbot.css", "setup_common.tcss"]
+    LAYERS = ["below", "overlay"]
 
     # Lock to dark theme and disable command palette
     ENABLE_COMMAND_PALETTE = False
@@ -140,6 +312,7 @@ class SDRBotTUI(App[None]):
                 yield Static("", id="task_list_display")
         yield ApprovalBar(id="approval_bar")
         yield ThinkingIndicator(id="thinking_indicator")
+        yield CommandSuggestions(id="command_suggestions")
         yield ChatInput(id="main_input")
         yield Footer()
 
@@ -433,6 +606,14 @@ class SDRBotTUI(App[None]):
         if self.agent_worker:
             # Run user input processing as a worker to avoid blocking UI
             self.run_worker(self.agent_worker.process_user_input(value), exclusive=True)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Handle click on command suggestion."""
+        # Only handle events from our command suggestions widget
+        if event.option_list.id == "command_suggestions":
+            command = f"/{event.option.id}"
+            chat_input = self.query_one("#main_input", ChatInput)
+            chat_input.complete_with_command(command)
 
     async def on_agent_message(self, message: AgentMessage) -> None:
         """Handle messages from the agent worker."""
