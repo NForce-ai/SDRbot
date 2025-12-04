@@ -54,8 +54,12 @@ class LoadingScreen(ModalScreen[None]):
 
     def update_message(self, message: str) -> None:
         """Update the loading message."""
-        self.query_one("#loading-message", Static).update(message)
+        self.message_text = message
+        if self.is_mounted:
+            self.query_one("#loading-message", Static).update(message)
 
     def update_title(self, title: str) -> None:
         """Update the loading title."""
-        self.query_one("#loading-title", Static).update(title)
+        self.title_text = title
+        if self.is_mounted:
+            self.query_one("#loading-title", Static).update(title)
