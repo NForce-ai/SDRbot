@@ -5,19 +5,7 @@ import asyncio
 import os
 import sys
 
-from sdrbot_cli.agent import list_agents
-from sdrbot_cli.config import (
-    SessionState,
-    console,
-)
-from sdrbot_cli.integrations.sandbox_factory import (
-    create_sandbox,
-)
-from sdrbot_cli.mcp.manager import shutdown_mcp
-
-# Import the Textual App
-from sdrbot_cli.tui.app import SDRBotTUI
-from sdrbot_cli.ui import show_help
+# Only import lightweight modules at top level for faster startup
 from sdrbot_cli.version import __version__
 
 
@@ -95,7 +83,10 @@ async def main(
     setup_script_path: str | None = None,
 ) -> None:
     """Main entry point with conditional sandbox support, launching Textual TUI."""
-    from sdrbot_cli.config import load_model_config
+    from sdrbot_cli.config import console, load_model_config
+    from sdrbot_cli.integrations.sandbox_factory import create_sandbox
+    from sdrbot_cli.mcp.manager import shutdown_mcp
+    from sdrbot_cli.tui.app import SDRBotTUI
 
     # Check if model is configured - if not, we'll show setup wizard in TUI
     model_config = load_model_config()
@@ -158,13 +149,20 @@ def cli_main() -> None:
     # Check dependencies first
     check_cli_dependencies()
 
+    # Lazy import console only when needed
+    from sdrbot_cli.config import SessionState, console
+
     try:
         args = parse_args()
 
         if args.command == "help":
+            from sdrbot_cli.ui import show_help
+
             for renderable in show_help():
                 console.print(renderable)
         elif args.command == "list":
+            from sdrbot_cli.agent import list_agents
+
             list_agents()
         elif args.command == "setup":
             # Run TUI with setup wizard forced open

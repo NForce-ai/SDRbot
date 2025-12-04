@@ -287,7 +287,8 @@ class SDRBotTUI(App[None]):
         ("ctrl+c", "interrupt_agent", "Interrupt"),
     ]
 
-    # Add paste binding only on non-macOS platforms
+    # Add paste binding for Windows/Linux (Ctrl+Shift+V)
+    # macOS uses Cmd+V which triggers a Paste event handled by _on_paste
     if sys.platform != "darwin":
         BINDINGS.insert(3, ("ctrl+shift+v", "paste", "Paste"))
 
@@ -340,6 +341,29 @@ class SDRBotTUI(App[None]):
         self.query_one("#agent_info", AgentInfo).set_auto_approve(self.session_state.auto_approve)
         status = "ON" if self.session_state.auto_approve else "OFF"
         self.notify(f"Auto-approve: {status}", severity="information")
+
+    def action_paste(self) -> None:
+        """Paste from system clipboard into focused input."""
+        try:
+            import pyperclip
+
+            text = pyperclip.paste()
+            if text:
+                # Find the focused widget and insert text if it's an input
+                focused = self.focused
+                if focused is not None and hasattr(focused, "insert"):
+                    focused.insert(text)
+        except Exception:
+            # Silently fail if clipboard is unavailable
+            pass
+
+    def _on_paste(self, event) -> None:
+        """Handle paste events from the terminal for any focused input widget."""
+        if event.text:
+            focused = self.focused
+            if focused is not None and hasattr(focused, "insert"):
+                focused.insert(event.text)
+                event.stop()
 
     async def on_mount(self) -> None:
         """Called when app is mounted."""

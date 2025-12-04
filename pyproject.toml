@@ -28,6 +28,7 @@ dependencies = [
     "opik>=1.0.0",
     "mcp>=1.0.0",
     "textual>=0.40.0",
+    "pyperclip>=1.8.0",
 ]
 
 [project.optional-dependencies]
