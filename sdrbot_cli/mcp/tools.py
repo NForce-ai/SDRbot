@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from langchain_core.tools import BaseTool, ToolException
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 
 def json_schema_to_pydantic(
@@ -77,6 +77,8 @@ def json_schema_to_pydantic(
 class MCPToolWrapper(BaseTool):
     """LangChain tool that wraps an MCP tool."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     name: str
     description: str
     args_schema: type[BaseModel] | None = None
@@ -84,9 +86,6 @@ class MCPToolWrapper(BaseTool):
     mcp_tool_name: str
     connection: Any  # MCPServerConnection - using Any to avoid Pydantic type resolution issues
     _reconnect_attempted: bool = False
-
-    class Config:
-        arbitrary_types_allowed = True
 
     def _run(self, **kwargs: Any) -> str:
         """Synchronous run - wraps async."""
