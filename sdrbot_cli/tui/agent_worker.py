@@ -59,6 +59,8 @@ class AgentWorker(Worker):
 
     def _on_setup_screen_closed(self, result: bool | None = None) -> None:
         """Called when a setup screen is dismissed. Reloads the agent."""
+        # Update model display to reflect any changes
+        self.app._update_model_display()
         # Run reload in a worker to avoid blocking the UI
         self.app.run_worker(self._reload_agent_async(), exclusive=True)
 

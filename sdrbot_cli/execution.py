@@ -337,14 +337,33 @@ async def execute_task(
                         continue
 
                     # Extract token usage if available
-                    if token_tracker and hasattr(message, "usage_metadata"):
-                        usage = message.usage_metadata
-                        if usage:
+                    if token_tracker:
+                        input_toks = 0
+                        output_toks = 0
+
+                        # Try usage_metadata first (LangChain standard)
+                        if hasattr(message, "usage_metadata") and message.usage_metadata:
+                            usage = message.usage_metadata
                             input_toks = usage.get("input_tokens", 0)
                             output_toks = usage.get("output_tokens", 0)
-                            if input_toks or output_toks:
-                                captured_input_tokens = max(captured_input_tokens, input_toks)
-                                captured_output_tokens = max(captured_output_tokens, output_toks)
+
+                        # Fallback: check response_metadata for OpenAI-compatible endpoints
+                        if not (input_toks or output_toks):
+                            if hasattr(message, "response_metadata") and message.response_metadata:
+                                resp_meta = message.response_metadata
+                                # Try common usage locations
+                                usage = resp_meta.get("usage") or resp_meta.get("token_usage") or {}
+                                # OpenAI format uses prompt_tokens/completion_tokens
+                                input_toks = usage.get("input_tokens") or usage.get(
+                                    "prompt_tokens", 0
+                                )
+                                output_toks = usage.get("output_tokens") or usage.get(
+                                    "completion_tokens", 0
+                                )
+
+                        if input_toks or output_toks:
+                            captured_input_tokens = max(captured_input_tokens, input_toks)
+                            captured_output_tokens = max(captured_output_tokens, output_toks)
 
                     # Process content blocks (this is the key fix!)
                     for block in message.content_blocks:

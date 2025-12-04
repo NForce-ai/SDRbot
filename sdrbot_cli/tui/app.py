@@ -182,6 +182,9 @@ class SDRBotTUI(App[None]):
 
     def _on_setup_complete(self, result: bool | None = None) -> None:
         """Called when setup wizard is dismissed."""
+        # Always update model display to reflect any changes
+        self._update_model_display()
+
         # Check if agent already exists (e.g., from /setup command when model was already configured)
         if self.session_state.agent is not None:
             # Agent exists, just reload it to pick up any changes
@@ -510,18 +513,29 @@ class SDRBotTUI(App[None]):
         current_model = self.query_one("#status_display", StatusDisplay).model_name
 
         if new_model != current_model:
-            # Model was changed, reload agent and update display
+            # Model was changed, reload agent
             self.run_worker(self._reload_existing_agent(), exclusive=True)
-            self._update_model_display()
+
+        # Always update display to reflect current config
+        self._update_model_display()
 
     def _update_model_display(self) -> None:
         """Update the model name in the status display."""
-        from sdrbot_cli.config import load_model_config
+        try:
+            from sdrbot_cli.config import load_model_config
+            from sdrbot_cli.tui.setup_screens import get_model_display_name
 
-        model_config = load_model_config()
-        if model_config:
-            model_name = model_config.get("model_name", "Unknown")
-            self.query_one("#status_display", StatusDisplay).set_model(model_name)
+            model_config = load_model_config()
+            if model_config:
+                provider = model_config.get("provider", "")
+                model_id = model_config.get("model_name", "Unknown")
+                display_name = get_model_display_name(provider, model_id)
+                self.query_one("#status_display", StatusDisplay).set_model(
+                    display_name or model_id or "Unknown"
+                )
+        except Exception:
+            # Widget may not exist yet during first-time setup, retry after mount
+            self.call_later(self._update_model_display)
 
     async def on_status_update(self, message: StatusUpdate) -> None:
         """Handle status updates."""

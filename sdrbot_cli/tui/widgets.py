@@ -233,3 +233,4 @@ class StatusDisplay(Static):
     def set_model(self, model_name: str) -> None:
         """Update the model name."""
         self.model_name = model_name
+        self.refresh()

@@ -125,7 +125,7 @@ nano .env
 ```
 
 **Required for Agent Brain:**
-- `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`)
+- At least one LLM provider (see [LLM Providers](#-llm-providers) below)
 - `TAVILY_API_KEY` (Recommended for web research)
 
 **CRM & Tools (Fill only what you use):**
@@ -140,6 +140,53 @@ nano .env
 - **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
 - **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
+
+---
+
+## 🧠 LLM Providers
+
+SDRbot supports multiple LLM providers. Configure your preferred provider through the setup wizard (`/setup` → Models) or by setting environment variables.
+
+### Supported Providers
+
+| Provider | Type | Environment Variables |
+|----------|------|----------------------|
+| **OpenAI** | Cloud | `OPENAI_API_KEY` |
+| **Anthropic** | Cloud | `ANTHROPIC_API_KEY` |
+| **Google Gemini** | Cloud | `GOOGLE_API_KEY` |
+| **Azure OpenAI** | Cloud | `AZURE_OPENAI_API_KEY` |
+| **Amazon Bedrock** | Cloud | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` |
+| **HuggingFace** | Cloud | `HUGGINGFACE_API_KEY` |
+| **Ollama** | Local | — (runs locally) |
+| **vLLM** | Local | `CUSTOM_API_KEY` (optional) |
+| **Custom Endpoint** | Any | `CUSTOM_API_KEY` (optional) |
+
+### Primary vs. Secondary Providers
+
+**Primary providers** (thoroughly tested):
+- OpenAI
+- Anthropic
+- Google Gemini
+
+**Secondary providers** (functional but less tested):
+- Azure OpenAI
+- Amazon Bedrock
+- HuggingFace
+- Ollama
+- vLLM
+- Custom endpoints
+
+### Important Notes
+
+⚠️ **Custom models and secondary providers**: Your mileage may vary. These providers use OpenAI-compatible APIs or provider-specific SDKs, but not all models behave identically. Tool calling, streaming, and token counting may work differently depending on the model and endpoint.
+
+⚠️ **Not all vendors thoroughly tested**: We have not exhaustively tested every model from every provider. Bugs and inconsistencies outside of the primary inference vendors (OpenAI, Anthropic, Google) are more likely. If you encounter issues, please report them on GitHub.
+
+⚠️ **Model capabilities vary**: Some models may not support tool/function calling, which is required for SDRbot to work effectively. Ensure your chosen model supports the OpenAI-style function calling API.
+
+### Switching Providers
+
+You can switch between providers at any time using `/models` or `/setup`. Your configuration for each provider is saved, so you can easily switch back without re-entering credentials.
 
 ---
 
@@ -342,7 +389,7 @@ All service configuration is done through the interactive setup wizard:
 ```
 
 The wizard allows you to:
-- Configure and switch LLM providers (OpenAI, Anthropic, Google, Custom)
+- Configure and switch LLM providers (OpenAI, Anthropic, Google, Azure, Bedrock, HuggingFace, Ollama, vLLM, Custom)
 - Enable/disable services
 - Configure service credentials
 - View service status

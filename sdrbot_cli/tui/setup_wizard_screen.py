@@ -27,7 +27,7 @@ def get_model_status() -> tuple[str, str]:
         if model:
             return (f"✓ {provider}: {model}", "status-active")
         return (f"✓ {provider}", "status-active")
-    return ("• Not configured", "status-missing")
+    return ("• None enabled", "status-missing")
 
 
 def get_services_status() -> tuple[str, str]:
