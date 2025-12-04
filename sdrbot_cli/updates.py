@@ -1,3 +1,4 @@
+import os
 import sys
 
 import requests
@@ -18,6 +19,11 @@ def check_for_updates() -> tuple[str, str] | tuple[None, None]:
     Returns:
         Tuple of (latest_version, release_url) or (None, None) if no update or error.
     """
+    # Test mode: set SDRBOT_TEST_UPDATE=1.0.0 to fake an available update
+    test_version = os.environ.get("SDRBOT_TEST_UPDATE")
+    if test_version:
+        return test_version, f"https://github.com/{GITHUB_REPO}/releases/tag/v{test_version}"
+
     try:
         response = requests.get(LATEST_RELEASE_URL, timeout=2)
         if response.status_code == 200:

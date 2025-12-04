@@ -6,6 +6,8 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from sdrbot_cli.version import __version__
+
 # Spinner frames for the thinking animation
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -234,3 +236,65 @@ class StatusDisplay(Static):
         """Update the model name."""
         self.model_name = model_name
         self.refresh()
+
+
+class VersionIndicator(Static):
+    """Widget to display version and update availability in the footer."""
+
+    DEFAULT_CSS = """
+    VersionIndicator {
+        dock: right;
+        width: auto;
+        height: 1;
+        padding: 0 1;
+        link-color: cyan;
+        link-style: bold;
+    }
+    """
+
+    class UpdateClicked(Message):
+        """Message emitted when update link is clicked."""
+
+        def __init__(self, latest_version: str, release_url: str) -> None:
+            super().__init__()
+            self.latest_version = latest_version
+            self.release_url = release_url
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(f"[dim]v{__version__}[/]", *args, **kwargs)
+        self._latest_version = ""
+        self._release_url = ""
+
+    def action_click_update(self) -> None:
+        """Action triggered when update link is clicked."""
+        self.post_message(self.UpdateClicked(self._latest_version, self._release_url))
+
+    def set_update_available(self, latest_version: str, release_url: str) -> None:
+        """Set update availability."""
+        self._latest_version = latest_version
+        self._release_url = release_url
+        markup = f"[dim]v{__version__}[/] • [@click=click_update][cyan bold]Update (v{latest_version})[/][/]"
+        self.update(markup)
+
+
+class AppFooter(Widget):
+    """Custom footer with version indicator."""
+
+    DEFAULT_CSS = """
+    AppFooter {
+        dock: bottom;
+        height: 1;
+        layout: horizontal;
+        background: $footer-background;
+    }
+
+    AppFooter Footer {
+        width: 1fr;
+    }
+    """
+
+    def compose(self):
+        from textual.widgets import Footer
+
+        yield Footer(show_command_palette=False)
+        yield VersionIndicator(id="version_indicator")

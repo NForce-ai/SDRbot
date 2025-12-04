@@ -5,7 +5,7 @@ import sys
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
-from textual.widgets import Footer, Header, OptionList, RichLog, Static, TextArea
+from textual.widgets import Header, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
@@ -24,7 +24,13 @@ from sdrbot_cli.tui.messages import (
     ToolApprovalRequest,
     ToolCountUpdate,
 )
-from sdrbot_cli.tui.widgets import AgentInfo, StatusDisplay, ThinkingIndicator
+from sdrbot_cli.tui.widgets import (
+    AgentInfo,
+    AppFooter,
+    StatusDisplay,
+    ThinkingIndicator,
+    VersionIndicator,
+)
 from sdrbot_cli.ui import render_todo_list
 
 
@@ -314,7 +320,7 @@ class SDRBotTUI(App[None]):
         yield ThinkingIndicator(id="thinking_indicator")
         yield CommandSuggestions(id="command_suggestions")
         yield ChatInput(id="main_input")
-        yield Footer()
+        yield AppFooter()
 
     def action_quit(self) -> None:
         """An action to quit the app."""
@@ -338,6 +344,9 @@ class SDRBotTUI(App[None]):
     async def on_mount(self) -> None:
         """Called when app is mounted."""
         self.query_one("#main_input", ChatInput).focus()
+
+        # Check for updates after a delay (non-blocking)
+        self.set_timer(2.0, self._check_for_updates_sync)
 
         # Check if setup is needed (set by main.py) or forced (via /setup command)
         needs_setup = getattr(self.session_state, "needs_setup", False)
@@ -365,6 +374,18 @@ class SDRBotTUI(App[None]):
         else:
             # First-time setup, need to initialize everything
             self.run_worker(self._initialize_after_setup(), exclusive=True)
+
+    def _check_for_updates_sync(self) -> None:
+        """Check for updates and update the version indicator."""
+        from sdrbot_cli.updates import check_for_updates
+
+        try:
+            latest_version, release_url = check_for_updates()
+            if latest_version:
+                indicator = self.query_one("#version_indicator", VersionIndicator)
+                indicator.set_update_available(latest_version, release_url)
+        except Exception:
+            pass  # Silently ignore update check failures
 
     async def _initialize_on_startup(self) -> None:
         """Initialize services, MCP, and agent on normal startup."""
@@ -683,6 +704,12 @@ class SDRBotTUI(App[None]):
             ModelsSetupScreen(),
             self._on_models_screen_closed,
         )
+
+    def on_version_indicator_update_clicked(self, message: VersionIndicator.UpdateClicked) -> None:
+        """Handle click on update available - show update modal."""
+        from sdrbot_cli.tui.update_screen import UpdateModal
+
+        self.push_screen(UpdateModal(message.latest_version, message.release_url))
 
     def _on_models_screen_closed(self, result: bool | None = None) -> None:
         """Called when models screen is dismissed - reload agent if model changed."""
