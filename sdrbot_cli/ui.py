@@ -6,10 +6,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from rich import box
 from rich.console import RenderableType
 from rich.markup import escape
-from rich.panel import Panel
 from rich.text import Text
 
 from .config import COLORS, COMMANDS, DEEP_AGENTS_ASCII, MAX_ARG_LENGTH
@@ -242,8 +240,12 @@ class TokenTracker:
         return output_lines
 
 
-def render_todo_list(todos: list[dict]) -> Panel | None:
-    """Render todo list as a rich Panel with checkboxes."""
+def render_todo_list(todos: list[dict]) -> str | None:
+    """Render todo list as formatted text with checkboxes.
+
+    Returns plain markup text (not a Panel) to avoid nested borders
+    when displayed in a Textual container with its own border.
+    """
     if not todos:
         return None
 
@@ -253,8 +255,8 @@ def render_todo_list(todos: list[dict]) -> Panel | None:
         content = todo.get("content", "")
 
         if status == "completed":
-            icon = "[green]✔[/green]"
-            style = "green dim"
+            icon = "[#24FF6A]✔[/#24FF6A]"
+            style = "#24FF6A dim"
         elif status == "in_progress":
             icon = "[cyan bold]▶[/cyan bold]"
             style = "white"
@@ -264,14 +266,7 @@ def render_todo_list(todos: list[dict]) -> Panel | None:
 
         lines.append(f"{icon} [{style}]{content}[/{style}]")
 
-    panel = Panel(
-        "\n".join(lines),
-        title="[bold]Action Plan[/bold]",
-        border_style="cyan",
-        box=box.ROUNDED,
-        padding=(0, 1),
-    )
-    return panel
+    return "\n".join(lines)
 
 
 def _format_line_span(start: int | None, end: int | None) -> str:

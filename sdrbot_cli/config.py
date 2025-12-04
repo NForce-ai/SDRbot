@@ -121,36 +121,6 @@ def _find_project_root(start_path: Path | None = None) -> Path | None:
     return None
 
 
-def _find_project_agent_md(project_root: Path) -> list[Path]:
-    """Find project-specific agent.md file(s).
-
-    Checks two locations and returns ALL that exist:
-    1. project_root/.deepagents/agent.md
-    2. project_root/agent.md
-
-    Both files will be loaded and combined if both exist.
-
-    Args:
-        project_root: Path to the project root directory.
-
-    Returns:
-        List of paths to project agent.md files (may contain 0, 1, or 2 paths).
-    """
-    paths = []
-
-    # Check .deepagents/agent.md (preferred)
-    deepagents_md = project_root / ".deepagents" / "agent.md"
-    if deepagents_md.exists():
-        paths.append(deepagents_md)
-
-    # Check root agent.md (fallback, but also include if both exist)
-    root_md = project_root / "agent.md"
-    if root_md.exists():
-        paths.append(root_md)
-
-    return paths
-
-
 @dataclass
 class Settings:
     """Global settings and environment detection for deepagents-cli.
@@ -570,31 +540,14 @@ class Settings:
         # Allow only alphanumeric, hyphens, underscores, and whitespace
         return bool(re.match(r"^[a-zA-Z0-9_\-\s]+$", agent_name))
 
-    def get_agent_md_path(self, agent_name: str) -> Path:
-        """Get the path to an agent's markdown file.
-
-        Args:
-            agent_name: Name of the agent
-
-        Returns:
-            Path to ./agents/{agent_name}.md
-        """
-        if not self._is_valid_agent_name(agent_name):
-            msg = (
-                f"Invalid agent name: {agent_name!r}. "
-                "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
-            )
-            raise ValueError(msg)
-        return self.agents_dir / f"{agent_name}.md"
-
     def get_agent_dir(self, agent_name: str) -> Path:
-        """Get the data directory for an agent (for memory, tokens, etc.).
+        """Get the directory for an agent.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ./.sdrbot/{agent_name}/
+            Path to ./agents/{agent_name}/
         """
         if not self._is_valid_agent_name(agent_name):
             msg = (
@@ -602,38 +555,80 @@ class Settings:
                 "Agent names can only contain letters, numbers, hyphens, underscores, and spaces."
             )
             raise ValueError(msg)
-        return Path.cwd() / ".sdrbot" / agent_name
+        return self.agents_dir / agent_name
+
+    def get_agent_prompt_path(self, agent_name: str) -> Path:
+        """Get the path to an agent's prompt file.
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Path to ./agents/{agent_name}/prompt.md
+        """
+        return self.get_agent_dir(agent_name) / "prompt.md"
+
+    def get_agent_memory_path(self, agent_name: str) -> Path:
+        """Get the path to an agent's memory file.
+
+        Args:
+            agent_name: Name of the agent
+
+        Returns:
+            Path to ./agents/{agent_name}/memory.md
+        """
+        return self.get_agent_dir(agent_name) / "memory.md"
 
     def ensure_agent_dir(self, agent_name: str) -> Path:
-        """Ensure agent data directory exists.
+        """Ensure agent directory exists.
+
+        Creates ./agents/{agent_name}/ if it doesn't exist.
 
         Args:
             agent_name: Name of the agent
 
         Returns:
-            Path to ./.sdrbot/{agent_name}/
+            Path to ./agents/{agent_name}/
         """
         agent_dir = self.get_agent_dir(agent_name)
         agent_dir.mkdir(parents=True, exist_ok=True)
         return agent_dir
 
-    def ensure_agent_md(self, agent_name: str, default_content: str) -> Path:
-        """Ensure agent markdown file exists, creating with default content if needed.
+    def ensure_agent_prompt(self, agent_name: str, default_content: str) -> Path:
+        """Ensure agent prompt file exists, creating with default content if needed.
 
-        Creates ./agents/ directory and {agent_name}.md if they don't exist.
+        Creates ./agents/{agent_name}/ directory and prompt.md if they don't exist.
 
         Args:
             agent_name: Name of the agent
             default_content: Content to write if file doesn't exist
 
         Returns:
-            Path to ./agents/{agent_name}.md
+            Path to ./agents/{agent_name}/prompt.md
         """
-        agent_md = self.get_agent_md_path(agent_name)
-        self.agents_dir.mkdir(parents=True, exist_ok=True)
-        if not agent_md.exists():
-            agent_md.write_text(default_content)
-        return agent_md
+        self.ensure_agent_dir(agent_name)
+        prompt_path = self.get_agent_prompt_path(agent_name)
+        if not prompt_path.exists():
+            prompt_path.write_text(default_content)
+        return prompt_path
+
+    def ensure_agent_memory(self, agent_name: str, default_content: str = "") -> Path:
+        """Ensure agent memory file exists, creating with default content if needed.
+
+        Creates ./agents/{agent_name}/ directory and memory.md if they don't exist.
+
+        Args:
+            agent_name: Name of the agent
+            default_content: Content to write if file doesn't exist (default: empty)
+
+        Returns:
+            Path to ./agents/{agent_name}/memory.md
+        """
+        self.ensure_agent_dir(agent_name)
+        memory_path = self.get_agent_memory_path(agent_name)
+        if not memory_path.exists():
+            memory_path.write_text(default_content)
+        return memory_path
 
     def get_skills_dir(self) -> Path:
         """Get shared skills directory path.

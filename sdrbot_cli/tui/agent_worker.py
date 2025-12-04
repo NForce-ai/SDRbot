@@ -361,7 +361,8 @@ class AgentWorker(Worker):
                     AutoApproveUpdate(enabled)
                 ),
                 token_callback=lambda total: self.app.post_message(TokenUpdate(total)),
-                status_callback=lambda status: self.app.post_message(StatusUpdate(status)),
+                # Simplify status to just "Thinking" - detailed tool info is too verbose
+                status_callback=lambda _: self.app.post_message(StatusUpdate("Thinking")),
             )
         finally:
             self.app.post_message(StatusUpdate("Idle"))

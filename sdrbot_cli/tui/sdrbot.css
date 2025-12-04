@@ -17,21 +17,27 @@ Screen {
     overflow-x: hidden;
 }
 
-#task_list_display {
+#task_list_container {
     background: $surface;
-    border: heavy $secondary;
-    padding: 1;
+    border: heavy #00a2c7;
+    border-title-color: #00a2c7;
+    border-title-style: bold;
+    color: #00a2c7;
     width: 0;
     min-width: 0;
     display: none;
 }
 
-#task_list_display.visible {
+#task_list_container.visible {
     display: block;
     width: 1fr;
     min-width: 30;
     max-width: 50;
     margin-left: 1;
+}
+
+#task_list_display {
+    padding: 1;
 }
 
 #app_grid.has-tasks #chat_log {
@@ -44,6 +50,10 @@ Screen {
     max-height: 10;
     margin: 0;
     border: heavy $accent;
+}
+
+#main_input:focus-within {
+    border: heavy #00CCA3;
 }
 
 #main_input .text-area--placeholder {
@@ -75,9 +85,13 @@ Footer {
 #agent_info {
     width: 1fr;
     content-align: left middle;
+    link-color: #00a2c7;
+    link-style: none;
 }
 
 #status_display {
     width: 1fr;
     content-align: right middle;
+    link-color: #00a2c7;
+    link-style: none;
 }

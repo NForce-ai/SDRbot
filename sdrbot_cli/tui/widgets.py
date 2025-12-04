@@ -1,7 +1,6 @@
 """Custom Textual widgets for SDRbot."""
 
 from rich.text import Text
-from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
@@ -126,62 +125,38 @@ class AgentInfo(Static):
         self.auto_approve = auto_approve
         self.sandbox_type = sandbox_type
         self.styles.height = 1
-        # Track click regions: list of (start, end, message_type)
-        self._click_regions: list[tuple[int, int, str]] = []
 
     def render(self) -> Text:
         """Render the agent info."""
-        self._click_regions = []
-        text = Text()
-
-        # Agent name (clickable)
-        text.append("Agent: ", style="dim")
-        start = len(text)
-        text.append(f"{self.agent_name}", style="underline cyan")
-        self._click_regions.append((start, len(text), "agent"))
-
-        # Skills count (clickable)
-        text.append(" | ", style="dim")
-        text.append("Skills: ", style="dim")
-        start = len(text)
-        text.append(f"{self.skill_count}", style="underline cyan")
-        self._click_regions.append((start, len(text), "skills"))
-
-        # Tools count (clickable)
-        text.append(" | ", style="dim")
-        text.append("Tools: ", style="dim")
-        start = len(text)
-        text.append(f"{self.tool_count}", style="underline cyan")
-        self._click_regions.append((start, len(text), "tools"))
+        # Use @click markup for clickable elements (color set via CSS link-color)
+        parts = [
+            f"[dim]Agent:[/] [@click=click_agent]{self.agent_name}[/]",
+            f"[dim]Skills:[/] [@click=click_skills]{self.skill_count}[/]",
+            f"[dim]Tools:[/] [@click=click_tools]{self.tool_count}[/]",
+        ]
 
         # Add sandbox indicator (only if enabled)
         if self.sandbox_type:
-            text.append(" | ", style="dim")
-            text.append("Sandbox: ", style="dim")
-            text.append(f"{self.sandbox_type}", style="magenta")
+            parts.append(f"[dim]Sandbox:[/] [magenta]{self.sandbox_type}[/]")
 
         # Add auto-approve indicator
         if self.auto_approve:
-            text.append(" | ", style="dim")
-            text.append("Auto: ", style="dim")
-            text.append("ON", style="bold yellow")
+            parts.append("[dim]Auto:[/] [bold yellow]ON[/]")
 
-        return text
+        markup = " [dim]|[/] ".join(parts)
+        return Text.from_markup(markup)
 
-    def on_click(self, event: Click) -> None:
-        """Handle click on specific regions of the widget."""
-        # Get click position relative to the widget content
-        click_x = event.x
+    def action_click_agent(self) -> None:
+        """Action triggered when agent name is clicked."""
+        self.post_message(self.AgentNameClicked())
 
-        for start, end, region_type in self._click_regions:
-            if start <= click_x < end:
-                if region_type == "agent":
-                    self.post_message(self.AgentNameClicked())
-                elif region_type == "skills":
-                    self.post_message(self.SkillCountClicked())
-                elif region_type == "tools":
-                    self.post_message(self.ToolCountClicked())
-                return
+    def action_click_skills(self) -> None:
+        """Action triggered when skills count is clicked."""
+        self.post_message(self.SkillCountClicked())
+
+    def action_click_tools(self) -> None:
+        """Action triggered when tools count is clicked."""
+        self.post_message(self.ToolCountClicked())
 
     def update_skill_count(self, count: int) -> None:
         """Update the skill count."""
@@ -197,16 +172,21 @@ class AgentInfo(Static):
 
 
 class StatusDisplay(Static):
-    """Widget to display status and token usage with animated spinner."""
+    """Widget to display model, token usage, and status with animated spinner."""
 
     status = reactive("Idle")
     total_tokens = reactive(0)
+    model_name = reactive("...")
     _frame_index = reactive(0)
+
+    class ModelClicked(Message):
+        """Message emitted when model name is clicked."""
+
+        pass
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.styles.height = 1
-        self.styles.content_align = ("right", "middle")
         self._timer = None
 
     def on_mount(self) -> None:
@@ -223,21 +203,24 @@ class StatusDisplay(Static):
         self.refresh()
 
     def render(self) -> Text:
-        """Render the status and token display."""
-        text = Text()
-        text.append("Status: ", style="dim")
-
+        """Render the status, tokens, and model display."""
+        # Status first
         if self.status == "Idle":
-            text.append(self.status, style="dim")
+            status_part = f"[dim]Status: {self.status}[/]"
         else:
-            # Show animated spinner + status in cyan
             spinner = SPINNER_FRAMES[self._frame_index]
-            text.append(f"{spinner} ", style="bold cyan")
-            text.append(self.status, style="bold #00a2c7")
+            status_part = f"[dim]Status:[/] [bold cyan]{spinner}[/] [bold #00a2c7]{self.status}[/]"
 
-        text.append(" | ", style="dim")
-        text.append(f"Tokens: {self.total_tokens:,}", style="dim")
-        return text
+        tokens_part = f"[dim]Tokens: {self.total_tokens:,}[/]"
+        # Use @click markup for clickable model name (color set via CSS link-color)
+        model_part = f"[dim]Model:[/] [@click=show_models]{self.model_name}[/]"
+
+        markup = f"{status_part} [dim]|[/] {tokens_part} [dim]|[/] {model_part}"
+        return Text.from_markup(markup)
+
+    def action_show_models(self) -> None:
+        """Action triggered when model name is clicked."""
+        self.post_message(self.ModelClicked())
 
     def set_status(self, status: str) -> None:
         """Update the status."""
@@ -246,3 +229,7 @@ class StatusDisplay(Static):
     def update_tokens(self, tokens: int) -> None:
         """Update the token count."""
         self.total_tokens = tokens
+
+    def set_model(self, model_name: str) -> None:
+        """Update the model name."""
+        self.model_name = model_name

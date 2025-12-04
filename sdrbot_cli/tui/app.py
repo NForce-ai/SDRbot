@@ -4,7 +4,7 @@ import sys
 
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Footer, Header, RichLog, Static, TextArea
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
@@ -136,7 +136,8 @@ class SDRBotTUI(App[None]):
             yield StatusDisplay(id="status_display")
         with Container(id="app_grid"):
             yield RichLog(id="chat_log", wrap=True, auto_scroll=True)
-            yield Static("", id="task_list_display")
+            with VerticalScroll(id="task_list_container"):
+                yield Static("", id="task_list_display")
         yield ApprovalBar(id="approval_bar")
         yield ThinkingIndicator(id="thinking_indicator")
         yield ChatInput(id="main_input")
@@ -214,8 +215,8 @@ class SDRBotTUI(App[None]):
             loading.update_message("Initializing MCP servers...")
             _, failed_mcp_servers = await initialize_mcp()
 
-            # Create model
-            loading.update_message("Creating model...")
+            # Initialize model
+            loading.update_message("Initializing model...")
             model = await loop.run_in_executor(None, create_model)
 
             # Create agent
@@ -239,7 +240,7 @@ class SDRBotTUI(App[None]):
                     sandbox_type=sandbox_type,
                 )
 
-            loading.update_message("Creating agent...")
+            loading.update_message("Initializing agent...")
             agent, composite_backend, tool_count, skill_count = await loop.run_in_executor(
                 None, create_agent
             )
@@ -250,8 +251,28 @@ class SDRBotTUI(App[None]):
 
             # Set up reload callback
             async def reload_agent():
+                from pathlib import Path
+
+                import dotenv
+
+                from sdrbot_cli.config import create_model as create_fresh_model
+                from sdrbot_cli.config import settings as app_settings
+
+                # Reload environment to pick up any config changes
+                dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+                app_settings.reload()
+
                 _, new_failed = await reinitialize_mcp()
-                new_agent, new_backend, new_tool_count, new_skill_count = create_agent()
+                # Re-create model from current config (don't use stale closure)
+                fresh_model = await loop.run_in_executor(None, create_fresh_model)
+                tools = [http_request, fetch_url]
+                new_agent, new_backend, new_tool_count, new_skill_count = create_agent_with_config(
+                    fresh_model,
+                    self.assistant_id,
+                    tools,
+                    sandbox=sandbox_backend,
+                    sandbox_type=sandbox_type,
+                )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
                 self.session_state.tool_count = new_tool_count
@@ -308,8 +329,8 @@ class SDRBotTUI(App[None]):
             loading.update_message("Initializing MCP servers...")
             _, failed_mcp_servers = await initialize_mcp()
 
-            # Create model (run in executor as it might be slow)
-            loading.update_message("Creating model...")
+            # Initialize model (run in executor as it might be slow)
+            loading.update_message("Initializing model...")
             model = await loop.run_in_executor(None, create_model)
 
             # Now we need to create the agent
@@ -322,8 +343,8 @@ class SDRBotTUI(App[None]):
                     model, self.assistant_id, tools, sandbox=None, sandbox_type=None
                 )
 
-            # Run agent creation in thread pool
-            loading.update_message("Creating agent...")
+            # Initialize agent in thread pool
+            loading.update_message("Initializing agent...")
             agent, composite_backend, tool_count, skill_count = await loop.run_in_executor(
                 None, create_agent
             )
@@ -334,8 +355,28 @@ class SDRBotTUI(App[None]):
 
             # Set up reload callback
             async def reload_agent():
+                from pathlib import Path
+
+                import dotenv
+
+                from sdrbot_cli.config import create_model as create_fresh_model
+                from sdrbot_cli.config import settings as app_settings
+
+                # Reload environment to pick up any config changes
+                dotenv.load_dotenv(Path.cwd() / ".env", override=True)
+                app_settings.reload()
+
                 _, new_failed = await reinitialize_mcp()
-                new_agent, new_backend, new_tool_count, new_skill_count = create_agent()
+                # Re-create model from current config (don't use stale closure)
+                fresh_model = await loop.run_in_executor(None, create_fresh_model)
+                tools = [http_request, fetch_url]
+                new_agent, new_backend, new_tool_count, new_skill_count = create_agent_with_config(
+                    fresh_model,
+                    self.assistant_id,
+                    tools,
+                    sandbox=None,
+                    sandbox_type=None,
+                )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
                 self.session_state.tool_count = new_tool_count
@@ -359,6 +400,9 @@ class SDRBotTUI(App[None]):
         # Get failed MCP servers if any
         failed_mcp_servers = getattr(self, "_failed_mcp_servers", [])
         self._failed_mcp_servers = []  # Clear after reading
+
+        # Update model display
+        self._update_model_display()
 
         self.agent_worker = AgentWorker(self, self.session_state, self.assistant_id)
         # Start the initial agent loop (splash, greetings etc.)
@@ -398,15 +442,17 @@ class SDRBotTUI(App[None]):
 
     async def on_task_list_update(self, message: TaskListUpdate) -> None:
         """Handle task list updates from the agent worker."""
+        task_list_container = self.query_one("#task_list_container", VerticalScroll)
         task_list_display = self.query_one("#task_list_display", Static)
         app_grid = self.query_one("#app_grid", Container)
-        panel = render_todo_list(message.todos)
-        if panel and message.todos:
-            task_list_display.update(panel)
-            task_list_display.add_class("visible")
+        content = render_todo_list(message.todos)
+        if content and message.todos:
+            task_list_display.update(content)
+            task_list_container.border_title = "Action Plan"
+            task_list_container.add_class("visible")
             app_grid.add_class("has-tasks")
         else:
-            task_list_display.remove_class("visible")
+            task_list_container.remove_class("visible")
             app_grid.remove_class("has-tasks")
 
     async def on_token_update(self, message: TokenUpdate) -> None:
@@ -445,6 +491,38 @@ class SDRBotTUI(App[None]):
 
         self.push_screen(ToolsScreen())
 
+    def on_status_display_model_clicked(self, message: StatusDisplay.ModelClicked) -> None:
+        """Handle click on model - show models screen."""
+        from sdrbot_cli.tui.setup_screens import ModelsSetupScreen
+
+        self.push_screen(
+            ModelsSetupScreen(),
+            self._on_models_screen_closed,
+        )
+
+    def _on_models_screen_closed(self, result: bool | None = None) -> None:
+        """Called when models screen is dismissed - reload agent if model changed."""
+        from sdrbot_cli.config import load_model_config
+
+        # Check if model actually changed
+        model_config = load_model_config()
+        new_model = model_config.get("model_name", "Unknown") if model_config else "Unknown"
+        current_model = self.query_one("#status_display", StatusDisplay).model_name
+
+        if new_model != current_model:
+            # Model was changed, reload agent and update display
+            self.run_worker(self._reload_existing_agent(), exclusive=True)
+            self._update_model_display()
+
+    def _update_model_display(self) -> None:
+        """Update the model name in the status display."""
+        from sdrbot_cli.config import load_model_config
+
+        model_config = load_model_config()
+        if model_config:
+            model_name = model_config.get("model_name", "Unknown")
+            self.query_one("#status_display", StatusDisplay).set_model(model_name)
+
     async def on_status_update(self, message: StatusUpdate) -> None:
         """Handle status updates."""
         self.query_one("#status_display", StatusDisplay).set_status(message.status)
@@ -467,8 +545,9 @@ class SDRBotTUI(App[None]):
 
     async def on_tool_approval_request(self, message: ToolApprovalRequest) -> None:
         """Handle tool approval request."""
-        # Hide thinking indicator, show approval bar
+        # Hide thinking indicator, set status to Idle, show approval bar
         self.query_one("#thinking_indicator", ThinkingIndicator).hide()
+        self.query_one("#status_display", StatusDisplay).set_status("Idle")
         approval_bar = self.query_one("#approval_bar", ApprovalBar)
         approval_bar.show(message.future)
 

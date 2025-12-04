@@ -22,6 +22,7 @@ from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.mcp.manager import get_mcp_manager
+from sdrbot_cli.memory_tools import create_memory_tools
 from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
@@ -41,8 +42,8 @@ def list_agents() -> None:
         )
         return
 
-    agent_files = list(agents_dir.glob("*.md"))
-    if not agent_files:
+    agent_dirs = [d for d in agents_dir.iterdir() if d.is_dir()]
+    if not agent_dirs:
         console.print("[yellow]No agents found.[/yellow]")
         console.print(
             "[dim]Agents will be created in ./agents/ when you first use them.[/dim]",
@@ -52,11 +53,11 @@ def list_agents() -> None:
 
     console.print("\n[bold]Available Agents:[/bold]\n", style=COLORS["primary"])
 
-    for agent_path in sorted(agent_files):
-        agent_name = agent_path.stem  # filename without .md
+    for agent_dir in sorted(agent_dirs):
+        agent_name = agent_dir.name
         display_name = "default" if agent_name == "agent" else agent_name
         console.print(f"  • [bold]{display_name}[/bold]", style=COLORS["primary"])
-        console.print(f"    {agent_path}", style=COLORS["dim"])
+        console.print(f"    {agent_dir}", style=COLORS["dim"])
 
     console.print()
 
@@ -64,27 +65,26 @@ def list_agents() -> None:
 def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
     """Reset an agent to default or copy from another agent."""
     if source_agent:
-        source_md = settings.get_agent_md_path(source_agent)
+        source_prompt = settings.get_agent_prompt_path(source_agent)
 
-        if not source_md.exists():
+        if not source_prompt.exists():
             console.print(
                 f"[bold red]Error:[/bold red] Source agent '{source_agent}' not found "
-                f"at {source_md}"
+                f"at {source_prompt}"
             )
             return
 
-        source_content = source_md.read_text()
+        source_content = source_prompt.read_text()
         action_desc = f"contents of agent '{source_agent}'"
     else:
         source_content = get_default_coding_instructions()
         action_desc = "default"
 
-    agent_md = settings.get_agent_md_path(agent_name)
-    settings.agents_dir.mkdir(parents=True, exist_ok=True)
-    agent_md.write_text(source_content)
+    settings.ensure_agent_prompt(agent_name, source_content)
 
+    agent_dir = settings.get_agent_dir(agent_name)
     console.print(f"✓ Agent '{agent_name}' reset to {action_desc}", style=COLORS["primary"])
-    console.print(f"Location: {agent_md}\n", style=COLORS["dim"])
+    console.print(f"Location: {agent_dir}\n", style=COLORS["dim"])
 
 
 def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str:
@@ -156,13 +156,12 @@ Respect the user's decisions and work with them collaboratively.
 
 ### Action Plan Management
 
-Only use action plans for genuinely complex operations (5+ steps) or when the user asks you to plan. For most tasks, just execute directly.
+If the user explicitly asks you to plan something, or if you're being asked to carry out a task with more than 3 steps, use the write_todos tool to document the plan and present it to them.
 
-If you do use an action plan:
-1. Use the write_todos tool to document your plan.
-2. Unless instructed otherwise try to keep it reasonable (3-6 items).
-3. If the user asked you to plan confirm it before executing, otherwise you may proceed without approval.
-4. Update the plan status as you complete each item.
+If you do use the write_todos:
+1. Aim for 3-6 action items unless the task is truly complex in which case its fine to plan more extensively.
+2. Update the plan status as you complete each item.
+3. You can keep your final response succint since the plan will be presented to them in a separate widget.
 """
         + _get_enabled_services_prompt()
     )
@@ -366,9 +365,10 @@ def create_agent_with_config(
     Returns:
         2-tuple of graph and backend
     """
-    # Setup agent markdown file (creates ./agents/ and {agent}.md if needed)
+    # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
-    settings.ensure_agent_md(assistant_id, default_content)
+    settings.ensure_agent_prompt(assistant_id, default_content)
+    settings.ensure_agent_memory(assistant_id)
 
     # Ensure skills and files directories exist
     skills_dir = settings.ensure_skills_dir()
@@ -418,6 +418,10 @@ def create_agent_with_config(
     system_prompt = get_system_prompt(assistant_id=assistant_id, sandbox_type=sandbox_type)
 
     interrupt_on = _add_interrupt_on()
+
+    # Load memory tools (no approval required)
+    memory_tools = create_memory_tools(assistant_id)
+    tools.extend(memory_tools)
 
     # Load tools from enabled services
     service_tools = get_enabled_tools()

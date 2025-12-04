@@ -72,10 +72,12 @@ class ApprovalBar(Widget):
         if self._future and not self._future.done():
             self._future.set_result(result)
         self.hide()
-        # Restore thinking indicator (agent continues processing)
+        # Restore thinking indicator and status (agent continues processing)
         try:
-            thinking_indicator = self.app.query_one("#thinking_indicator")
-            thinking_indicator.show("Processing...")
+            from sdrbot_cli.tui.widgets import StatusDisplay
+
+            self.app.query_one("#thinking_indicator").show("Thinking...")
+            self.app.query_one("#status_display", StatusDisplay).set_status("Thinking")
         except Exception:
             pass
 

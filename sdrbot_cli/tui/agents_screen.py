@@ -74,11 +74,13 @@ class AgentsManagementScreen(ModalScreen[dict | None]):
         if not agents_dir.exists():
             agents_dir.mkdir(parents=True, exist_ok=True)
 
-        # Get all .md files in agents directory
-        agent_files = sorted(agents_dir.glob("*.md"))
+        # Get all agent directories (folders with prompt.md inside)
+        agent_dirs = sorted(
+            [d for d in agents_dir.iterdir() if d.is_dir() and (d / "prompt.md").exists()]
+        )
 
-        for agent_path in agent_files:
-            agent_name = agent_path.stem
+        for agent_dir in agent_dirs:
+            agent_name = agent_dir.name
             display_name = self._get_display_name(agent_name)
 
             # Determine status
@@ -154,11 +156,11 @@ class AgentsManagementScreen(ModalScreen[dict | None]):
     def _on_create_complete(self, agent_name: str | None) -> None:
         """Handle new agent creation."""
         if agent_name:
-            # Create the agent file with default content
-            agent_path = settings.get_agent_md_path(agent_name)
-            if not agent_path.exists():
-                agent_path.parent.mkdir(parents=True, exist_ok=True)
-                agent_path.write_text(get_default_coding_instructions())
+            # Create the agent folder with prompt.md and memory.md
+            agent_prompt = settings.get_agent_prompt_path(agent_name)
+            if not agent_prompt.exists():
+                settings.ensure_agent_prompt(agent_name, get_default_coding_instructions())
+                settings.ensure_agent_memory(agent_name)
                 self._needs_reload = True
 
             self._refresh_list()
@@ -166,16 +168,19 @@ class AgentsManagementScreen(ModalScreen[dict | None]):
             self._edit_agent(agent_name)
 
     def _edit_agent(self, agent_name: str) -> None:
-        """Open the file editor for an agent."""
-        from sdrbot_cli.tui.file_editor_screen import FileEditorScreen
+        """Open the tabbed editor for an agent's prompt and memory."""
+        from sdrbot_cli.tui.agent_editor_screen import AgentEditorScreen
 
-        agent_path = settings.get_agent_md_path(agent_name)
+        agent_prompt = settings.get_agent_prompt_path(agent_name)
+        agent_memory = settings.get_agent_memory_path(agent_name)
         display_name = self._get_display_name(agent_name)
         self.app.push_screen(
-            FileEditorScreen(
-                file_path=agent_path,
+            AgentEditorScreen(
+                agent_name=agent_name,
+                prompt_path=agent_prompt,
+                memory_path=agent_memory,
                 title=f"{display_name} agent",
-                allow_save_as=True,
+                default_prompt=get_default_coding_instructions(),
             ),
             self._on_edit_complete,
         )
@@ -186,28 +191,16 @@ class AgentsManagementScreen(ModalScreen[dict | None]):
             action = result.get("action")
             if action == "save":
                 self._needs_reload = True
-                self.notify("Agent profile updated.")
-            elif action == "save_as":
-                # Prompt for new agent name and save
-                content = result.get("content", "")
-                self.app.push_screen(
-                    CreateAgentScreen(),
-                    lambda name: self._on_save_as_complete(name, content),
-                )
-                return  # Don't refresh yet
-        self._refresh_list()
-
-    def _on_save_as_complete(self, agent_name: str | None, content: str) -> None:
-        """Handle save-as completion."""
-        if agent_name:
-            agent_path = settings.get_agent_md_path(agent_name)
-            try:
-                agent_path.parent.mkdir(parents=True, exist_ok=True)
-                agent_path.write_text(content)
-                self._needs_reload = True
-                self.notify(f"Created agent: {self._get_display_name(agent_name)}")
-            except Exception as e:
-                self.notify(f"Error creating agent: {e}", severity="error")
+                # Build notification message
+                changes = []
+                if result.get("prompt_changed"):
+                    changes.append("prompt")
+                if result.get("memory_changed"):
+                    changes.append("memory")
+                if changes:
+                    self.notify(f"Agent {', '.join(changes)} updated.")
+                else:
+                    self.notify("Agent saved.")
         self._refresh_list()
 
     def _switch_agent(self, agent_name: str) -> None:
@@ -231,9 +224,11 @@ class AgentsManagementScreen(ModalScreen[dict | None]):
     def _on_delete_confirmed(self, confirmed: bool, agent_name: str) -> None:
         """Handle delete confirmation."""
         if confirmed:
-            agent_path = settings.get_agent_md_path(agent_name)
+            import shutil
+
+            agent_dir = settings.get_agent_dir(agent_name)
             try:
-                agent_path.unlink()
+                shutil.rmtree(agent_dir)
                 self.notify(f"Deleted agent: {agent_name}")
                 self._refresh_list()
             except Exception as e:
@@ -386,12 +381,12 @@ class CreateAgentScreen(ModalScreen[str | None]):
             )
             return
 
-        # Convert spaces to underscores for filename
+        # Convert spaces to underscores for directory name
         agent_name = display_name.replace(" ", "_")
 
         # Check if already exists
-        agent_path = settings.get_agent_md_path(agent_name)
-        if agent_path.exists():
+        agent_dir = settings.get_agent_dir(agent_name)
+        if agent_dir.exists():
             self.notify(f"Agent '{display_name}' already exists.", severity="warning")
             return
 

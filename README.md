@@ -498,13 +498,19 @@ When enabled, traces are automatically sent to the configured platform for every
 
 ## 🤖 Customizing the Agent
 
-SDRbot stores agent prompts in the `./agents/` folder in your current directory. This folder is created automatically on first run.
+SDRbot stores agent profiles in the `./agents/` folder in your current directory. Each agent is a folder containing a prompt and memory file.
 
 ```
 agents/
-├── agent.md      # default agent
-├── sales.md      # custom agent for sales workflows
-└── support.md    # custom agent for support tasks
+├── agent/           # default agent
+│   ├── prompt.md    # agent instructions
+│   └── memory.md    # learned preferences (persistent)
+├── sales/           # custom agent for sales workflows
+│   ├── prompt.md
+│   └── memory.md
+└── support/         # custom agent for support tasks
+    ├── prompt.md
+    └── memory.md
 ```
 
 ### Managing Agents
@@ -512,7 +518,7 @@ agents/
 Use the `/agents` command to manage agent profiles directly within the app:
 
 - **Create** new agent profiles
-- **Edit** agent prompts with the built-in editor
+- **Edit** agent prompts and memory with the tabbed editor
 - **Switch** between different agents
 - **Delete** agents you no longer need
 
@@ -521,11 +527,11 @@ You can also click on the agent name in the status bar to open the agents manage
 ### Starting with a Specific Agent
 
 ```bash
-sdrbot --agent sales      # Uses ./agents/sales.md
-sdrbot --agent support    # Uses ./agents/support.md
+sdrbot --agent sales      # Uses ./agents/sales/
+sdrbot --agent support    # Uses ./agents/support/
 ```
 
-If the agent file doesn't exist, it will be created with the default prompt.
+If the agent folder doesn't exist, it will be created with the default prompt.
 
 ### Local Data Folders
 
@@ -533,11 +539,69 @@ SDRbot creates these folders in your working directory (all gitignored):
 
 | Folder | Purpose |
 |--------|---------|
-| `agents/` | Agent prompt files (`{name}.md`) - created on first run |
+| `agents/` | Agent profiles (`{name}/prompt.md` + `memory.md`) |
 | `skills/` | Custom skills (`{name}/SKILL.md`) - created when you add skills |
 | `files/` | Agent-generated exports, reports, CSVs - created on first run |
 | `generated/` | Schema-synced CRM tools (hubspot_tools.py, etc.) - created on sync |
 | `.sdrbot/` | Service configuration (`services.json`) |
+
+---
+
+## 🧠 Agent Memory
+
+Each agent has a **persistent memory** that survives across sessions. This allows the agent to learn your preferences, remember important context, and improve over time.
+
+### How It Works
+
+- **Memory file**: Each agent stores memory in `./agents/{name}/memory.md`
+- **Auto-loaded**: Memory is automatically loaded into the agent's context at startup
+- **No approval needed**: The agent can update its memory freely using dedicated memory tools
+
+### Memory Tools
+
+The agent has three tools for managing its memory (no approval required):
+
+| Tool | Description |
+|------|-------------|
+| `read_memory()` | Read the current memory file |
+| `write_memory(content)` | Overwrite the entire memory file |
+| `append_memory(content)` | Add to the end of the memory file |
+
+### When the Agent Updates Memory
+
+The agent is instructed to update its memory:
+
+- **Immediately** when you describe how it should behave or its role
+- **Immediately** when you give feedback on its work
+- When you explicitly ask it to remember something
+- When patterns or preferences emerge during conversations
+
+### Example Memory Content
+
+```markdown
+## Preferences
+- User prefers concise responses without lengthy explanations
+- Always use metric units for measurements
+
+## Learned Patterns
+- When creating HubSpot contacts, always set lifecycle_stage to "lead"
+- User's company uses "ACME-" prefix for all deal names
+
+## Project Context
+- Main CRM is Salesforce, HubSpot is used for marketing only
+- Q4 pipeline review happens every Friday
+```
+
+### Editing Memory Manually
+
+You can edit an agent's memory directly:
+
+1. Use `/agents` command
+2. Select the agent
+3. Switch to the **Memory** tab
+4. Edit and save
+
+Or edit the file directly at `./agents/{name}/memory.md`.
 
 ---
 
