@@ -4,6 +4,7 @@ import sys
 
 from rich.text import Text
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Header, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
@@ -118,6 +119,10 @@ class ChatInput(TextArea):
         super().__init__(*args, **kwargs)
         self._is_locked = False
         self._suggestions_visible = False
+        # History navigation
+        self._history: list[str] = []
+        self._history_index: int = -1  # -1 means not navigating history
+        self._draft: str = ""  # Stores current text when navigating history
 
     def set_locked(self, status: str = "Thinking...") -> None:
         """Lock the input and show a status message."""
@@ -232,6 +237,39 @@ class ChatInput(TextArea):
                     event.stop()
                     return
 
+        # History navigation (only when suggestions not visible)
+        if event.key == "up" and self._history:
+            # Save draft if starting to navigate
+            if self._history_index == -1:
+                self._draft = self.text
+            # Move back in history
+            if self._history_index < len(self._history) - 1:
+                self._history_index += 1
+                self.text = self._history[-(self._history_index + 1)]
+                self.action_cursor_line_end()
+            event.prevent_default()
+            event.stop()
+            return
+        elif event.key == "down" and self._history_index >= 0:
+            if self._history_index > 0:
+                # Move forward in history
+                self._history_index -= 1
+                self.text = self._history[-(self._history_index + 1)]
+                self.action_cursor_line_end()
+            else:
+                # Return to draft
+                self._history_index = -1
+                self.text = self._draft
+                self.action_cursor_line_end()
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Reset history navigation on any other key
+        if self._history_index != -1:
+            self._history_index = -1
+            self._draft = ""
+
         # Ctrl+J inserts newline (Ctrl+Enter sends ctrl+j in most terminals)
         if event.key == "ctrl+j":
             self.insert("\n")
@@ -246,6 +284,12 @@ class ChatInput(TextArea):
             # Then submit
             value = self.text.strip()
             if value and not self._is_locked:
+                # Add to history (avoid duplicates of last entry)
+                if not self._history or self._history[-1] != value:
+                    self._history.append(value)
+                # Reset history navigation
+                self._history_index = -1
+                self._draft = ""
                 self.clear()
                 self._hide_suggestions()
                 self.post_message(self.Submitted(self, value))
@@ -284,7 +328,7 @@ class SDRBotTUI(App[None]):
         ("ctrl+g", "show_help", "Help"),
         ("ctrl+j", "newline", "New line"),
         ("ctrl+t", "toggle_auto_approve", "Toggle Auto-approve"),
-        ("ctrl+c", "interrupt_agent", "Interrupt"),
+        Binding("ctrl+c", "interrupt_agent", "Interrupt", priority=True),
     ]
 
     # Add paste binding for Windows/Linux (Ctrl+Shift+V)
