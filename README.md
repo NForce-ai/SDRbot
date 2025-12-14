@@ -26,6 +26,7 @@ By using this software, you acknowledge that:
 - **Zoho CRM:** Full support for all modules including custom modules, COQL queries, and lead conversion.
 - **Pipedrive:** Full support for Deals, Persons, Organizations, Products, Activities, and Leads via the v1 API.
 - **Attio:** Next-gen CRM support using the Attio v2 API (Objects & Attributes).
+- **Twenty:** Open-source CRM support via REST API with OpenAPI-based schema sync.
 
 ### 2. Prospecting & Enrichment
 - **Web Search:** Native web search capability for basic web searching and investigation.
@@ -49,6 +50,7 @@ By using this software, you acknowledge that:
 | **Zoho CRM** | OAuth 2.0 | ✓ | COQL, CRUD, Lead Conversion, Notes |
 | **Pipedrive** | API Token or OAuth | ✓ | Search, CRUD, Pipelines, Notes, Activities |
 | **Attio** | API Key | ✓ | Query, CRUD, Notes |
+| **Twenty** | API Key | ✓ | Search, CRUD, Notes, Opportunities, Tasks |
 | **Apollo.io** | API Key | — | People/Company Search, Enrichment |
 | **Lusha** | API Key | — | Prospecting, Person/Company Enrichment |
 | **Hunter.io** | API Key | — | Domain Search, Email Finder, Verification |
@@ -134,6 +136,7 @@ nano .env
 - **Zoho CRM:** `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`, `ZOHO_REGION` (us, eu, in, au, cn, or jp)
 - **Pipedrive:** `PIPEDRIVE_API_TOKEN` **OR** `PIPEDRIVE_CLIENT_ID` and `PIPEDRIVE_CLIENT_SECRET` (OAuth)
 - **Attio:** `ATTIO_API_KEY`
+- **Twenty:** `TWENTY_API_KEY`, `TWENTY_API_URL` (optional, for self-hosted instances)
 - **Apollo.io:** `APOLLO_API_KEY`
 - **Lusha:** `LUSHA_API_KEY`
 - **Hunter.io:** `HUNTER_API_KEY`
@@ -360,6 +363,7 @@ sdrbot --auto-approve
 - **HubSpot (OAuth):** Similar to Salesforce, it will launch a browser flow if you are not using a Personal Access Token (PAT).
 - **Zoho CRM:** Opens a browser for OAuth login. Tokens are saved securely in your system keyring with automatic refresh.
 - **Pipedrive:** Uses API Token directly, or launches browser OAuth flow if using Client ID/Secret. Tokens are saved securely with automatic refresh.
+- **Twenty:** Uses API Key directly. Supports both cloud (api.twenty.com) and self-hosted instances.
 - **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 
 ### Example Prompts
@@ -396,7 +400,7 @@ The wizard allows you to:
 
 ### Schema Sync
 
-For CRM services (HubSpot, Salesforce, Zoho CRM, Attio), SDRbot syncs your schema to generate strongly-typed tools.
+For CRM services (HubSpot, Salesforce, Zoho CRM, Pipedrive, Attio, Twenty), SDRbot syncs your schema to generate strongly-typed tools.
 
 **Automatic sync on startup**: When you launch SDRbot, if a service hasn't synced in 24 hours, it will automatically sync.
 

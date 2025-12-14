@@ -44,8 +44,13 @@ def sync_schema() -> dict[str, Any]:
         Dict with keys:
         - schema_hash: Hash of the schema for change detection
         - objects: List of object names that were synced
+
+    Raises:
+        RuntimeError: If authentication fails or no objects can be accessed.
     """
     sf = get_client()
+    if sf is None:
+        raise RuntimeError("Salesforce authentication failed. Check your credentials.")
 
     # 1. Discover all object types
     all_objects = _discover_objects(sf)
@@ -60,6 +65,9 @@ def sync_schema() -> dict[str, Any]:
         except Exception:
             # Skip objects we can't access
             continue
+
+    if not objects_schema:
+        raise RuntimeError("Could not access any Salesforce objects. Check your API permissions.")
 
     # 3. Generate the tools code
     generated_code = _generate_tools_code(objects_schema)

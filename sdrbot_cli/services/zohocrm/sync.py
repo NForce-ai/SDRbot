@@ -86,6 +86,9 @@ def sync_schema() -> dict[str, Any]:
             # Skip modules we can't access (permissions, etc.)
             continue
 
+    if not modules_schema:
+        raise RuntimeError("Could not access any Zoho CRM modules. Check your API permissions.")
+
     # 3. Generate the tools code
     generated_code = _generate_tools_code(modules_schema)
 

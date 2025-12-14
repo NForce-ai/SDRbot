@@ -6,16 +6,123 @@ from pathlib import Path
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Static
+from textual.widgets import Button, Input, Label, ListItem, ListView, LoadingIndicator, Static
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
-from sdrbot_cli.services import disable_service, enable_service
+from sdrbot_cli.services import SYNCABLE_SERVICES, disable_service, enable_service
 from sdrbot_cli.services.registry import load_config
 from sdrbot_cli.setup.env import reload_env_and_settings, save_env_vars
 from sdrbot_cli.setup.services import SERVICE_CATEGORIES, get_service_status
 
 # Path to shared CSS
 SETUP_CSS_PATH = Path(__file__).parent / "setup_common.tcss"
+
+
+class GeneratingToolsScreen(ModalScreen[bool]):
+    """Modal screen showing tool generation progress."""
+
+    CSS = """
+    GeneratingToolsScreen {
+        align: center middle;
+    }
+
+    #generating-dialog {
+        width: 60;
+        height: auto;
+        border: heavy $accent;
+        background: $panel;
+        padding: 1 2;
+    }
+
+    #generating-dialog.error {
+        border: heavy $error;
+    }
+
+    #generating-status {
+        text-align: center;
+        padding: 1 0;
+        width: 100%;
+        height: auto;
+    }
+
+    #generating-indicator {
+        width: 100%;
+        height: 3;
+    }
+
+    #dismiss-container {
+        width: 100%;
+        height: auto;
+        align: center middle;
+        margin-top: 1;
+    }
+
+    #btn-dismiss {
+        min-height: 3;
+        content-align: center middle;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "dismiss_error", "Dismiss"),
+    ]
+
+    def __init__(self, service_code: str) -> None:
+        super().__init__()
+        self.service_code = service_code
+        self._has_error = False
+
+    def compose(self) -> ComposeResult:
+        with Container(id="generating-dialog"):
+            yield Static("Generating tools...", id="generating-status")
+            yield LoadingIndicator(id="generating-indicator")
+
+    async def on_mount(self) -> None:
+        """Start tool generation in background."""
+        self.run_worker(self._generate_tools(), exclusive=True)
+
+    async def _generate_tools(self) -> None:
+        """Run enable_service with sync in a thread pool."""
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(
+                None, lambda: enable_service(self.service_code, sync=True, verbose=False)
+            )
+            if success:
+                self.dismiss(True)
+            else:
+                self._show_error("Sync failed. Check your credentials.")
+        except Exception as e:
+            self._show_error(str(e))
+
+    def _show_error(self, message: str) -> None:
+        """Show an error message and allow dismissal."""
+        self._has_error = True
+        status = self.query_one("#generating-status", Static)
+        status.update(f"Failed: {message}")
+        # Hide loading indicator
+        self.query_one("#generating-indicator", LoadingIndicator).remove()
+        dialog = self.query_one("#generating-dialog", Container)
+        dialog.add_class("error")
+        # Add dismiss button in centered container
+        btn = Button("OK", variant="default", id="btn-dismiss", classes="setup-btn")
+        btn_container = Horizontal(btn, id="dismiss-container")
+        dialog.mount(btn_container)
+        btn.focus()
+        # Disable the service since sync failed
+        disable_service(self.service_code, verbose=False)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "btn-dismiss":
+            self.dismiss(False)
+
+    def action_dismiss_error(self) -> None:
+        """Dismiss on escape if there's an error."""
+        if self._has_error:
+            self.dismiss(False)
 
 
 class OAuthFlowScreen(ModalScreen[bool]):
@@ -374,8 +481,15 @@ class ServiceActionsScreen(ModalScreen[bool]):
         """Handle action selection."""
         action = getattr(event.item, "data", None)
         if action == "enable":
-            enable_service(self.service_code, sync=False, verbose=False)
-            self.dismiss(True)
+            needs_sync = self.service_code in SYNCABLE_SERVICES
+            if needs_sync:
+                self.app.push_screen(
+                    GeneratingToolsScreen(self.service_code),
+                    self._on_generate_complete,
+                )
+            else:
+                enable_service(self.service_code, sync=False, verbose=False)
+                self.dismiss(True)
         elif action == "disable":
             disable_service(self.service_code, verbose=False)
             self.dismiss(True)
@@ -387,6 +501,10 @@ class ServiceActionsScreen(ModalScreen[bool]):
     def _on_config_complete(self, result: bool) -> None:
         """Called when config screen is dismissed."""
         self.dismiss(result)
+
+    def _on_generate_complete(self, result: bool) -> None:
+        """Called when tool generation is complete."""
+        self.dismiss(True)
 
     def action_cancel(self) -> None:
         """Cancel and close."""
@@ -471,7 +589,19 @@ class SimpleApiKeyScreen(ModalScreen[bool]):
 
         save_env_vars({self.env_var: api_key})
         reload_env_and_settings()
-        enable_service(self.service_code, sync=False, verbose=False)
+        # Sync if this is a syncable service (has user-specific schema)
+        needs_sync = self.service_code in SYNCABLE_SERVICES
+        if needs_sync:
+            self.app.push_screen(
+                GeneratingToolsScreen(self.service_code),
+                self._on_generate_complete,
+            )
+        else:
+            enable_service(self.service_code, sync=False, verbose=False)
+            self.dismiss(True)
+
+    def _on_generate_complete(self, result: bool) -> None:
+        """Called when tool generation is complete."""
         self.dismiss(True)
 
     def action_cancel(self) -> None:
@@ -677,14 +807,30 @@ class OAuthCredentialsScreen(ModalScreen[bool]):
                 self._on_oauth_complete,
             )
         else:
+            self._enable_with_optional_sync()
+
+    def _enable_with_optional_sync(self) -> None:
+        """Enable service, showing tool generation screen if needed."""
+        needs_sync = self.service_code in SYNCABLE_SERVICES
+        if needs_sync:
+            self.app.push_screen(
+                GeneratingToolsScreen(self.service_code),
+                self._on_generate_complete,
+            )
+        else:
             enable_service(self.service_code, sync=False, verbose=False)
             self.dismiss(True)
 
     def _on_oauth_complete(self, result: bool) -> None:
         """Called when OAuth flow completes."""
         if result:
-            enable_service(self.service_code, sync=False, verbose=False)
-        self.dismiss(result)
+            self._enable_with_optional_sync()
+        else:
+            self.dismiss(False)
+
+    def _on_generate_complete(self, result: bool) -> None:
+        """Called when tool generation is complete."""
+        self.dismiss(True)
 
     def action_cancel(self) -> None:
         """Cancel and close."""
@@ -815,8 +961,17 @@ class ZohoCrmScreen(ModalScreen[bool]):
     def _on_oauth_complete(self, result: bool) -> None:
         """Called when OAuth flow completes."""
         if result:
-            enable_service("zohocrm", sync=False, verbose=False)
-        self.dismiss(result)
+            # Zoho is a syncable service - show generating tools screen
+            self.app.push_screen(
+                GeneratingToolsScreen("zohocrm"),
+                self._on_generate_complete,
+            )
+        else:
+            self.dismiss(False)
+
+    def _on_generate_complete(self, result: bool) -> None:
+        """Called when tool generation is complete."""
+        self.dismiss(True)
 
     def action_cancel(self) -> None:
         """Cancel and close."""
@@ -1098,6 +1253,107 @@ class MongoDbScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class TwentyScreen(ModalScreen[bool]):
+    """Configuration screen for Twenty CRM with optional self-hosted URL."""
+
+    CSS_PATH = [SETUP_CSS_PATH]
+
+    CSS = """
+    TwentyScreen {
+        align: center middle;
+    }
+
+    #twenty-dialog {
+        width: 70;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Container(id="twenty-dialog", classes="setup-dialog-wide"):
+            yield Static("Twenty CRM Configuration", classes="setup-title")
+            yield Static(
+                "Get your API key from Settings > Developers > API Keys",
+                classes="setup-hint",
+            )
+
+            with Vertical(classes="setup-field"):
+                yield Label("API Key:", classes="setup-field-label")
+                yield Input(
+                    placeholder="Enter Twenty API key...",
+                    password=True,
+                    id="api-key-input",
+                    classes="setup-field-input",
+                )
+
+            with Vertical(classes="setup-field"):
+                yield Label("API URL (optional, for self-hosted):", classes="setup-field-label")
+                yield Input(
+                    placeholder="https://api.twenty.com (leave empty for cloud)",
+                    id="api-url-input",
+                    classes="setup-field-input",
+                )
+
+            yield Static("", id="error-message", classes="setup-error")
+
+            with Horizontal(classes="setup-buttons"):
+                yield Button("Continue", variant="success", id="btn-save", classes="setup-btn")
+                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+
+    def on_mount(self) -> None:
+        """Focus the API key input."""
+        self.query_one("#api-key-input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        if event.button.id == "btn-save":
+            self._save_config()
+        elif event.button.id == "btn-cancel":
+            self.dismiss(False)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input."""
+        if event.input.id == "api-key-input":
+            self.query_one("#api-url-input", Input).focus()
+        else:
+            self._save_config()
+
+    def _save_config(self) -> None:
+        """Save the configuration and enable service with sync."""
+        api_key = self.query_one("#api-key-input", Input).value.strip()
+        api_url = self.query_one("#api-url-input", Input).value.strip()
+        error_label = self.query_one("#error-message", Static)
+
+        if not api_key:
+            error_label.update("API key is required")
+            return
+
+        error_label.update("")
+
+        env_vars = {"TWENTY_API_KEY": api_key}
+        if api_url:
+            env_vars["TWENTY_API_URL"] = api_url
+
+        save_env_vars(env_vars)
+        reload_env_and_settings()
+        # Show generating tools screen
+        self.app.push_screen(
+            GeneratingToolsScreen("twenty"),
+            self._on_generate_complete,
+        )
+
+    def _on_generate_complete(self, result: bool) -> None:
+        """Called when tool generation is complete."""
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(False)
+
+
 # ============================================================================
 # Factory function to get appropriate config screen for a service
 # ============================================================================
@@ -1108,6 +1364,8 @@ def get_service_config_screen(service_code: str, service_label: str) -> ModalScr
     # Simple API key services
     if service_code == "attio":
         return SimpleApiKeyScreen(service_code, service_label, "ATTIO_API_KEY", "sk_...")
+    elif service_code == "twenty":
+        return TwentyScreen()
     elif service_code == "apollo":
         return SimpleApiKeyScreen(
             service_code, service_label, "APOLLO_API_KEY", "Enter Apollo API key..."

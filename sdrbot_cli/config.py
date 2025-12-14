@@ -264,6 +264,10 @@ class Settings:
     # Attio Config
     attio_api_key: str | None
 
+    # Twenty Config
+    twenty_api_key: str | None
+    twenty_api_url: str | None  # For self-hosted instances
+
     # Lusha Config
     lusha_api_key: str | None
 
@@ -361,6 +365,8 @@ class Settings:
         pipedrive_client_secret = os.environ.get("PIPEDRIVE_CLIENT_SECRET")
 
         attio_api_key = os.environ.get("ATTIO_API_KEY")
+        twenty_api_key = os.environ.get("TWENTY_API_KEY")
+        twenty_api_url = os.environ.get("TWENTY_API_URL")
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
         apollo_api_key = os.environ.get("APOLLO_API_KEY")
@@ -416,6 +422,8 @@ class Settings:
             pipedrive_client_id=pipedrive_client_id,
             pipedrive_client_secret=pipedrive_client_secret,
             attio_api_key=attio_api_key,
+            twenty_api_key=twenty_api_key,
+            twenty_api_url=twenty_api_url,
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
             apollo_api_key=apollo_api_key,
@@ -469,6 +477,8 @@ class Settings:
         self.pipedrive_client_id = new_settings.pipedrive_client_id
         self.pipedrive_client_secret = new_settings.pipedrive_client_secret
         self.attio_api_key = new_settings.attio_api_key
+        self.twenty_api_key = new_settings.twenty_api_key
+        self.twenty_api_url = new_settings.twenty_api_url
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
         self.apollo_api_key = new_settings.apollo_api_key
@@ -559,6 +569,11 @@ class Settings:
         return self.attio_api_key is not None
 
     @property
+    def has_twenty(self) -> bool:
+        """Check if Twenty API key is configured."""
+        return self.twenty_api_key is not None
+
+    @property
     def has_lusha(self) -> bool:
         """Check if Lusha API key is configured."""
         return self.lusha_api_key is not None
@@ -616,6 +631,7 @@ class Settings:
             "hubspot": self.has_hubspot,
             "salesforce": self.has_salesforce,
             "attio": self.has_attio,
+            "twenty": self.has_twenty,
             "zohocrm": self.has_zohocrm,
             "pipedrive": self.has_pipedrive,
             "lusha": self.has_lusha,

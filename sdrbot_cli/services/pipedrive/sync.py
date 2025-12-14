@@ -198,6 +198,9 @@ def sync_schema() -> dict[str, Any]:
             # Skip objects we can't access
             continue
 
+    if not objects_schema:
+        raise RuntimeError("Could not access any Pipedrive objects. Check your API credentials.")
+
     # Generate the tools code
     generated_code = _generate_tools_code(objects_schema)
 
