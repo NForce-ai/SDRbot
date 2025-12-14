@@ -39,8 +39,13 @@ def sync_schema() -> dict[str, Any]:
         Dict with keys:
         - schema_hash: Hash of the schema for change detection
         - objects: List of object names that were synced
+
+    Raises:
+        RuntimeError: If authentication fails or no objects can be accessed.
     """
     hs = get_client()
+    if hs is None:
+        raise RuntimeError("HubSpot authentication failed. Check your credentials.")
 
     # 1. Discover all object types (standard + custom)
     all_objects = _discover_objects(hs)
@@ -55,6 +60,9 @@ def sync_schema() -> dict[str, Any]:
         except Exception:
             # Skip objects we can't access (permissions, etc.)
             continue
+
+    if not objects_schema:
+        raise RuntimeError("Could not access any HubSpot objects. Check your API permissions.")
 
     # 3. Generate the tools code
     generated_code = _generate_tools_code(objects_schema)

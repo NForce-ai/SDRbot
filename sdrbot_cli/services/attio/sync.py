@@ -23,8 +23,14 @@ def sync_schema() -> dict[str, Any]:
         Dict with keys:
         - schema_hash: Hash of the schema for change detection
         - objects: List of object slugs that were synced
+
+    Raises:
+        RuntimeError: If authentication fails or no objects can be accessed.
     """
-    client = AttioClient()
+    try:
+        client = AttioClient()
+    except Exception as e:
+        raise RuntimeError(f"Attio authentication failed: {e}") from e
 
     # 1. Discover all object types
     all_objects = _discover_objects(client)
@@ -42,6 +48,9 @@ def sync_schema() -> dict[str, Any]:
                 }
         except Exception:
             continue
+
+    if not objects_schema:
+        raise RuntimeError("Could not access any Attio objects. Check your API key.")
 
     # 3. Generate the tools code
     generated_code = _generate_tools_code(objects_schema)

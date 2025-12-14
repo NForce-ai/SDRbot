@@ -19,6 +19,7 @@ class TestServiceConstants:
         assert "hubspot" in SERVICES
         assert "salesforce" in SERVICES
         assert "attio" in SERVICES
+        assert "twenty" in SERVICES
         assert "lusha" in SERVICES
         assert "hunter" in SERVICES
 
@@ -31,6 +32,7 @@ class TestServiceConstants:
         assert "hubspot" in SYNCABLE_SERVICES
         assert "salesforce" in SYNCABLE_SERVICES
         assert "attio" in SYNCABLE_SERVICES
+        assert "twenty" in SYNCABLE_SERVICES
 
         # These should NOT be syncable (static APIs)
         assert "hunter" not in SYNCABLE_SERVICES

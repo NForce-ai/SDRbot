@@ -15,6 +15,7 @@ SERVICES = [
     "pipedrive",
     "zohocrm",
     "attio",
+    "twenty",
     "apollo",
     "hunter",
     "lusha",
@@ -31,7 +32,7 @@ SERVICES = [
 TRACING_SERVICES = ["langsmith", "langfuse", "opik"]
 
 # Services that require schema sync (have user-specific schemas)
-SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio", "zohocrm", "pipedrive"]
+SYNCABLE_SERVICES = ["hubspot", "salesforce", "attio", "twenty", "zohocrm", "pipedrive"]
 
 
 def sync_service(service_name: str) -> dict:

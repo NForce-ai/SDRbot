@@ -20,6 +20,7 @@ SERVICE_CATEGORIES = {
             ("pipedrive", "Pipedrive"),
             ("zohocrm", "Zoho CRM"),
             ("attio", "Attio"),
+            ("twenty", "Twenty"),
         ],
     },
     "prospecting": {
@@ -60,6 +61,8 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         )
     elif service_name == "attio":
         configured = bool(os.getenv("ATTIO_API_KEY"))
+    elif service_name == "twenty":
+        configured = bool(os.getenv("TWENTY_API_KEY"))
     elif service_name == "zohocrm":
         configured = bool(
             os.getenv("ZOHO_CLIENT_ID")
@@ -338,6 +341,21 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
         )
         if attio_key:
             env_vars["ATTIO_API_KEY"] = attio_key
+
+    elif service_name == "twenty":
+        console.print(
+            f"[{COLORS['primary']}]--- Twenty CRM Configuration ---[/{COLORS['primary']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]Get your API key from Settings > Developers > API Keys in Twenty[/{COLORS['dim']}]"
+        )
+        twenty_key = await get_or_prompt(
+            "TWENTY_API_KEY", "Twenty API Key", is_secret=True, required=True, force=force
+        )
+        if twenty_key:
+            env_vars["TWENTY_API_KEY"] = twenty_key
+
+        # Optional: For self-hosted, set TWENTY_API_URL in .env manually
 
     elif service_name == "zohocrm":
         console.print(f"[{COLORS['primary']}]--- Zoho CRM Configuration ---[/{COLORS['primary']}]")

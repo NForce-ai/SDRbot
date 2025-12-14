@@ -111,6 +111,49 @@ def patch_mysql_conn(mock_mysql_conn):
 
 
 @pytest.fixture
+def mock_twenty_client():
+    """Create a mock Twenty client for unit tests."""
+    mock_client = MagicMock()
+
+    # Mock common API responses
+    mock_client.get.return_value = {"data": []}
+    mock_client.post.return_value = {"data": {"id": "mock-id"}}
+    mock_client.patch.return_value = {"data": {}}
+    mock_client.delete.return_value = {}
+
+    return mock_client
+
+
+@pytest.fixture
+def patch_twenty_client(mock_twenty_client):
+    """Patch TwentyClient to return mock."""
+    import sdrbot_cli.services.twenty.tools as tools_module
+
+    original_client = getattr(tools_module, "_twenty_client", None)
+    tools_module._twenty_client = None
+
+    with patch("sdrbot_cli.services.twenty.tools.TwentyClient", return_value=mock_twenty_client):
+        yield mock_twenty_client
+
+    tools_module._twenty_client = original_client
+
+
+@pytest.fixture
+def real_twenty_client():
+    """Get real Twenty client for integration tests.
+
+    Skip if credentials not available.
+    """
+    api_key = os.getenv("TWENTY_API_KEY")
+    if not api_key:
+        pytest.skip("TWENTY_API_KEY not set - skipping integration test")
+
+    from sdrbot_cli.auth.twenty import TwentyClient
+
+    return TwentyClient(api_key=api_key)
+
+
+@pytest.fixture
 def patch_mongo_db():
     """Patch get_mongo_db to return a mock database object."""
     mock_db = MagicMock()
