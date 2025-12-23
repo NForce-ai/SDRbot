@@ -5,12 +5,62 @@ import sys
 from dotenv import load_dotenv
 
 from sdrbot_cli.config import COLORS, console, load_model_config
+from sdrbot_cli.services.registry import is_privileged_mode, set_privileged_mode
 
 from .mcp import get_mcp_status, run_mcp_wizard
 from .menu import CancelledError, show_menu
 from .models import get_model_status, setup_models
 from .services import get_services_status
 from .tracing import get_tracing_status, setup_tracing
+
+
+def get_privileged_status() -> str:
+    """Get status string for privileged mode."""
+    if is_privileged_mode():
+        return "[yellow]! Enabled[/yellow]"
+    return "[dim]• Disabled[/dim]"
+
+
+async def toggle_privileged_mode() -> None:
+    """Toggle privileged mode on/off for this session."""
+    current = is_privileged_mode()
+
+    if current:
+        # Disabling
+        set_privileged_mode(False)
+        console.print("\n[green]✓ Privileged mode disabled[/green]")
+        console.print(
+            f"[{COLORS['dim']}]Privileged tools are no longer available.[/{COLORS['dim']}]"
+        )
+    else:
+        # Enabling - show warning
+        console.print("\n[yellow][bold]Warning: Privileged Mode[/bold][/yellow]")
+        console.print(
+            f"[{COLORS['dim']}]Privileged mode enables admin tools for:[/{COLORS['dim']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]  • Schema management (create/modify objects, fields)[/{COLORS['dim']}]"
+        )
+        console.print(f"[{COLORS['dim']}]  • CRM migrations[/{COLORS['dim']}]")
+        console.print(
+            f"[{COLORS['dim']}]This setting only lasts for the current session.[/{COLORS['dim']}]"
+        )
+        console.print()
+
+        confirm = await show_menu(
+            [
+                ("enable", "Enable Privileged Mode", ""),
+                ("cancel", "Cancel", ""),
+            ],
+            title="Confirm",
+        )
+
+        if confirm == "enable":
+            set_privileged_mode(True)
+            console.print("\n[yellow]! Privileged mode enabled[/yellow]")
+            console.print(f"[{COLORS['dim']}]Privileged tools are now available.[/{COLORS['dim']}]")
+        else:
+            console.print(f"\n[{COLORS['dim']}]Cancelled.[/{COLORS['dim']}]")
 
 
 async def run_setup_wizard(force: bool = False, allow_exit: bool = True) -> None:
@@ -66,6 +116,7 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
         services_status = get_services_status()
         mcp_status = get_mcp_status()
         tracing_status = get_tracing_status()
+        privileged_status = get_privileged_status()
 
         # Build menu items
         menu_items = [
@@ -73,6 +124,8 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
             ("services", "Services", services_status),
             ("mcp", "MCP Servers", mcp_status),
             ("tracing", "Tracing", tracing_status),
+            ("---", "──────────────", ""),
+            ("privileged", "Privileged Mode", privileged_status),
             ("---", "──────────────", ""),
             ("done", "Done / Continue", ""),
         ]
@@ -130,6 +183,9 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
 
         elif selected == "tracing":
             await setup_tracing()
+
+        elif selected == "privileged":
+            await toggle_privileged_mode()
 
     console.print(f"\n[{COLORS['primary']}][bold]Setup Complete![/bold][/]")
     console.print(f"[{COLORS['dim']}]You can now run SDRbot.[/{COLORS['dim']}]\n")

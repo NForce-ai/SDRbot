@@ -108,6 +108,10 @@
     color: $text-muted;
 }
 
+.status-warning {
+    color: $warning;
+}
+
 /* Two-column list item layout */
 .setup-list-item {
     width: 100%;
