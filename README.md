@@ -656,27 +656,31 @@ Or edit the file directly at `./agents/{name}/memory.md`.
 
 ---
 
-## 🎯 Custom Skills
+## 🎯 Skills
 
-Skills are reusable workflows or scripts that extend the agent's capabilities. They live in the `./skills/` folder.
+Skills are reusable instructions that extend the agent's capabilities. SDRbot loads skills from three locations (later overrides earlier):
+
+| Source | Location | Purpose |
+|--------|----------|---------|
+| **Built-in** | Shipped with SDRbot | Core skills like CRM migration |
+| **Agent** | `./agents/{agent}/skills/` | Agent-specific skills |
+| **User** | `./skills/` | Project-wide custom skills |
 
 ### Managing Skills
 
 Use the `/skills` command to manage skills directly within the app:
 
+- **View** all available skills (built-in + user)
 - **Create** new skills with a template
 - **Edit** skill instructions with the built-in editor
 - **Delete** skills you no longer need
 
 You can also click on the skills count in the status bar to open the skills manager.
 
-### Skill Structure
+### Skill Format
 
-Each skill is a folder containing:
-- `SKILL.md` - Instructions and description for the agent (with YAML frontmatter)
-- Optional scripts, templates, or data files
+Each skill is a `.md` file with YAML frontmatter:
 
-Example `SKILL.md`:
 ```markdown
 ---
 name: web-research
@@ -690,7 +694,15 @@ description: Structured approach to conducting thorough web research
 ...
 ```
 
-The agent can invoke skills during conversations to perform specialized tasks.
+### Built-in Skills
+
+SDRbot ships with these built-in skills:
+
+- **crm-migration** - Efficiently migrate data between CRMs using Python scripts with batching and pagination
+
+### Overriding Built-in Skills
+
+Create a skill with the same name in `./skills/` to override a built-in skill with your own version.
 
 ---
 
