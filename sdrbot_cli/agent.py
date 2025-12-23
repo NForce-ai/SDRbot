@@ -515,4 +515,9 @@ def create_agent_with_config(
         )
     )
 
-    return agent, composite_backend, len(tools), skill_count
+    # Tool count includes deepagents built-in tools (9):
+    # write_todos, ls, read_file, write_file, edit_file, glob, grep, execute, task
+    DEEPAGENTS_BUILTIN_TOOLS = 9
+    tool_count = len(tools) + DEEPAGENTS_BUILTIN_TOOLS
+
+    return agent, composite_backend, tool_count, skill_count
