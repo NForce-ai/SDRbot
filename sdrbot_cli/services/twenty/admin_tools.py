@@ -309,15 +309,26 @@ def twenty_admin_create_field(
         object_id: The object metadata ID to add the field to.
         name: API name for the field (camelCase, e.g., "leadScore").
         label: Display label (e.g., "Lead Score").
-        field_type: Field type. Options: TEXT, NUMBER, BOOLEAN, DATE, DATE_TIME,
-                    EMAIL, PHONE, LINK, CURRENCY, RATING, SELECT, MULTI_SELECT,
-                    RELATION, UUID, RAW_JSON, RICH_TEXT.
+        field_type: Field type. Valid types:
+                    - Basic: UUID, TEXT, BOOLEAN, NUMBER, NUMERIC, POSITION
+                    - Date/Time: DATE, DATE_TIME
+                    - Contact: PHONES, EMAILS, LINKS (note: plural forms!)
+                    - Monetary: CURRENCY
+                    - Name: FULL_NAME
+                    - Rating: RATING (1-5 scale)
+                    - Selection: SELECT, MULTI_SELECT (require options)
+                    - Complex: ADDRESS, ACTOR, ARRAY, RAW_JSON, RICH_TEXT, TS_VECTOR
+                    - Relations: RELATION
         description: Optional field description.
         icon: Optional icon name.
         is_nullable: Whether field can be empty (default True).
         default_value: Default value as JSON string.
-        options: For SELECT/MULTI_SELECT: JSON array of options, e.g.,
-                 '[{"value": "hot", "label": "Hot", "color": "red"}]'
+        options: For SELECT/MULTI_SELECT: JSON array of options.
+                 IMPORTANT: option "value" must be SCREAMING_SNAKE_CASE matching
+                 pattern ^[A-Z0-9]+_[A-Z0-9]+$. Example:
+                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green"}]'
+                 Valid colors: green, turquoise, sky, blue, purple, pink, red,
+                 orange, yellow, gray.
 
     Returns:
         Success message with the new field ID.
@@ -380,6 +391,9 @@ def twenty_admin_update_field(
         is_nullable: Whether field can be empty.
         default_value: New default value as JSON string.
         options: For SELECT/MULTI_SELECT: JSON array of options.
+                 Option "value" must be SCREAMING_SNAKE_CASE matching
+                 pattern ^[A-Z0-9]+_[A-Z0-9]+$. Example:
+                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green"}]'
 
     Returns:
         Success message confirming the update.
@@ -951,7 +965,7 @@ def twenty_admin_update_view_sort(
         if not direction:
             return "Error: direction must be provided to update."
 
-        client.patch(f"/viewSorts/{view_sort_id}", json={"direction": direction})
+        client.patch(f"/metadata/viewSorts/{view_sort_id}", json={"direction": direction})
 
         return f"Successfully updated view sort {view_sort_id}"
     except Exception as e:
