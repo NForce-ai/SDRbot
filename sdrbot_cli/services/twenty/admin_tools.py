@@ -55,17 +55,10 @@ def twenty_admin_list_objects(limit: int = 50) -> str:
     """
     client = _get_admin_client()
     try:
-        # Admin endpoints use /metadata prefix
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
+        # Metadata endpoints are at /rest/objects, /rest/fields, etc.
+        data = client.get("/metadata/objects")
 
-        url = f"{base}/rest/metadata/objects"
-        response = client.session.get(url, params={"limit": limit})
-        response.raise_for_status()
-        data = response.json()
-
-        objects = data.get("data", {}).get("objects", [])
+        objects = data.get("data", {}).get("objects", []) if isinstance(data, dict) else data
         if not objects:
             return "No objects found."
 
@@ -100,16 +93,13 @@ def twenty_admin_get_object(object_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
+        data = client.get(f"/metadata/objects/{object_id}")
 
-        url = f"{base}/rest/metadata/objects/{object_id}"
-        response = client.session.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        obj = data.get("data", {}).get("object", {})
+        obj = (
+            data.get("data", {}).get("object", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         return f"Object {object_id}:\n" + json.dumps(obj, indent=2)
     except Exception as e:
         return f"Error getting object: {str(e)}"
@@ -139,10 +129,6 @@ def twenty_admin_create_object(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "nameSingular": name_singular,
             "namePlural": name_plural,
@@ -154,12 +140,13 @@ def twenty_admin_create_object(
         if icon:
             payload["icon"] = icon
 
-        url = f"{base}/rest/metadata/objects"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/objects", json=payload)
 
-        obj = data.get("data", {}).get("object", {})
+        obj = (
+            data.get("data", {}).get("object", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         obj_id = obj.get("id", "unknown")
 
         return f"Successfully created object '{label_singular}' (ID: {obj_id})"
@@ -191,10 +178,6 @@ def twenty_admin_update_object(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if is_active is not None:
             payload["isActive"] = is_active
@@ -210,10 +193,7 @@ def twenty_admin_update_object(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/objects/{object_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/objects/{object_id}", json=payload)
         return f"Successfully updated object {object_id}"
     except Exception as e:
         return f"Error updating object: {str(e)}"
@@ -233,13 +213,7 @@ def twenty_admin_delete_object(object_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/objects/{object_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/objects/{object_id}")
 
         return f"Successfully deleted object {object_id}"
     except Exception as e:
@@ -264,20 +238,13 @@ def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> 
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         params = {"limit": limit}
         if object_id:
             params["filter"] = f'objectMetadataId[eq]:"{object_id}"'
 
-        url = f"{base}/rest/metadata/fields"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/fields")
 
-        fields = data.get("data", {}).get("fields", [])
+        fields = data.get("data", {}).get("fields", []) if isinstance(data, dict) else data
         if not fields:
             return "No fields found."
 
@@ -312,16 +279,13 @@ def twenty_admin_get_field(field_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
+        data = client.get(f"/metadata/fields/{field_id}")
 
-        url = f"{base}/rest/metadata/fields/{field_id}"
-        response = client.session.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        field = data.get("data", {}).get("field", {})
+        field = (
+            data.get("data", {}).get("field", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         return f"Field {field_id}:\n" + json.dumps(field, indent=2)
     except Exception as e:
         return f"Error getting field: {str(e)}"
@@ -360,10 +324,6 @@ def twenty_admin_create_field(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "objectMetadataId": object_id,
             "name": name,
@@ -386,12 +346,13 @@ def twenty_admin_create_field(
             except json.JSONDecodeError:
                 return "Error: 'options' must be a valid JSON array"
 
-        url = f"{base}/rest/metadata/fields"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/fields", json=payload)
 
-        field = data.get("data", {}).get("field", {})
+        field = (
+            data.get("data", {}).get("field", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         field_id = field.get("id", "unknown")
 
         return f"Successfully created field '{label}' (ID: {field_id})"
@@ -425,10 +386,6 @@ def twenty_admin_update_field(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if label:
             payload["label"] = label
@@ -452,10 +409,7 @@ def twenty_admin_update_field(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/fields/{field_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/fields/{field_id}", json=payload)
         return f"Successfully updated field {field_id}"
     except Exception as e:
         return f"Error updating field: {str(e)}"
@@ -475,13 +429,7 @@ def twenty_admin_delete_field(field_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/fields/{field_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/fields/{field_id}")
 
         return f"Successfully deleted field {field_id}"
     except Exception as e:
@@ -506,20 +454,13 @@ def twenty_admin_list_views(object_id: str | None = None, limit: int = 50) -> st
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         params = {"limit": limit}
         if object_id:
             params["filter"] = f'objectMetadataId[eq]:"{object_id}"'
 
-        url = f"{base}/rest/metadata/views"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/views")
 
-        views = data.get("data", {}).get("views", [])
+        views = data.get("data", {}).get("views", []) if isinstance(data, dict) else data
         if not views:
             return "No views found."
 
@@ -552,16 +493,13 @@ def twenty_admin_get_view(view_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
+        data = client.get(f"/metadata/views/{view_id}")
 
-        url = f"{base}/rest/metadata/views/{view_id}"
-        response = client.session.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        view = data.get("data", {}).get("view", {})
+        view = (
+            data.get("data", {}).get("view", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         return f"View {view_id}:\n" + json.dumps(view, indent=2)
     except Exception as e:
         return f"Error getting view: {str(e)}"
@@ -589,10 +527,6 @@ def twenty_admin_create_view(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "objectMetadataId": object_id,
             "name": name,
@@ -602,12 +536,13 @@ def twenty_admin_create_view(
         if icon:
             payload["icon"] = icon
 
-        url = f"{base}/rest/metadata/views"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/views", json=payload)
 
-        view = data.get("data", {}).get("view", {})
+        view = (
+            data.get("data", {}).get("view", {})
+            if isinstance(data, dict) and "data" in data
+            else data
+        )
         view_id = view.get("id", "unknown")
 
         return f"Successfully created view '{name}' (ID: {view_id})"
@@ -637,10 +572,6 @@ def twenty_admin_update_view(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if name:
             payload["name"] = name
@@ -654,10 +585,7 @@ def twenty_admin_update_view(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/views/{view_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/views/{view_id}", json=payload)
         return f"Successfully updated view {view_id}"
     except Exception as e:
         return f"Error updating view: {str(e)}"
@@ -675,13 +603,7 @@ def twenty_admin_delete_view(view_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/views/{view_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/views/{view_id}")
 
         return f"Successfully deleted view {view_id}"
     except Exception as e:
@@ -706,19 +628,7 @@ def twenty_admin_list_view_fields(view_id: str, limit: int = 50) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        params = {
-            "limit": limit,
-            "filter": f'viewId[eq]:"{view_id}"',
-        }
-
-        url = f"{base}/rest/metadata/viewFields"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/viewFields")
 
         fields = data.get("data", {}).get("viewFields", [])
         if not fields:
@@ -763,10 +673,6 @@ def twenty_admin_create_view_field(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "viewId": view_id,
             "fieldMetadataId": field_metadata_id,
@@ -777,10 +683,7 @@ def twenty_admin_create_view_field(
         if size is not None:
             payload["size"] = size
 
-        url = f"{base}/rest/metadata/viewFields"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/viewFields", json=payload)
 
         vf = data.get("data", {}).get("viewField", {})
         vf_id = vf.get("id", "unknown")
@@ -810,10 +713,6 @@ def twenty_admin_update_view_field(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if is_visible is not None:
             payload["isVisible"] = is_visible
@@ -825,10 +724,7 @@ def twenty_admin_update_view_field(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/viewFields/{view_field_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/viewFields/{view_field_id}", json=payload)
         return f"Successfully updated view field {view_field_id}"
     except Exception as e:
         return f"Error updating view field: {str(e)}"
@@ -846,13 +742,7 @@ def twenty_admin_delete_view_field(view_field_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/viewFields/{view_field_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/viewFields/{view_field_id}")
 
         return f"Successfully removed field from view {view_field_id}"
     except Exception as e:
@@ -877,19 +767,7 @@ def twenty_admin_list_view_filters(view_id: str, limit: int = 50) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        params = {
-            "limit": limit,
-            "filter": f'viewId[eq]:"{view_id}"',
-        }
-
-        url = f"{base}/rest/metadata/viewFilters"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/viewFilters")
 
         filters = data.get("data", {}).get("viewFilters", [])
         if not filters:
@@ -921,10 +799,6 @@ def twenty_admin_create_view_filter(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "viewId": view_id,
             "fieldMetadataId": field_metadata_id,
@@ -932,10 +806,7 @@ def twenty_admin_create_view_filter(
             "value": value,
         }
 
-        url = f"{base}/rest/metadata/viewFilters"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/viewFilters", json=payload)
 
         vf = data.get("data", {}).get("viewFilter", {})
         vf_id = vf.get("id", "unknown")
@@ -963,10 +834,6 @@ def twenty_admin_update_view_filter(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if operand:
             payload["operand"] = operand
@@ -976,10 +843,7 @@ def twenty_admin_update_view_filter(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/viewFilters/{view_filter_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/viewFilters/{view_filter_id}", json=payload)
         return f"Successfully updated view filter {view_filter_id}"
     except Exception as e:
         return f"Error updating view filter: {str(e)}"
@@ -997,13 +861,7 @@ def twenty_admin_delete_view_filter(view_filter_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/viewFilters/{view_filter_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/viewFilters/{view_filter_id}")
 
         return f"Successfully deleted view filter {view_filter_id}"
     except Exception as e:
@@ -1028,19 +886,7 @@ def twenty_admin_list_view_sorts(view_id: str, limit: int = 50) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        params = {
-            "limit": limit,
-            "filter": f'viewId[eq]:"{view_id}"',
-        }
-
-        url = f"{base}/rest/metadata/viewSorts"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/viewSorts")
 
         sorts = data.get("data", {}).get("viewSorts", [])
         if not sorts:
@@ -1070,20 +916,13 @@ def twenty_admin_create_view_sort(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "viewId": view_id,
             "fieldMetadataId": field_metadata_id,
             "direction": direction,
         }
 
-        url = f"{base}/rest/metadata/viewSorts"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/viewSorts", json=payload)
 
         vs = data.get("data", {}).get("viewSort", {})
         vs_id = vs.get("id", "unknown")
@@ -1109,16 +948,10 @@ def twenty_admin_update_view_sort(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         if not direction:
             return "Error: direction must be provided to update."
 
-        url = f"{base}/rest/metadata/viewSorts/{view_sort_id}"
-        response = client.session.patch(url, json={"direction": direction})
-        response.raise_for_status()
+        client.patch(f"/viewSorts/{view_sort_id}", json={"direction": direction})
 
         return f"Successfully updated view sort {view_sort_id}"
     except Exception as e:
@@ -1137,13 +970,7 @@ def twenty_admin_delete_view_sort(view_sort_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/viewSorts/{view_sort_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/viewSorts/{view_sort_id}")
 
         return f"Successfully deleted view sort {view_sort_id}"
     except Exception as e:
@@ -1168,19 +995,7 @@ def twenty_admin_list_view_groups(view_id: str, limit: int = 50) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        params = {
-            "limit": limit,
-            "filter": f'viewId[eq]:"{view_id}"',
-        }
-
-        url = f"{base}/rest/metadata/viewGroups"
-        response = client.session.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = client.get("/metadata/viewGroups")
 
         groups = data.get("data", {}).get("viewGroups", [])
         if not groups:
@@ -1211,10 +1026,6 @@ def twenty_admin_create_view_group(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {
             "viewId": view_id,
             "fieldMetadataId": field_metadata_id,
@@ -1222,10 +1033,7 @@ def twenty_admin_create_view_group(
             "position": position,
         }
 
-        url = f"{base}/rest/metadata/viewGroups"
-        response = client.session.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = client.post("/metadata/viewGroups", json=payload)
 
         vg = data.get("data", {}).get("viewGroup", {})
         vg_id = vg.get("id", "unknown")
@@ -1253,10 +1061,6 @@ def twenty_admin_update_view_group(
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
         payload = {}
         if is_visible is not None:
             payload["isVisible"] = is_visible
@@ -1266,10 +1070,7 @@ def twenty_admin_update_view_group(
         if not payload:
             return "Error: At least one field must be provided to update."
 
-        url = f"{base}/rest/metadata/viewGroups/{view_group_id}"
-        response = client.session.patch(url, json=payload)
-        response.raise_for_status()
-
+        client.patch(f"/metadata/viewGroups/{view_group_id}", json=payload)
         return f"Successfully updated view group {view_group_id}"
     except Exception as e:
         return f"Error updating view group: {str(e)}"
@@ -1287,13 +1088,7 @@ def twenty_admin_delete_view_group(view_group_id: str) -> str:
     """
     client = _get_admin_client()
     try:
-        base = client.base_url.rstrip("/")
-        if base.endswith("/rest"):
-            base = base[:-5]
-
-        url = f"{base}/rest/metadata/viewGroups/{view_group_id}"
-        response = client.session.delete(url)
-        response.raise_for_status()
+        client.delete(f"/metadata/viewGroups/{view_group_id}")
 
         return f"Successfully deleted view group {view_group_id}"
     except Exception as e:
