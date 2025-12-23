@@ -141,8 +141,8 @@ cython_debug/
 .DS_Store
 
 # SDRbot local data (agents, services config, generated tools, agent files)
-agents/
-skills/
-files/
+/agents/
+/skills/
+/files/
 generated/
 .sdrbot/
