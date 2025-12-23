@@ -1,9 +1,53 @@
 """Custom tools for the CLI agent."""
 
+from collections.abc import Callable
 from typing import Any
 
 import requests
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as langchain_tool
 from markdownify import markdownify
+
+PRIVILEGED_METADATA_KEY = "privileged"
+
+
+def privileged_tool(func: Callable) -> BaseTool:
+    """Decorator to create a privileged tool.
+
+    Privileged tools are only available when privileged mode is enabled.
+    They include schema/metadata management and code execution capabilities.
+
+    Usage:
+        @privileged_tool
+        def my_admin_tool(arg: str) -> str:
+            '''Tool docstring.'''
+            return "result"
+
+    The resulting tool will have metadata["privileged"] = True,
+    which is checked during tool loading to filter out privileged tools
+    when privileged mode is disabled.
+    """
+    # Create the tool using langchain's @tool decorator
+    lc_tool = langchain_tool(func)
+    # Mark it as privileged using the metadata field
+    if lc_tool.metadata is None:
+        lc_tool.metadata = {}
+    lc_tool.metadata[PRIVILEGED_METADATA_KEY] = True
+    return lc_tool
+
+
+def is_privileged_tool(tool: BaseTool) -> bool:
+    """Check if a tool is marked as privileged.
+
+    Args:
+        tool: A LangChain tool instance.
+
+    Returns:
+        True if the tool is privileged, False otherwise.
+    """
+    if tool.metadata is None:
+        return False
+    return tool.metadata.get(PRIVILEGED_METADATA_KEY, False)
 
 
 def http_request(
