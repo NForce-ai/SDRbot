@@ -21,6 +21,7 @@ MODEL_CHOICES = {
         ("gpt-5-mini", "ChatGPT 5 Mini"),
         ("gpt-5", "ChatGPT 5"),
         ("gpt-5.1", "ChatGPT 5.1"),
+        ("gpt-5.2-2025-12-11", "ChatGPT 5.2"),
     ],
     "anthropic": [
         ("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5"),
