@@ -80,6 +80,7 @@ class FileEditorScreen(Screen[dict | None]):
         create_if_missing: bool = False,
         default_content: str = "",
         allow_save_as: bool = False,
+        read_only: bool = False,
         *args,
         **kwargs,
     ) -> None:
@@ -89,6 +90,7 @@ class FileEditorScreen(Screen[dict | None]):
         self.create_if_missing = create_if_missing
         self.default_content = default_content
         self.allow_save_as = allow_save_as
+        self.read_only = read_only
         self.original_content = ""
         self._has_unsaved_changes = False
 
@@ -97,13 +99,22 @@ class FileEditorScreen(Screen[dict | None]):
             with Horizontal(id="editor-header"):
                 yield Static(self.title_text, id="editor-title")
                 yield Static("", id="editor-status")
-            yield TextArea(id="editor-textarea")
-            yield Static("Ctrl+S Save • Esc Cancel", id="editor-hint")
+            yield TextArea(id="editor-textarea", read_only=self.read_only)
+            if self.read_only:
+                hint = "Esc Close"
+                if self.allow_save_as:
+                    hint = "Esc Close • Save As to create your own copy"
+            else:
+                hint = "Ctrl+S Save • Esc Cancel"
+            yield Static(hint, id="editor-hint")
             with Horizontal(id="editor-buttons"):
-                yield Button("Save", variant="success", id="btn-save")
+                if not self.read_only:
+                    yield Button("Save", variant="success", id="btn-save")
                 if self.allow_save_as:
                     yield Button("Save As", variant="primary", id="btn-save-as")
-                yield Button("Cancel", variant="default", id="btn-cancel")
+                yield Button(
+                    "Close" if self.read_only else "Cancel", variant="default", id="btn-cancel"
+                )
 
     def on_mount(self) -> None:
         """Load file content on mount."""
@@ -137,11 +148,12 @@ class FileEditorScreen(Screen[dict | None]):
 
     def action_save(self) -> None:
         """Save the file and dismiss."""
-        self._save_file()
+        if not self.read_only:
+            self._save_file()
 
     def action_cancel(self) -> None:
         """Cancel editing, warn if unsaved changes."""
-        if self._has_unsaved_changes:
+        if self._has_unsaved_changes and not self.read_only:
             self.app.push_screen(
                 ConfirmDiscardScreen(),
                 self._on_confirm_discard,

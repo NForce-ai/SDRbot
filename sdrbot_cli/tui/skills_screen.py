@@ -148,18 +148,16 @@ class SkillsManagementScreen(ModalScreen[bool | None]):
         list_view = self.query_one("#skills-list", ListView)
         list_view.clear()
 
-        # Get skills directories
-        user_skills_dir = settings.get_skills_dir()
-        project_skills_dir = settings.get_project_skills_dir()
-
-        # Load all skills
+        # Load built-in + user skills (no agent skills in this screen)
         self._skills = list_skills(
-            user_skills_dir=user_skills_dir,
-            project_skills_dir=project_skills_dir,
+            user_skills_dir=settings.get_skills_dir(),
         )
 
         for skill in sorted(self._skills, key=lambda s: s["name"]):
             display_name = _get_skill_display_name(skill["name"])
+            # Mark built-in skills
+            if skill["source"] == "builtin":
+                display_name = f"{display_name} (built-in)"
             item = ListItem(
                 Static(display_name, classes="setup-list-item-label"),
             )
@@ -185,10 +183,15 @@ class SkillsManagementScreen(ModalScreen[bool | None]):
             self._create_new_skill()
         elif data.get("type") == "skill":
             skill = data.get("skill")
-            self.app.push_screen(
-                SkillActionsScreen(skill),
-                self._on_action_complete,
-            )
+            if skill["source"] == "builtin":
+                # Built-in skills are read-only, open viewer directly
+                self._view_skill(skill)
+            else:
+                # User skills can be edited/deleted
+                self.app.push_screen(
+                    SkillActionsScreen(skill),
+                    self._on_action_complete,
+                )
 
     def _on_action_complete(self, result: dict | None) -> None:
         """Handle action screen result."""
@@ -225,6 +228,33 @@ class SkillsManagementScreen(ModalScreen[bool | None]):
             self._refresh_list()
             # Open editor for the new skill
             self._edit_skill_by_path(skill_path, skill_name)
+
+    def _view_skill(self, skill: SkillMetadata) -> None:
+        """Open the file viewer for a built-in skill (read-only with save-as option)."""
+        from sdrbot_cli.tui.file_editor_screen import FileEditorScreen
+
+        skill_path = Path(skill["path"])
+        display_name = _get_skill_display_name(skill["name"])
+        self.app.push_screen(
+            FileEditorScreen(
+                file_path=skill_path,
+                title=f"{display_name} (built-in)",
+                read_only=True,
+                allow_save_as=True,
+            ),
+            self._on_view_complete,
+        )
+
+    def _on_view_complete(self, result: dict | None) -> None:
+        """Handle view completion (save-as to create user copy)."""
+        if result and result.get("action") == "save_as":
+            content = result.get("content", "")
+            self.app.push_screen(
+                CreateSkillScreen(),
+                lambda name: self._on_save_as_complete(name, content),
+            )
+        else:
+            self._refresh_list()
 
     def _edit_skill(self, skill: SkillMetadata) -> None:
         """Open the file editor for a skill."""
