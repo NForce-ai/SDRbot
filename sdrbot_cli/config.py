@@ -767,19 +767,16 @@ class Settings:
         """
         return Path.cwd() / "skills"
 
-    def get_user_skills_dir(self, agent: str | None = None) -> Path:
-        """Get user skills directory path.
-
-        For SDRbot, user skills are stored in ./skills/ (same as shared skills).
-        The agent parameter is accepted for API compatibility but ignored.
+    def get_agent_skills_dir(self, agent: str) -> Path:
+        """Get agent-specific skills directory path.
 
         Args:
-            agent: Agent identifier (ignored, kept for API compatibility)
+            agent: Agent name.
 
         Returns:
-            Path to ./skills/
+            Path to ./agents/{agent}/skills/
         """
-        return self.get_skills_dir()
+        return self.get_agent_dir(agent) / "skills"
 
     def ensure_skills_dir(self) -> Path:
         """Ensure shared skills directory exists.
@@ -792,26 +789,12 @@ class Settings:
         return skills_dir
 
     def get_project_skills_dir(self) -> Path | None:
-        """Get project-level skills directory path.
-
-        Returns:
-            Path to {project_root}/.deepagents/skills/, or None if not in a project
-        """
-        if not self.project_root:
-            return None
-        return self.project_root / ".deepagents" / "skills"
+        """Deprecated - returns None. Use ./skills/ for user skills."""
+        return None
 
     def ensure_project_skills_dir(self) -> Path | None:
-        """Ensure project-level skills directory exists and return its path.
-
-        Returns:
-            Path to {project_root}/.deepagents/skills/, or None if not in a project
-        """
-        if not self.project_root:
-            return None
-        skills_dir = self.get_project_skills_dir()
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        return skills_dir
+        """Deprecated - returns None. Use ./skills/ for user skills."""
+        return None
 
     def get_files_dir(self) -> Path:
         """Get agent-generated files directory path.

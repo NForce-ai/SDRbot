@@ -23,10 +23,11 @@ description: Structured approach to conducting thorough web research
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, TypedDict
+from pathlib import Path
+from typing import TypedDict
 
-if TYPE_CHECKING:
-    from pathlib import Path
+# Built-in skills shipped with sdrbot
+BUILTIN_SKILLS_DIR = Path(__file__).parent / "builtin"
 
 # Maximum size for SKILL.md files (10MB)
 MAX_SKILL_FILE_SIZE = 10 * 1024 * 1024
@@ -191,34 +192,38 @@ def _list_skills(skills_dir: Path, source: str) -> list[SkillMetadata]:
 
 
 def list_skills(
-    *, user_skills_dir: Path | None = None, project_skills_dir: Path | None = None
+    *,
+    user_skills_dir: Path | None = None,
+    agent_skills_dir: Path | None = None,
+    project_skills_dir: Path | None = None,  # Deprecated, ignored
 ) -> list[SkillMetadata]:
-    """List skills from user and/or project directories.
+    """List skills from built-in, agent, and user directories.
 
-    When both directories are provided, project skills with the same name as
-    user skills will override them.
+    Priority (later overrides earlier): builtin -> agent -> user
 
     Args:
-        user_skills_dir: Path to the user-level skills directory.
-        project_skills_dir: Path to the project-level skills directory.
+        user_skills_dir: Path to user/project skills (./skills/).
+        agent_skills_dir: Path to agent-specific skills (./agents/{agent}/skills/).
+        project_skills_dir: Deprecated, ignored.
 
     Returns:
-        Merged list of skill metadata from both sources, with project skills
-        taking precedence over user skills when names conflict.
+        Merged list of skills.
     """
     all_skills: dict[str, SkillMetadata] = {}
 
-    # Load user skills first (foundation)
-    if user_skills_dir:
-        user_skills = _list_skills(user_skills_dir, source="user")
-        for skill in user_skills:
+    # Built-in skills (shipped with sdrbot)
+    if BUILTIN_SKILLS_DIR.exists():
+        for skill in _list_skills(BUILTIN_SKILLS_DIR, source="builtin"):
             all_skills[skill["name"]] = skill
 
-    # Load project skills second (override/augment)
-    if project_skills_dir:
-        project_skills = _list_skills(project_skills_dir, source="project")
-        for skill in project_skills:
-            # Project skills override user skills with the same name
+    # Agent-specific skills (./agents/{agent}/skills/)
+    if agent_skills_dir and agent_skills_dir.exists():
+        for skill in _list_skills(agent_skills_dir, source="agent"):
+            all_skills[skill["name"]] = skill
+
+    # User/project skills (./skills/) - highest priority
+    if user_skills_dir:
+        for skill in _list_skills(user_skills_dir, source="user"):
             all_skills[skill["name"]] = skill
 
     return list(all_skills.values())

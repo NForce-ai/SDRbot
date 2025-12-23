@@ -383,7 +383,7 @@ def create_agent_with_config(
             routes={},  # No virtualization - use real paths
         )
 
-        # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellToolMiddleware
+        # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellMiddleware
         agent_middleware = [
             AgentMemoryMiddleware(settings=settings, assistant_id=assistant_id),
             SkillsMiddleware(
@@ -511,7 +511,7 @@ def create_agent_with_config(
     skill_count = len(
         list_skills(
             user_skills_dir=skills_dir,
-            project_skills_dir=settings.get_project_skills_dir(),
+            agent_skills_dir=settings.get_agent_skills_dir(assistant_id),
         )
     )
 
