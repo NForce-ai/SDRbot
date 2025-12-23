@@ -34,35 +34,50 @@ Ask the user:
 4. **Filters**: All records or a subset (e.g., "contacts created this year")?
 5. **Duplicates**: Skip existing records or update them?
 
-### Step 2: Discover Schemas
+### Step 2: Analyze BOTH CRMs (CRITICAL)
 
-Before writing any migration code, discover the actual field names in both CRMs.
+**YOU MUST analyze BOTH the source AND target CRM schemas before writing any migration code.**
+
+This step is MANDATORY - do not skip it. You need to understand:
+1. **Source CRM schema**: What fields exist? What are their types? What data is available?
+2. **Target CRM schema**: What fields exist? What are required vs optional? What are the field types?
+3. **Gaps and mismatches**: Fields in source that don't exist in target (may need to create custom fields)
 
 **Option A: Use Admin Tools (Recommended)**
 
-If Privileged Mode is enabled, query schemas directly:
+If Privileged Mode is enabled, query schemas for BOTH source AND target:
 
 ```python
-# Pipedrive
+# Example: Pipedrive (source) -> Twenty (target)
+
+# 1. Analyze SOURCE CRM (Pipedrive)
 pipedrive_admin_list_person_fields()      # Contact fields
 pipedrive_admin_list_organization_fields() # Company fields
 pipedrive_admin_list_deal_fields()        # Deal fields
 
-# Twenty
+# 2. Analyze TARGET CRM (Twenty)
 twenty_admin_list_objects()               # All object types
-twenty_admin_list_fields(object_id="...")  # Fields for an object
+twenty_admin_list_fields(object_id="...")  # Fields for each object
 ```
 
 **Option B: Read Generated Tools (Fallback)**
 
-If not in Privileged Mode, examine the generated tool signatures:
+If not in Privileged Mode, examine the generated tools for BOTH CRMs:
 
 ```python
-# Read and look at create_* function parameters
-read_file("generated/hubspot_tools.py")
-read_file("generated/salesforce_tools.py")
-read_file("generated/pipedrive_tools.py")
+# 1. Analyze SOURCE CRM
+read_file("generated/{source_crm}_tools.py")
+
+# 2. Analyze TARGET CRM
+read_file("generated/{target_crm}_tools.py")
+
+# Look at create_* function parameters to understand field schemas
 ```
+
+**After analyzing both CRMs**, present your findings to the user:
+- List the fields you found in the source CRM
+- List the fields you found in the target CRM
+- Identify any gaps or mismatches that need to be addressed
 
 ### Step 3: Build Field Mapping
 
