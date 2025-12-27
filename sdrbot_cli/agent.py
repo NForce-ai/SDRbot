@@ -351,7 +351,8 @@ def create_agent_with_config(
     *,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
-) -> tuple[Pregel, CompositeBackend]:
+    checkpointer: InMemorySaver | None = None,
+) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver]:
     """Create and configure an agent with the specified model and tools.
 
     Args:
@@ -361,9 +362,11 @@ def create_agent_with_config(
         sandbox: Optional sandbox backend for remote execution (e.g., ModalBackend).
                  If None, uses local filesystem + shell.
         sandbox_type: Type of sandbox provider ("modal", "runloop", "daytona")
+        checkpointer: Optional existing checkpointer to preserve conversation history.
+                     If None, creates a new InMemorySaver.
 
     Returns:
-        2-tuple of graph and backend
+        5-tuple of (agent, backend, tool_count, skill_count, checkpointer)
     """
     # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
@@ -505,7 +508,10 @@ def create_agent_with_config(
         interrupt_on=interrupt_on,
     ).with_config(agent_config)
 
-    agent.checkpointer = InMemorySaver()
+    # Use existing checkpointer or create new one to preserve conversation history
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
+    agent.checkpointer = checkpointer
 
     # Count skills
     skill_count = len(
@@ -515,4 +521,4 @@ def create_agent_with_config(
         )
     )
 
-    return agent, composite_backend, len(tools), skill_count
+    return agent, composite_backend, len(tools), skill_count, checkpointer
