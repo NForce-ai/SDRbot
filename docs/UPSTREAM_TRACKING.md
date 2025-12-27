@@ -11,11 +11,12 @@ The following are SDRBot-specific additions not present in upstream:
 | `sdrbot_cli/services/` | CRM integrations (HubSpot, Salesforce, Attio, Hunter, Lusha) |
 | `sdrbot_cli/auth/` | OAuth and API key authentication handlers |
 | `sdrbot_cli/setup_wizard.py` | Interactive first-run configuration |
-| `sdrbot_cli/models_commands.py` | Multi-provider LLM switching |
 | `sdrbot_cli/shell.py` | Shell middleware |
 | `agents/` | User-defined agent personas |
 
 Additionally, most core files (`config.py`, `main.py`, `agent.py`, `execution.py`) have been substantially modified to support these features.
+
+We have also changed the entire UI stack to TerminalUI library (TUI)
 
 ## Tracking Upstream Changes
 
@@ -126,6 +127,8 @@ These files contain the core logic and are most likely to have important changes
 |------|------------------|--------------|
 | Initial | `deepagents-cli==0.0.9` | Forked as baseline |
 | 2025-11-27 | `deepagents-cli==0.0.10` | Reviewed - all relevant changes already ported (see below) |
+| 2025-12-27 | `deepagents-cli==0.0.11` | Ported image paste support, shell.py already existed (see below) |
+| 2025-12-27 | `deepagents-cli==0.0.12` | Reviewed - `--model` CLI arg not relevant (we use TUI), skills spec skipped (see below) |
 
 ### 0.0.10 Review Notes (2025-11-27)
 
@@ -148,6 +151,49 @@ These files contain the core logic and are most likely to have important changes
 | `token_utils.py` - expansion | ALREADY HAVE | Functionally identical |
 | `integrations/*.py` - upload/download_files | ALREADY HAVE | Modal, Daytona, RunLoop all have these |
 | Various linting fixes (`_unused` prefixes) | SKIP | Style only, no functional change |
+
+---
+
+### 0.0.11 Review Notes (2025-12-27)
+
+**Summary**: Ported image paste support for multimodal messages. Shell middleware already existed.
+
+| Change | Status | Notes |
+|--------|--------|-------|
+| `image_utils.py` (NEW) - Clipboard image paste | **PORTED** | Adapted for cross-platform (macOS/Linux), uses Pillow |
+| `shell.py` (NEW) - ShellMiddleware | ALREADY HAVE | Our version is identical + includes OS detection |
+| `agent.py` - `create_cli_agent` with more options | SKIP | We have custom TUI-based agent creation |
+| `config.py` - LangSmith project routing | SKIP | We already have `langsmith_project` in Settings |
+| `execution.py` - Image support in messages | **PORTED** | Added `images` param and multimodal content |
+| `input.py` - ImageTracker for prompt_toolkit | **ADAPTED** | Ported to Textual TUI (app.py) |
+| `main.py` - Image integration | **ADAPTED** | Integrated in agent_worker.py instead |
+
+**Ported changes**:
+- [x] `sdrbot_cli/image_utils.py` - New file with ImageData, ImageTracker, get_clipboard_image
+- [x] `sdrbot_cli/execution.py` - Added `images` parameter for multimodal messages
+- [x] `sdrbot_cli/tui/app.py` - Modified action_paste() to detect images
+- [x] `sdrbot_cli/tui/agent_worker.py` - Pass images to execute_task
+
+**Dependencies added**:
+- Pillow>=10.0.0 (for image processing)
+
+---
+
+### 0.0.12 Review Notes (2025-12-27)
+
+**Summary**: No action needed - CLI `--model` arg not relevant (we use TUI with model.json). Skills spec improvements deferred.
+
+| Change | Status | Notes |
+|--------|--------|-------|
+| `config.py` - `--model` CLI arg, auto-detect provider | SKIP | We have TUI model selector + model.json + more providers (Ollama, vLLM, Bedrock, etc.) |
+| `main.py` - `--model` argument | SKIP | We use TUI |
+| `skills/commands.py` - Agent Skills spec validation | CONSIDER | Good improvement, could port later |
+| `skills/load.py` - Agent Skills spec compliance | CONSIDER | Proper YAML parsing, additional metadata fields |
+| `ui.py` - Help text for --model | SKIP | We use TUI |
+
+**Skipped** (with reason):
+- `--model` CLI arg: We use TUI with interactive model selection + model.json configuration
+- Skills spec improvements: Deferred - our skills work fine, could consider for future alignment
 
 ---
 

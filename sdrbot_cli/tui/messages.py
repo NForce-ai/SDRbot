@@ -80,3 +80,11 @@ class AutoApproveUpdate(Message):
     def __init__(self, enabled: bool) -> None:
         self.enabled = enabled
         super().__init__()
+
+
+class ImageCountUpdate(Message):
+    """Message to update the image attachment bar."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        super().__init__()
