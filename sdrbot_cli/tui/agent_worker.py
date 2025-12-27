@@ -359,6 +359,9 @@ class AgentWorker(Worker):
                                     severity="warning",
                                 )
                                 return
+                        # If /clear was executed, sync the token display with the reset value
+                        if user_input.strip().lower() == "/clear":
+                            self.app.post_message(TokenUpdate(self.token_tracker.current_context))
                         self._send_command_result_to_app(result)
                         return
 

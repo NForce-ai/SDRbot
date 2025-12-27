@@ -24,7 +24,7 @@ class ShellMiddleware(AgentMiddleware[AgentState, Any]):
         self,
         *,
         workspace_root: str,
-        timeout: float = 120.0,
+        timeout: float = 600.0,
         max_output_bytes: int = 100_000,
         env: dict[str, str] | None = None,
     ) -> None:
@@ -33,7 +33,7 @@ class ShellMiddleware(AgentMiddleware[AgentState, Any]):
         Args:
             workspace_root: Working directory for shell commands.
             timeout: Maximum time in seconds to wait for command completion.
-                Defaults to 120 seconds.
+                Defaults to 600 seconds (10 minutes).
             max_output_bytes: Maximum number of bytes to capture from command output.
                 Defaults to 100,000 bytes.
             env: Environment variables to pass to the subprocess. If None,
