@@ -277,6 +277,57 @@ class VersionIndicator(Static):
         self.update(markup)
 
 
+class ImageAttachmentBar(Static):
+    """Bar showing attached images above the chat input."""
+
+    DEFAULT_CSS = """
+    ImageAttachmentBar {
+        height: 1;
+        width: 100%;
+        padding: 0 1;
+        display: none;
+        background: $primary-background;
+        color: $text;
+    }
+
+    ImageAttachmentBar.visible {
+        display: block;
+    }
+    """
+
+    image_count = reactive(0)
+
+    class ClearImages(Message):
+        """Message emitted when clear button is clicked."""
+
+        pass
+
+    def watch_image_count(self, count: int) -> None:
+        """Update display when image count changes."""
+        if count > 0:
+            self.add_class("visible")
+        else:
+            self.remove_class("visible")
+        self.refresh()
+
+    def render(self) -> Text:
+        """Render the attachment bar content."""
+        if self.image_count > 0:
+            s = "s" if self.image_count > 1 else ""
+            # Use visible colors - cyan for icon/text, red for close button
+            markup = f"[cyan]📷 {self.image_count} image{s} attached[/] [@click=clear_images][white][[/][bold red]x[/][white]][/][/]"
+            return Text.from_markup(markup)
+        return Text("")
+
+    def action_clear_images(self) -> None:
+        """Action triggered when clear button is clicked."""
+        self.post_message(self.ClearImages())
+
+    def set_count(self, count: int) -> None:
+        """Update the image count."""
+        self.image_count = count
+
+
 class AppFooter(Widget):
     """Custom footer with version indicator."""
 

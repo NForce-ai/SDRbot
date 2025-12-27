@@ -11,6 +11,12 @@ from textual.widgets.option_list import Option
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
 from sdrbot_cli.config import TUI_COMMANDS, SessionState
+from sdrbot_cli.image_utils import (
+    ImageTracker,
+    get_clipboard_image,
+    is_image_path,
+    load_image_from_path,
+)
 from sdrbot_cli.tui.agent_worker import AgentWorker
 from sdrbot_cli.tui.approval_bar import ApprovalBar
 from sdrbot_cli.tui.loading_screen import LoadingScreen
@@ -18,6 +24,7 @@ from sdrbot_cli.tui.messages import (
     AgentExit,
     AgentMessage,
     AutoApproveUpdate,
+    ImageCountUpdate,
     SkillCountUpdate,
     StatusUpdate,
     TaskListUpdate,
@@ -28,6 +35,7 @@ from sdrbot_cli.tui.messages import (
 from sdrbot_cli.tui.widgets import (
     AgentInfo,
     AppFooter,
+    ImageAttachmentBar,
     StatusDisplay,
     ThinkingIndicator,
     VersionIndicator,
@@ -303,6 +311,22 @@ class ChatInput(TextArea):
         """React to text changes to update suggestions."""
         self._update_suggestions()
 
+    def _on_paste(self, event) -> None:
+        """Intercept paste to handle image file paths."""
+        if event.text:
+            text = event.text.strip()
+            # Check if it's an image file path - if so, let the app handle it
+            if is_image_path(text):
+                image_data = load_image_from_path(text)
+                if image_data:
+                    self.app._add_image(image_data)
+                else:
+                    self.app.notify(f"Failed to load image: {text}", severity="error")
+                event.stop()
+                event.prevent_default()
+                return
+        # For non-image text, let parent handle it
+
 
 class SDRBotTUI(App[None]):
     """SDRbot Textual application."""
@@ -341,6 +365,7 @@ class SDRBotTUI(App[None]):
         self.session_state = session_state
         self.assistant_id = assistant_id
         self.agent_worker: AgentWorker | None = None
+        self.image_tracker = ImageTracker()  # Track pasted images for multimodal messages
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -364,6 +389,7 @@ class SDRBotTUI(App[None]):
         yield ApprovalBar(id="approval_bar")
         yield ThinkingIndicator(id="thinking_indicator")
         yield CommandSuggestions(id="command_suggestions")
+        yield ImageAttachmentBar(id="image_attachment_bar")
         yield ChatInput(id="main_input")
         yield AppFooter()
 
@@ -386,28 +412,57 @@ class SDRBotTUI(App[None]):
         status = "ON" if self.session_state.auto_approve else "OFF"
         self.notify(f"Auto-approve: {status}", severity="information")
 
+    def _update_image_attachment_bar(self) -> None:
+        """Update the image attachment bar with current image count."""
+        try:
+            bar = self.query_one("#image_attachment_bar", ImageAttachmentBar)
+            bar.set_count(len(self.image_tracker.images))
+        except Exception:
+            pass
+
+    def _add_image(self, image_data) -> None:
+        """Add an image to the tracker and update the UI."""
+        self.image_tracker.add_image(image_data)
+        self._update_image_attachment_bar()
+
     def action_paste(self) -> None:
-        """Paste from system clipboard into focused input."""
+        """Paste from system clipboard into focused input.
+
+        Checks for images first (for multimodal support), then falls back to text.
+        """
+        focused = self.focused
+        if focused is None or not hasattr(focused, "insert"):
+            return
+
+        # Try to get an image from clipboard first
+        try:
+            image_data = get_clipboard_image()
+            if image_data:
+                self._add_image(image_data)
+                return
+        except Exception:
+            pass  # Fall through to text paste
+
+        # Fall back to text paste
         try:
             import pyperclip
 
             text = pyperclip.paste()
             if text:
-                # Find the focused widget and insert text if it's an input
-                focused = self.focused
-                if focused is not None and hasattr(focused, "insert"):
-                    focused.insert(text)
+                text = text.strip()
+                # Check if it's an image file path
+                if is_image_path(text):
+                    image_data = load_image_from_path(text)
+                    if image_data:
+                        self._add_image(image_data)
+                    else:
+                        self.notify(f"Failed to load image: {text}", severity="error")
+                    return  # Don't insert path as text
+                # Regular text paste
+                focused.insert(text)
         except Exception:
             # Silently fail if clipboard is unavailable
             pass
-
-    def _on_paste(self, event) -> None:
-        """Handle paste events from the terminal for any focused input widget."""
-        if event.text:
-            focused = self.focused
-            if focused is not None and hasattr(focused, "insert"):
-                focused.insert(event.text)
-                event.stop()
 
     async def on_mount(self) -> None:
         """Called when app is mounted."""
@@ -797,6 +852,11 @@ class SDRBotTUI(App[None]):
 
         self.push_screen(UpdateModal(message.latest_version, message.release_url))
 
+    def on_image_attachment_bar_clear_images(self, message: ImageAttachmentBar.ClearImages) -> None:
+        """Handle click on clear images button."""
+        self.image_tracker.clear()
+        self._update_image_attachment_bar()
+
     def _on_models_screen_closed(self, result: bool | None = None) -> None:
         """Called when models screen is dismissed - reload agent if model changed."""
         from sdrbot_cli.config import load_model_config
@@ -850,6 +910,14 @@ class SDRBotTUI(App[None]):
         """Handle auto-approve status updates."""
         self.session_state.auto_approve = message.enabled
         self.query_one("#agent_info", AgentInfo).set_auto_approve(message.enabled)
+
+    async def on_image_count_update(self, message: ImageCountUpdate) -> None:
+        """Handle image count updates from agent worker."""
+        try:
+            bar = self.query_one("#image_attachment_bar", ImageAttachmentBar)
+            bar.set_count(message.count)
+        except Exception:
+            pass
 
     async def on_tool_approval_request(self, message: ToolApprovalRequest) -> None:
         """Handle tool approval request."""

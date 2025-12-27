@@ -27,6 +27,7 @@ from rich.text import Text
 
 from sdrbot_cli.config import COLORS
 from sdrbot_cli.file_ops import FileOpTracker
+from sdrbot_cli.image_utils import ImageData, create_multimodal_content
 from sdrbot_cli.input import parse_file_mentions
 from sdrbot_cli.tools import get_schema_modifying_tools
 from sdrbot_cli.ui import (
@@ -105,8 +106,25 @@ async def execute_task(
     auto_approve_callback: Callable | None = None,
     token_callback: Callable | None = None,
     status_callback: Callable | None = None,
+    images: list[ImageData] | None = None,
 ) -> None:
-    """Execute any task by passing it directly to the AI agent."""
+    """Execute any task by passing it directly to the AI agent.
+
+    Args:
+        user_input: The user's text input
+        agent: The agent to execute
+        assistant_id: Optional assistant identifier
+        session_state: Current session state
+        token_tracker: Optional token usage tracker
+        backend: Optional backend for file operations
+        ui_callback: Callback for UI updates
+        todo_callback: Callback for todo list updates
+        approval_callback: Callback for tool approval requests
+        auto_approve_callback: Callback for auto-approve state changes
+        token_callback: Callback for token count updates
+        status_callback: Callback for status updates
+        images: Optional list of images to include in the message (for multimodal)
+    """
     # Parse file mentions and inject content if any
     prompt_text, mentioned_files = parse_file_mentions(user_input)
 
@@ -202,7 +220,12 @@ async def execute_task(
         pending_text = ""
 
     # Stream input - may need to loop if there are interrupts
-    stream_input = {"messages": [{"role": "user", "content": final_input}]}
+    # Use multimodal content format if images are attached
+    if images:
+        message_content = create_multimodal_content(final_input, images)
+    else:
+        message_content = final_input
+    stream_input = {"messages": [{"role": "user", "content": message_content}]}
 
     try:
         while True:

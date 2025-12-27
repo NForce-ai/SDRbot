@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import re
 from typing import TYPE_CHECKING
 
 from rich.console import RenderableType
@@ -15,6 +16,7 @@ from sdrbot_cli.tui.messages import (
     AgentExit,
     AgentMessage,
     AutoApproveUpdate,
+    ImageCountUpdate,
     SkillCountUpdate,
     StatusUpdate,
     TaskListUpdate,
@@ -27,6 +29,10 @@ from sdrbot_cli.version import __version__
 
 if TYPE_CHECKING:
     from sdrbot_cli.tui.app import SDRBotTUI
+
+# Matches slash commands like /help, /models, /sync hubspot
+# Does NOT match file paths like /home/user/image.png
+SLASH_COMMAND_RE = re.compile(r"^/([a-z]+)(\s+.*)?$")
 
 
 class AgentWorker(Worker):
@@ -246,8 +252,8 @@ class AgentWorker(Worker):
             return
 
         try:
-            # Check for slash commands first
-            if user_input.startswith("/"):
+            # Check for slash commands first (but not file paths)
+            if SLASH_COMMAND_RE.match(user_input):
                 if user_input == "/help":
                     from sdrbot_cli.tui.help_screen import HelpScreen
 
@@ -348,6 +354,13 @@ class AgentWorker(Worker):
                 self.app.post_message(AgentExit())
                 return
 
+            # Get any attached images and clear tracker
+            images = None
+            if hasattr(self.app, "image_tracker") and self.app.image_tracker.has_images():
+                images = self.app.image_tracker.get_images()
+                self.app.image_tracker.clear()
+                self.app.post_message(ImageCountUpdate(0))  # Update UI
+
             # Execute agent task
             await execute_task(
                 user_input,
@@ -365,6 +378,7 @@ class AgentWorker(Worker):
                 token_callback=lambda total: self.app.post_message(TokenUpdate(total)),
                 # Simplify status to just "Thinking" - detailed tool info is too verbose
                 status_callback=lambda _: self.app.post_message(StatusUpdate("Thinking")),
+                images=images,
             )
         finally:
             self.app.post_message(StatusUpdate("Idle"))
