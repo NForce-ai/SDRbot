@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend
 from deepagents.backends.filesystem import FilesystemBackend
 from deepagents.backends.sandbox import SandboxBackendProtocol
@@ -20,6 +19,7 @@ from langgraph.runtime import Runtime
 
 from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
+from sdrbot_cli.deep_agent import create_deep_agent
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.mcp.manager import get_mcp_manager
 from sdrbot_cli.memory_tools import create_memory_tools
@@ -375,7 +375,7 @@ def create_agent_with_config(
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
     checkpointer: InMemorySaver | None = None,
-) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver]:
+) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver, BaseChatModel]:
     """Create and configure an agent with the specified model and tools.
 
     Args:
@@ -389,7 +389,7 @@ def create_agent_with_config(
                      If None, creates a new InMemorySaver.
 
     Returns:
-        5-tuple of (agent, backend, tool_count, skill_count, checkpointer)
+        6-tuple of (agent, backend, tool_count, skill_count, checkpointer, model)
     """
     # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
@@ -401,6 +401,9 @@ def create_agent_with_config(
     settings.ensure_files_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
+    # Note: Context summarization is configurable via SUMMARIZATION_TRIGGER env var
+    # Default: 0.85 (85%) of max context with model profile, 170k tokens fallback
+
     if sandbox is None:
         # ========== LOCAL MODE ==========
         # Backend: Local filesystem for code (no virtual routes)
@@ -429,7 +432,7 @@ def create_agent_with_config(
             routes={},  # No virtualization
         )
 
-        # Middleware: AgentMemoryMiddleware and SkillsMiddleware
+        # Middleware: AgentMemoryMiddleware, SkillsMiddleware
         # NOTE: File operations (ls, read, write, edit, glob, grep) and execute tool
         # are automatically provided by create_deep_agent when backend is a SandboxBackend.
         agent_middleware = [
@@ -549,4 +552,4 @@ def create_agent_with_config(
     DEEPAGENTS_BUILTIN_TOOLS = 9
     tool_count = len(tools) + DEEPAGENTS_BUILTIN_TOOLS
 
-    return agent, composite_backend, tool_count, skill_count, checkpointer
+    return agent, composite_backend, tool_count, skill_count, checkpointer, model

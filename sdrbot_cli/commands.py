@@ -16,6 +16,116 @@ from .setup.models import setup_models
 from .setup.services import setup_services
 from .ui import TokenTracker, show_interactive_help
 
+# Default summarization settings
+DEFAULT_TRIGGER_FRACTION = 0.85
+DEFAULT_KEEP_FRACTION = 0.10
+FALLBACK_TRIGGER_TOKENS = 170_000
+FALLBACK_KEEP_MESSAGES = 6
+
+
+def _get_model_max_tokens(session_state: SessionState) -> int | None:
+    """Try to get max input tokens from the model's profile."""
+    try:
+        model = session_state.model
+        if model is None:
+            return None
+        if hasattr(model, "profile") and isinstance(model.profile, dict):
+            return model.profile.get("max_input_tokens")
+    except Exception:
+        pass
+    return None
+
+
+def _parse_threshold(value: str | None, max_tokens: int | None) -> tuple[int, str]:
+    """Parse threshold value and return (threshold_at, display_string).
+
+    Args:
+        value: SUMMARIZATION_THRESHOLD env var value
+        max_tokens: Model's max input tokens (if available)
+
+    Returns:
+        Tuple of (threshold_at_tokens, display_label)
+    """
+    if value is None:
+        if max_tokens:
+            trigger_at = int(max_tokens * DEFAULT_TRIGGER_FRACTION)
+            return trigger_at, f"{trigger_at:,} tokens (85%)"
+        return FALLBACK_TRIGGER_TOKENS, f"{FALLBACK_TRIGGER_TOKENS:,} tokens (fallback)"
+
+    try:
+        num = float(value)
+        if 0 < num <= 1:
+            # Fraction-based
+            if max_tokens:
+                trigger_at = int(max_tokens * num)
+                pct = int(num * 100)
+                return trigger_at, f"{trigger_at:,} tokens ({pct}%)"
+            # No max_tokens but fraction specified - use fallback scaled
+            trigger_at = int(FALLBACK_TRIGGER_TOKENS * num / DEFAULT_TRIGGER_FRACTION)
+            return trigger_at, f"{trigger_at:,} tokens (fallback)"
+        elif num > 1:
+            # Absolute token count
+            trigger_at = int(num)
+            if max_tokens:
+                pct = int((trigger_at / max_tokens) * 100)
+                return trigger_at, f"{trigger_at:,} tokens ({pct}%)"
+            return trigger_at, f"{trigger_at:,} tokens"
+    except ValueError:
+        pass
+
+    # Invalid value, use defaults
+    if max_tokens:
+        trigger_at = int(max_tokens * DEFAULT_TRIGGER_FRACTION)
+        return trigger_at, f"{trigger_at:,} tokens (85%)"
+    return FALLBACK_TRIGGER_TOKENS, f"{FALLBACK_TRIGGER_TOKENS:,} tokens (fallback)"
+
+
+def display_context_usage(token_tracker: TokenTracker, session_state: SessionState) -> list[Text]:
+    """Display context usage and summarization status."""
+    output_lines = []
+    output_lines.append(Text("\nContext Usage:", style=f"bold {COLORS['primary']}"))
+
+    current = token_tracker.current_context
+    max_tokens = _get_model_max_tokens(session_state)
+    trigger_at, trigger_label = _parse_threshold(settings.summarization_threshold, max_tokens)
+
+    output_lines.append(Text(f"  Current: {current:,} tokens", style=COLORS["dim"]))
+
+    if max_tokens:
+        keep_tokens = int(max_tokens * DEFAULT_KEEP_FRACTION)
+        output_lines.append(Text(f"  Model max: {max_tokens:,} tokens", style=COLORS["dim"]))
+        output_lines.append(Text(f"  Summarization at: {trigger_label}", style=COLORS["dim"]))
+        keep_info = f"Keeps ~{keep_tokens:,} tokens (10%) after summarization"
+    else:
+        output_lines.append(Text(f"  Summarization at: {trigger_label}", style=COLORS["dim"]))
+        keep_info = f"Keeps last {FALLBACK_KEEP_MESSAGES} messages after summarization"
+
+    remaining = max(0, trigger_at - current)
+    usage_pct = (current / trigger_at) * 100 if trigger_at > 0 else 0
+
+    # Progress bar
+    bar_width = 30
+    filled = min(bar_width, int((current / trigger_at) * bar_width)) if trigger_at > 0 else 0
+    bar = "█" * filled + "░" * (bar_width - filled)
+
+    # Color based on usage
+    if current >= trigger_at:
+        bar_style = "red"
+        status = "Summarization will trigger on next message"
+    elif usage_pct >= 90:
+        bar_style = "yellow"
+        status = f"~{remaining:,} tokens until summarization"
+    else:
+        bar_style = "green"
+        status = f"~{remaining:,} tokens until summarization"
+
+    output_lines.append(Text(f"  [{bar}] {usage_pct:.1f}%", style=bar_style))
+    output_lines.append(Text(f"  {status}", style=COLORS["dim"]))
+    output_lines.append(Text(f"  {keep_info}", style=COLORS["dim"]))
+
+    output_lines.append(Text(""))
+    return output_lines
+
 
 async def handle_command(
     command: str, session_state: SessionState, token_tracker: TokenTracker
@@ -103,6 +213,9 @@ async def handle_command(
 
     if cmd == "tokens":
         return token_tracker.display_session()
+
+    if cmd == "context":
+        return display_context_usage(token_tracker, session_state)
 
     # Setup commands - DISABLE IN TUI
     if session_state.is_tui and cmd in ["setup", "mcp", "models", "services"]:

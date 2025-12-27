@@ -43,6 +43,7 @@ DEEP_AGENTS_ASCII = """
 # Interactive commands (shared between CLI and TUI)
 COMMANDS = {
     "clear": "Clear screen and reset conversation",
+    "context": "Show context usage and summarization status",
     "help": "Show help information",
     "tokens": "Show token usage for current session",
     "quit": "Exit the CLI",
@@ -55,6 +56,7 @@ COMMANDS = {
 TUI_COMMANDS = {
     "help": "Show help information",
     "tokens": "Show token usage for current session",
+    "context": "Show context usage and summarization status",
     "tools": "Show tools management screen",
     "models": "Open model configuration",
     "services": "Open services setup screen",
@@ -319,6 +321,9 @@ class Settings:
     # HuggingFace
     huggingface_api_key: str | None
 
+    # Summarization Config
+    summarization_threshold: str | None  # Fraction (0-1) or token count
+
     # Project information
     project_root: Path | None
 
@@ -348,6 +353,9 @@ class Settings:
 
         # HuggingFace
         huggingface_key = os.environ.get("HUGGINGFACE_API_KEY")
+
+        # Summarization
+        summarization_threshold = os.environ.get("SUMMARIZATION_THRESHOLD")
 
         sf_client_id = os.environ.get("SF_CLIENT_ID")
         sf_client_secret = os.environ.get("SF_CLIENT_SECRET")
@@ -455,6 +463,7 @@ class Settings:
             custom_model_name=custom_model,
             azure_api_key=azure_key,
             huggingface_api_key=huggingface_key,
+            summarization_threshold=summarization_threshold,
             project_root=project_root,
         )
 
@@ -510,6 +519,7 @@ class Settings:
         self.custom_model_name = new_settings.custom_model_name
         self.azure_api_key = new_settings.azure_api_key
         self.huggingface_api_key = new_settings.huggingface_api_key
+        self.summarization_threshold = new_settings.summarization_threshold
         self.project_root = new_settings.project_root
 
     @property
@@ -856,6 +866,7 @@ class SessionState:
         # Agent and backend can be swapped at runtime for hot-reloading
         self.agent = None
         self.backend = None
+        self.model = None  # The LLM model instance (for profile info access)
         self.checkpointer = None  # Preserved across reloads to maintain conversation history
         self.tool_count = 0  # Number of tools loaded
         self.skill_count = 0  # Number of skills loaded
