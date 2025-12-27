@@ -162,8 +162,21 @@ If you do use the write_todos:
 1. Aim for 3-6 action items unless the task is truly complex in which case its fine to plan more extensively.
 2. Update the plan status as you complete each item.
 3. You can keep your final response succint since the plan will be presented to them in a separate widget.
+
+### Privileged Actions
+The following actions require privileged mode:
+- CRM Migration
+
+Before any planning, decomposition, write_todos usage, or skill selection:
+1. Determine whether the user's request involves a privileged action.
+2. If the action is privileged and privileged mode is disabled:
+   - IMMEDIATELY abort the request
+   - Do NOT plan, decompose, explain steps, or suggest an approach
+   - Only instruct the user to enable privileged mode via /setup
+3. This rule overrides Action Plan Management and all other planning behaviors.
 """
         + _get_enabled_services_prompt()
+        + _get_privileged_mode_prompt()
     )
 
 
@@ -219,6 +232,16 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
         )
 
     return "\n".join(lines)
+
+
+def _get_privileged_mode_prompt() -> str:
+    """Generate prompt section for privileged mode status."""
+    from sdrbot_cli.services.registry import is_privileged_mode
+
+    if is_privileged_mode():
+        return "\n### Privileged Mode: Enabled\n"
+    else:
+        return "\n### Privileged Mode: Disabled\n"
 
 
 def _format_write_file_description(
@@ -351,7 +374,8 @@ def create_agent_with_config(
     *,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
-) -> tuple[Pregel, CompositeBackend]:
+    checkpointer: InMemorySaver | None = None,
+) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver]:
     """Create and configure an agent with the specified model and tools.
 
     Args:
@@ -361,9 +385,11 @@ def create_agent_with_config(
         sandbox: Optional sandbox backend for remote execution (e.g., ModalBackend).
                  If None, uses local filesystem + shell.
         sandbox_type: Type of sandbox provider ("modal", "runloop", "daytona")
+        checkpointer: Optional existing checkpointer to preserve conversation history.
+                     If None, creates a new InMemorySaver.
 
     Returns:
-        2-tuple of graph and backend
+        5-tuple of (agent, backend, tool_count, skill_count, checkpointer)
     """
     # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
@@ -505,7 +531,10 @@ def create_agent_with_config(
         interrupt_on=interrupt_on,
     ).with_config(agent_config)
 
-    agent.checkpointer = InMemorySaver()
+    # Use existing checkpointer or create new one to preserve conversation history
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
+    agent.checkpointer = checkpointer
 
     # Count skills
     skill_count = len(
@@ -520,4 +549,4 @@ def create_agent_with_config(
     DEEPAGENTS_BUILTIN_TOOLS = 9
     tool_count = len(tools) + DEEPAGENTS_BUILTIN_TOOLS
 
-    return agent, composite_backend, tool_count, skill_count
+    return agent, composite_backend, tool_count, skill_count, checkpointer

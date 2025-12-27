@@ -5,23 +5,13 @@ description: Efficiently migrate data between CRMs using Python scripts with bat
 
 # CRM Migration Skill
 
-Use this skill when the user asks to migrate, copy, sync, or transfer data between CRMs (e.g., "migrate contacts from HubSpot to Salesforce").
+Use this skill when the user asks to migrate, copy, sync, or transfer data between CRMs.
 
-**NOTE**: If you need to create custom fields or objects in the target CRM before migrating,
-enable **Privileged Mode** via `/setup` > Privileged Mode. This loads admin tools for schema management.
+## Code Execution
 
-## Why Use Code Execution for Migrations
-
-**DO NOT** use individual CRM tools (like `hubspot_search_contacts`, `salesforce_create_contact`) for migrations. This is inefficient because:
-- Each tool call = 1 API request = high latency
-- Token usage explodes with large datasets
-- No batching or error handling
-
-**INSTEAD**, write and execute a Python migration script that:
-- Uses the CRM clients directly (they support batching)
-- Handles pagination internally
-- Provides progress reporting
-- Handles errors gracefully
+**DO NOT** use individual CRM tools for migrations. Write a Python script instead:
+- Individual tools = 1 API request per record = slow and expensive
+- Scripts can batch, paginate, and handle errors properly
 
 ## Migration Workflow
 
@@ -31,67 +21,44 @@ Ask the user:
 1. **Source CRM**: Where is the data coming from?
 2. **Target CRM**: Where should data go?
 3. **Object types**: Contacts? Companies? Deals? All?
-4. **Filters**: All records or a subset (e.g., "contacts created this year")?
-5. **Duplicates**: Skip existing records or update them?
+4. **Filters**: All records or a subset?
+5. **Duplicates**: Skip existing or update them?
 
-### Step 2: Analyze BOTH CRMs (CRITICAL)
+### Step 2: Analyze BOTH CRM Schemas
 
-**YOU MUST analyze BOTH the source AND target CRM schemas before writing any migration code.**
+**You MUST analyze both source and target CRM schemas before writing any code.**
 
-This step is MANDATORY - do not skip it. You need to understand:
-1. **Source CRM schema**: What fields exist? What are their types? What data is available?
-2. **Target CRM schema**: What fields exist? What are required vs optional? What are the field types?
-3. **Gaps and mismatches**: Fields in source that don't exist in target (may need to create custom fields)
-
-**Option A: Use Admin Tools (Recommended)**
-
-If Privileged Mode is enabled, query schemas for BOTH source AND target:
+Query schemas using admin tools:
 
 ```python
 # Example: Pipedrive (source) -> Twenty (target)
 
-# 1. Analyze SOURCE CRM (Pipedrive)
-pipedrive_admin_list_person_fields()      # Contact fields
-pipedrive_admin_list_organization_fields() # Company fields
-pipedrive_admin_list_deal_fields()        # Deal fields
+# Source CRM
+pipedrive_admin_list_person_fields()
+pipedrive_admin_list_organization_fields()
+pipedrive_admin_list_deal_fields()
 
-# 2. Analyze TARGET CRM (Twenty)
-twenty_admin_list_objects()               # All object types
-twenty_admin_list_fields(object_id="...")  # Fields for each object
+# Target CRM
+twenty_admin_list_objects()
+twenty_admin_list_fields(object_id="...")
 ```
 
-**Option B: Read Generated Tools (Fallback)**
-
-If not in Privileged Mode, examine the generated tools for BOTH CRMs:
-
-```python
-# 1. Analyze SOURCE CRM
-read_file("generated/{source_crm}_tools.py")
-
-# 2. Analyze TARGET CRM
-read_file("generated/{target_crm}_tools.py")
-
-# Look at create_* function parameters to understand field schemas
-```
-
-**After analyzing both CRMs**, present your findings to the user:
-- List the fields you found in the source CRM
-- List the fields you found in the target CRM
-- Identify any gaps or mismatches that need to be addressed
+Present findings to the user:
+- Fields available in source
+- Fields available in target
+- Gaps or mismatches that need addressing (may need to create custom fields)
 
 ### Step 3: Build Field Mapping
 
-Compare source and target schemas, then create a mapping:
+Create a mapping based on the schemas you discovered:
 
 ```python
-# Example: Pipedrive -> Twenty mapping (discovered from schemas)
 FIELD_MAP = {
     # Source field -> Target field
     "name": "name",
-    "email": "emails",  # Different structure - may need transform
+    "email": "emails",  # May need transform if structure differs
     "phone": "phones",
-    # Custom fields discovered from schema
-    "abc123_lead_score": "leadScore",
+    "abc123_lead_score": "leadScore",  # Custom field
 }
 
 def transform(source_record):
@@ -103,9 +70,7 @@ def transform(source_record):
     }
 ```
 
-If mapping is ambiguous, **ask the user**:
-- "Source has `lead_status`, target has both `status` and `stage`. Which should I use?"
-- "Should I create a custom field in the target for `revenue_band`?"
+If mapping is ambiguous, **ask the user**.
 
 ### Step 4: Write the Migration Script
 
@@ -116,12 +81,9 @@ Create a Python script with dry-run support:
 """Migration: HubSpot Contacts -> Salesforce Leads"""
 
 import json
-from datetime import datetime
-
 from sdrbot_cli.auth.hubspot import get_client as get_hubspot_client
 from sdrbot_cli.auth.salesforce import get_client as get_salesforce_client
 
-# Field mapping (discovered in Step 3)
 FIELD_MAP = {
     "email": "Email",
     "firstname": "FirstName",
@@ -152,7 +114,6 @@ def transform_contact(hs_contact):
     for source, target in FIELD_MAP.items():
         if props.get(source):
             result[target] = props[source]
-    # Handle required fields
     result["LastName"] = result.get("LastName") or "Unknown"
     result["Company"] = result.get("Company") or "Unknown"
     return result
@@ -162,7 +123,7 @@ def migrate(dry_run=True):
     sf = get_salesforce_client()
 
     all_records = []
-    print(f"Fetching contacts from HubSpot...")
+    print("Fetching contacts from HubSpot...")
 
     for batch in get_hubspot_contacts(hs):
         transformed = [transform_contact(c) for c in batch]
@@ -178,8 +139,7 @@ def migrate(dry_run=True):
         print("\nRun with dry_run=False to execute migration.")
         return
 
-    # Execute migration
-    print(f"\nMigrating to Salesforce...")
+    print("\nMigrating to Salesforce...")
     results = sf.bulk.Lead.insert(all_records)
 
     success = sum(1 for r in results if r.get("success"))
@@ -195,126 +155,57 @@ def migrate(dry_run=True):
         print(f"  Error details: files/migration_errors.json")
 
 if __name__ == "__main__":
-    migrate(dry_run=True)  # Change to False after reviewing dry run
+    migrate(dry_run=True)
 ```
 
 ### Step 5: Execute and Report
 
-1. **Run dry run first**: `python files/migration_script.py`
-2. Review the sample output with the user
-3. If approved, edit script to set `dry_run=False` and run again
-4. Report results: records migrated, errors encountered, error log location
+1. Run dry run first
+2. Review sample output with user
+3. If approved, set `dry_run=False` and run again
+4. Report: records migrated, errors, error log location
 
-## Available CRM Clients
+## CRM Clients
 
 ```python
-# HubSpot
 from sdrbot_cli.auth.hubspot import get_client as get_hubspot_client
-hs = get_hubspot_client()
-
-# Salesforce
 from sdrbot_cli.auth.salesforce import get_client as get_salesforce_client
-sf = get_salesforce_client()
-
-# Pipedrive
 from sdrbot_cli.auth.pipedrive import get_pipedrive_client
-pd = get_pipedrive_client()
-
-# Zoho CRM
 from sdrbot_cli.auth.zohocrm import get_zoho_client
-zoho = get_zoho_client()
-
-# Attio
 from sdrbot_cli.auth.attio import AttioClient
-attio = AttioClient()
-
-# Twenty
 from sdrbot_cli.auth.twenty import TwentyClient
-twenty = TwentyClient()
 ```
 
-## CRM-Specific Tips
+## CRM Quirks
 
-### HubSpot
-- Pagination: `basic_api.get_page()` with `after` cursor
-- Batch create: `batch_api.create()` (up to 100 records)
-- Must explicitly request properties in API calls
+| CRM | Pagination | Batch Limit | Notes |
+|-----|------------|-------------|-------|
+| HubSpot | `after` cursor | 100 | Must explicitly request properties |
+| Salesforce | - | 10,000 (bulk) | Required: LastName (Contact), Company+LastName (Lead) |
+| Pipedrive | `start` + `limit` | - | Custom fields are 40-char hashes; 100 req/10s rate limit |
+| Attio | cursor | - | Records are versioned |
+| Zoho | COQL | 100 | Module names are case-sensitive |
+| Twenty | `startingAfter` cursor | - | No native batch API |
 
-### Salesforce
-- Batch operations: `sf.bulk.{Object}.insert()` (up to 10,000)
-- Upsert with external ID: `sf.bulk.{Object}.upsert(external_id_field, records)`
-- Required fields: LastName (Contact), Company+LastName (Lead)
+## Error Handling
 
-### Pipedrive
-- Pagination: `start` and `limit` parameters
-- Custom fields: 40-character hash keys (use admin tools to discover)
-- Rate limit: 100 requests per 10 seconds
-- Schema discovery: `pipedrive_admin_list_*_fields()` tools
-
-### Attio
-- Cursor-based pagination
-- Records are versioned - specify attributes to update
-- Relations are separate from record data
-
-### Zoho CRM
-- Use COQL for complex queries
-- Batch: `insertRecords` (100 max per call)
-- Module names are case-sensitive
-
-### Twenty
-- REST API: `client.get()`, `client.post()`, etc.
-- Endpoints: `/people`, `/companies`, `/opportunities`
-- Pagination: `limit` and `startingAfter` parameters
-- No native batch API - loop with individual requests
-- Schema discovery: `twenty_admin_list_objects()`, `twenty_admin_list_fields()`
-
-```python
-# Twenty pagination example
-def get_all_people(client, batch_size=100):
-    """Generator that yields Twenty people in batches."""
-    starting_after = None
-    while True:
-        params = {"limit": batch_size}
-        if starting_after:
-            params["startingAfter"] = starting_after
-
-        response = client.get("/people", params=params)
-        data = response.get("data", {})
-        people = data.get("people", [])
-
-        if not people:
-            break
-
-        yield people
-
-        page_info = data.get("pageInfo", {})
-        if not page_info.get("hasNextPage"):
-            break
-        starting_after = page_info.get("endCursor")
-```
-
-## Error Handling Best Practices
-
-1. **Wrap batches in try/except** - Don't let one error stop the whole migration
-2. **Log errors with context** - Include the source record for debugging
-3. **Use upsert when possible** - Handles duplicates gracefully
-4. **Validate required fields** - Check before sending to target CRM
-5. **Checkpoint progress** - For large migrations, save state periodically
+1. Wrap batches in try/except — don't let one error stop everything
+2. Log errors with source record context
+3. Use upsert when available
+4. Validate required fields before sending
+5. Checkpoint progress for large migrations
 
 ## Deduplication Example
 
 ```python
 def migrate_with_dedup(source_contacts, target_client):
-    """Migrate contacts, skipping duplicates based on email."""
-
-    # Get existing emails from target
+    """Skip duplicates based on email."""
     existing_emails = set()
     for page in get_target_contacts(target_client):
         for contact in page:
             if email := contact.get("email"):
                 existing_emails.add(email.lower())
 
-    # Filter duplicates
     new_contacts = [
         c for c in source_contacts
         if c.get("email", "").lower() not in existing_emails

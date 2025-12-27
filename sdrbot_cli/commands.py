@@ -84,8 +84,10 @@ async def handle_command(
 
     if cmd == "clear":
         # Reset agent conversation state
+        new_checkpointer = InMemorySaver()
         if session_state.agent:
-            session_state.agent.checkpointer = InMemorySaver()
+            session_state.agent.checkpointer = new_checkpointer
+        session_state.checkpointer = new_checkpointer
 
         # Reset token tracking to baseline
         token_tracker.reset()

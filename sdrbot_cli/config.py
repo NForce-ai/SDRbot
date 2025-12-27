@@ -856,6 +856,7 @@ class SessionState:
         # Agent and backend can be swapped at runtime for hot-reloading
         self.agent = None
         self.backend = None
+        self.checkpointer = None  # Preserved across reloads to maintain conversation history
         self.tool_count = 0  # Number of tools loaded
         self.skill_count = 0  # Number of skills loaded
         # Reload callback - set by main.py to allow commands to trigger agent reload

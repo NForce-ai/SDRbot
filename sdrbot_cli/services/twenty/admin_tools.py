@@ -105,7 +105,7 @@ def twenty_admin_get_object(object_id: str) -> str:
         return f"Error getting object: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_create_object(
     name_singular: str,
     name_plural: str,
@@ -154,7 +154,7 @@ def twenty_admin_create_object(
         return f"Error creating object: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_update_object(
     object_id: str,
     is_active: bool | None = None,
@@ -199,7 +199,7 @@ def twenty_admin_update_object(
         return f"Error updating object: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_delete_object(object_id: str) -> str:
     """Delete a custom object type.
 
@@ -291,7 +291,7 @@ def twenty_admin_get_field(field_id: str) -> str:
         return f"Error getting field: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_create_field(
     object_id: str,
     name: str,
@@ -324,11 +324,15 @@ def twenty_admin_create_field(
         is_nullable: Whether field can be empty (default True).
         default_value: Default value as JSON string.
         options: For SELECT/MULTI_SELECT: JSON array of options.
-                 IMPORTANT: option "value" must be SCREAMING_SNAKE_CASE matching
-                 pattern ^[A-Z0-9]+_[A-Z0-9]+$. Example:
-                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green"}]'
-                 Valid colors: green, turquoise, sky, blue, purple, pink, red,
-                 orange, yellow, gray.
+                 REQUIRED fields for each option:
+                 - "value": SCREAMING_SNAKE_CASE (pattern: ^[A-Z0-9]+_[A-Z0-9]+$)
+                 - "label": Display text
+                 - "position": Number (0, 1, 2, ...) - REQUIRED!
+                 - "color": One of: green, turquoise, sky, blue, purple, pink,
+                           red, orange, yellow, gray
+                 Example:
+                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green", "position": 0},
+                   {"value": "WARM_LEAD", "label": "Warm Lead", "color": "yellow", "position": 1}]'
 
     Returns:
         Success message with the new field ID.
@@ -353,7 +357,28 @@ def twenty_admin_create_field(
                 payload["defaultValue"] = default_value
         if options:
             try:
-                payload["options"] = json.loads(options)
+                parsed_options = json.loads(options)
+                # Validate required fields in options
+                if isinstance(parsed_options, list):
+                    for i, opt in enumerate(parsed_options):
+                        if not isinstance(opt, dict):
+                            return f"Error: Option {i} must be an object"
+                        missing = []
+                        if "value" not in opt:
+                            missing.append("value")
+                        if "label" not in opt:
+                            missing.append("label")
+                        if "position" not in opt:
+                            missing.append("position")
+                        if "color" not in opt:
+                            missing.append("color")
+                        if missing:
+                            return (
+                                f"Error: Option {i} missing required fields: {missing}. "
+                                f"Each option needs: value (SCREAMING_SNAKE_CASE), label, "
+                                f"position (0, 1, 2...), and color (green/blue/red/etc)."
+                            )
+                payload["options"] = parsed_options
             except json.JSONDecodeError:
                 return "Error: 'options' must be a valid JSON array"
 
@@ -371,13 +396,14 @@ def twenty_admin_create_field(
         return f"Error creating field: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_update_field(
     field_id: str,
     label: str | None = None,
     description: str | None = None,
     icon: str | None = None,
     is_nullable: bool | None = None,
+    is_active: bool | None = None,
     default_value: str | None = None,
     options: str | None = None,
 ) -> str:
@@ -389,11 +415,17 @@ def twenty_admin_update_field(
         description: New description.
         icon: New icon name.
         is_nullable: Whether field can be empty.
+        is_active: Whether field is active (set False to deactivate).
         default_value: New default value as JSON string.
         options: For SELECT/MULTI_SELECT: JSON array of options.
-                 Option "value" must be SCREAMING_SNAKE_CASE matching
-                 pattern ^[A-Z0-9]+_[A-Z0-9]+$. Example:
-                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green"}]'
+                 REQUIRED fields for each option:
+                 - "value": SCREAMING_SNAKE_CASE (pattern: ^[A-Z0-9]+_[A-Z0-9]+$)
+                 - "label": Display text
+                 - "position": Number (0, 1, 2, ...) - REQUIRED!
+                 - "color": One of: green, turquoise, sky, blue, purple, pink,
+                           red, orange, yellow, gray
+                 Example:
+                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green", "position": 0}]'
 
     Returns:
         Success message confirming the update.
@@ -409,6 +441,8 @@ def twenty_admin_update_field(
             payload["icon"] = icon
         if is_nullable is not None:
             payload["isNullable"] = is_nullable
+        if is_active is not None:
+            payload["isActive"] = is_active
         if default_value:
             try:
                 payload["defaultValue"] = json.loads(default_value)
@@ -416,7 +450,28 @@ def twenty_admin_update_field(
                 payload["defaultValue"] = default_value
         if options:
             try:
-                payload["options"] = json.loads(options)
+                parsed_options = json.loads(options)
+                # Validate required fields in options
+                if isinstance(parsed_options, list):
+                    for i, opt in enumerate(parsed_options):
+                        if not isinstance(opt, dict):
+                            return f"Error: Option {i} must be an object"
+                        missing = []
+                        if "value" not in opt:
+                            missing.append("value")
+                        if "label" not in opt:
+                            missing.append("label")
+                        if "position" not in opt:
+                            missing.append("position")
+                        if "color" not in opt:
+                            missing.append("color")
+                        if missing:
+                            return (
+                                f"Error: Option {i} missing required fields: {missing}. "
+                                f"Each option needs: value (SCREAMING_SNAKE_CASE), label, "
+                                f"position (0, 1, 2...), and color (green/blue/red/etc)."
+                            )
+                payload["options"] = parsed_options
             except json.JSONDecodeError:
                 return "Error: 'options' must be a valid JSON array"
 
@@ -429,11 +484,14 @@ def twenty_admin_update_field(
         return f"Error updating field: {str(e)}"
 
 
-@privileged_tool
+@privileged_tool(schema_modifying="twenty")
 def twenty_admin_delete_field(field_id: str) -> str:
     """Delete a custom field.
 
     WARNING: This will delete the field and all its data!
+
+    Note: Twenty CRM requires fields to be deactivated before deletion.
+    This function automatically deactivates the field first.
 
     Args:
         field_id: The field's metadata ID.
@@ -443,11 +501,26 @@ def twenty_admin_delete_field(field_id: str) -> str:
     """
     client = _get_admin_client()
     try:
+        # Twenty requires deactivating a field before deletion
+        # First, set isActive=false
+        client.patch(f"/metadata/fields/{field_id}", json={"isActive": False})
+
+        # Now delete the deactivated field
         client.delete(f"/metadata/fields/{field_id}")
 
         return f"Successfully deleted field {field_id}"
     except Exception as e:
-        return f"Error deleting field: {str(e)}"
+        error_str = str(e)
+        # Provide helpful guidance for common errors
+        if "validation errors" in error_str.lower():
+            return (
+                f"Error deleting field: {error_str}\n\n"
+                "Try:\n"
+                "1. Ensure no views/filters reference this field\n"
+                "2. Check if the field has any data that needs to be cleared\n"
+                "3. Delete the field through the Twenty UI"
+            )
+        return f"Error deleting field: {error_str}"
 
 
 # =============================================================================

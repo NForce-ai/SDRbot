@@ -9,31 +9,85 @@ from langchain_core.tools import tool as langchain_tool
 from markdownify import markdownify
 
 PRIVILEGED_METADATA_KEY = "privileged"
+SCHEMA_MODIFYING_KEY = "schema_modifying"
+SERVICE_KEY = "service_name"
+
+# Registry of schema-modifying tools: {tool_name: service_name}
+# Populated automatically when tools are decorated with schema_modifying param
+_SCHEMA_MODIFYING_REGISTRY: dict[str, str] = {}
 
 
-def privileged_tool(func: Callable) -> BaseTool:
+def privileged_tool(
+    func: Callable | None = None,
+    *,
+    schema_modifying: str | None = None,
+) -> BaseTool | Callable[[Callable], BaseTool]:
     """Decorator to create a privileged tool.
 
     Privileged tools are only available when privileged mode is enabled.
     They include schema/metadata management and code execution capabilities.
 
+    Args:
+        func: The function to wrap (when used without parentheses).
+        schema_modifying: Service name if this tool modifies schema
+            (e.g., "twenty"). When set, triggers automatic schema
+            resync and agent reload after successful execution.
+
     Usage:
         @privileged_tool
-        def my_admin_tool(arg: str) -> str:
+        def my_read_only_admin_tool(arg: str) -> str:
             '''Tool docstring.'''
+            return "result"
+
+        @privileged_tool(schema_modifying="twenty")
+        def my_schema_changing_tool(arg: str) -> str:
+            '''This tool modifies CRM schema.'''
             return "result"
 
     The resulting tool will have metadata["privileged"] = True,
     which is checked during tool loading to filter out privileged tools
     when privileged mode is disabled.
+
+    Tools with schema_modifying set will also have:
+    - metadata["schema_modifying"] = True
+    - metadata["service_name"] = <service>
+
+    And will be registered in _SCHEMA_MODIFYING_REGISTRY for auto-reload.
     """
-    # Create the tool using langchain's @tool decorator
-    lc_tool = langchain_tool(func)
-    # Mark it as privileged using the metadata field
-    if lc_tool.metadata is None:
-        lc_tool.metadata = {}
-    lc_tool.metadata[PRIVILEGED_METADATA_KEY] = True
-    return lc_tool
+
+    def decorator(f: Callable) -> BaseTool:
+        # Create the tool using langchain's @tool decorator
+        lc_tool = langchain_tool(f)
+        # Mark it as privileged using the metadata field
+        if lc_tool.metadata is None:
+            lc_tool.metadata = {}
+        lc_tool.metadata[PRIVILEGED_METADATA_KEY] = True
+
+        # Add schema-modifying metadata if specified
+        if schema_modifying:
+            lc_tool.metadata[SCHEMA_MODIFYING_KEY] = True
+            lc_tool.metadata[SERVICE_KEY] = schema_modifying
+            # Register for auto-reload detection
+            _SCHEMA_MODIFYING_REGISTRY[lc_tool.name] = schema_modifying
+
+        return lc_tool
+
+    # Support both @privileged_tool and @privileged_tool(schema_modifying="x")
+    if func is not None:
+        # Called without parentheses: @privileged_tool
+        return decorator(func)
+    # Called with parentheses: @privileged_tool(...) or @privileged_tool()
+    return decorator
+
+
+def get_schema_modifying_tools() -> dict[str, str]:
+    """Get mapping of schema-modifying tool names to their services.
+
+    Returns:
+        Dict mapping tool_name -> service_name for tools that modify schema.
+        Used by execution.py to detect when to trigger auto-reload.
+    """
+    return _SCHEMA_MODIFYING_REGISTRY.copy()
 
 
 def is_privileged_tool(tool: BaseTool) -> bool:

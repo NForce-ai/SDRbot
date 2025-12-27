@@ -506,11 +506,16 @@ class SDRBotTUI(App[None]):
                 )
 
             loading.update_message("Initializing agent...")
-            agent, composite_backend, tool_count, skill_count = await loop.run_in_executor(
-                None, create_agent
-            )
+            (
+                agent,
+                composite_backend,
+                tool_count,
+                skill_count,
+                checkpointer,
+            ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
+            self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
 
@@ -531,12 +536,16 @@ class SDRBotTUI(App[None]):
                 # Re-create model from current config (don't use stale closure)
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
-                new_agent, new_backend, new_tool_count, new_skill_count = create_agent_with_config(
-                    fresh_model,
-                    self.assistant_id,
-                    tools,
-                    sandbox=sandbox_backend,
-                    sandbox_type=sandbox_type,
+                # Pass existing checkpointer to preserve conversation history
+                new_agent, new_backend, new_tool_count, new_skill_count, _ = (
+                    create_agent_with_config(
+                        fresh_model,
+                        self.assistant_id,
+                        tools,
+                        sandbox=sandbox_backend,
+                        sandbox_type=sandbox_type,
+                        checkpointer=self.session_state.checkpointer,
+                    )
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
@@ -610,11 +619,16 @@ class SDRBotTUI(App[None]):
 
             # Initialize agent in thread pool
             loading.update_message("Initializing agent...")
-            agent, composite_backend, tool_count, skill_count = await loop.run_in_executor(
-                None, create_agent
-            )
+            (
+                agent,
+                composite_backend,
+                tool_count,
+                skill_count,
+                checkpointer,
+            ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
+            self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
 
@@ -635,12 +649,16 @@ class SDRBotTUI(App[None]):
                 # Re-create model from current config (don't use stale closure)
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
-                new_agent, new_backend, new_tool_count, new_skill_count = create_agent_with_config(
-                    fresh_model,
-                    self.assistant_id,
-                    tools,
-                    sandbox=None,
-                    sandbox_type=None,
+                # Pass existing checkpointer to preserve conversation history
+                new_agent, new_backend, new_tool_count, new_skill_count, _ = (
+                    create_agent_with_config(
+                        fresh_model,
+                        self.assistant_id,
+                        tools,
+                        sandbox=None,
+                        sandbox_type=None,
+                        checkpointer=self.session_state.checkpointer,
+                    )
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
