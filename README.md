@@ -335,6 +335,7 @@ sdrbot
 | `/tools` | View all loaded tools (built-in, services, MCP) |
 | `/sync` | Re-sync service schemas |
 | `/tokens` | View token usage stats |
+| `/context` | View context usage and summarization status |
 | `/models` | Configure LLM provider |
 | `/tracing` | Configure tracing/observability |
 | `/exit` | Exit SDRbot |
@@ -653,6 +654,60 @@ You can edit an agent's memory directly:
 4. Edit and save
 
 Or edit the file directly at `./agents/{name}/memory.md`.
+
+---
+
+## 📏 Context Management
+
+SDRbot automatically manages conversation context to prevent hitting model token limits during long sessions. When context grows too large, older messages are automatically summarized to free up space.
+
+### How It Works
+
+1. **Monitoring**: SDRbot tracks token usage throughout your conversation
+2. **Threshold**: When context reaches 85% of the model's limit, summarization triggers
+3. **Summarization**: Older messages are summarized into a condensed form
+4. **Preservation**: 10% of context is preserved after summarization
+5. **Continuation**: The conversation continues seamlessly with the summarized history
+
+### Model Adaptation
+
+The summarization system adapts to each model's context window:
+
+| Model Type | Trigger | Preserved |
+|------------|---------|-----------|
+| **OpenAI, Anthropic, Google** | 85% of max context | 10% of context |
+| **Ollama, vLLM, Custom** | 170k tokens (fallback) | 6 messages |
+
+### Checking Context Usage
+
+Use the `/context` command to see your current context status:
+
+```
+Context Usage:
+  Current: 45,234 tokens
+  Model max: 200,000 tokens
+  Summarization at: 170,000 tokens (85%)
+  [████████░░░░░░░░░░░░░░░░░░░░░░] 26.6%
+  ~124,766 tokens until summarization
+  Keeps ~20,000 tokens (10%) after summarization
+```
+
+The progress bar shows:
+- **Green**: Normal usage
+- **Yellow**: Approaching threshold (>90%)
+- **Red**: At or past threshold (summarization imminent)
+
+### What Gets Summarized
+
+- Older conversation turns (user messages + assistant responses)
+- Tool call results from earlier in the conversation
+- The summary captures key context, decisions made, and important information
+
+### What's Preserved
+
+- System prompt and agent instructions
+- Recent messages (10% of context or last 6 messages)
+- AI/Tool message pairs are never split
 
 ---
 
