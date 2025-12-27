@@ -29,80 +29,184 @@ def reset_client():
 
 
 @tool
-def twenty_create_note(
-    target_object: str,
+def twenty_create_note_on_record(
+    target_type: str,
     target_record_id: str,
     title: str,
-    body: str,
+    body_markdown: str,
 ) -> str:
-    """Create a note on a Twenty record.
+    """Create a note attached to a specific Twenty record.
+
+    Use this to add notes to people, companies, opportunities, etc.
+    For standalone note operations (update, delete), use the twenty_*_note tools.
 
     Args:
-        target_object: Object type the note is attached to (e.g., "person", "company").
+        target_type: Object type - one of "person", "company", or "opportunity".
         target_record_id: The record's UUID.
         title: Note title.
-        body: Note content (markdown supported).
+        body_markdown: Note content in markdown format.
 
     Returns:
         Success message with note ID or error message.
     """
+    # Map target type to the correct ID field name
+    target_field_map = {
+        "person": "personId",
+        "company": "companyId",
+        "opportunity": "opportunityId",
+    }
+
+    target_field = target_field_map.get(target_type.lower())
+    if not target_field:
+        return f"Error: Invalid target_type '{target_type}'. Must be one of: person, company, opportunity"
+
     client = get_twenty()
     try:
+        # First create the note
         payload = {
             "title": title,
-            "body": body,
-            "targetObjectNameSingular": target_object,
-            "targetRecordId": target_record_id,
+            "bodyV2": {"markdown": body_markdown},
         }
 
         response = client.post("/notes", json=payload)
-        note = response.get("data", {})
-        note_id = note.get("id", "unknown")
+        note = response.get("data", {}).get("createNote", {})
+        note_id = note.get("id")
 
-        return f"Successfully created note (ID: {note_id})"
+        if not note_id:
+            return "Error: Failed to create note - no ID returned"
+
+        # Then create the noteTarget association
+        target_payload = {
+            "noteId": note_id,
+            target_field: target_record_id,
+        }
+        client.post("/noteTargets", json=target_payload)
+
+        return f"Successfully created note (ID: {note_id}) on {target_type} {target_record_id}"
     except Exception as e:
         return f"Error creating note: {str(e)}"
 
 
 @tool
-def twenty_list_notes(
-    target_object: str,
+def twenty_list_notes_on_record(
+    target_type: str,
     target_record_id: str,
     limit: int = 10,
 ) -> str:
-    """List notes on a Twenty record.
+    """List notes attached to a specific Twenty record.
 
     Args:
-        target_object: Object type (e.g., "person", "company").
+        target_type: Object type - one of "person", "company", or "opportunity".
         target_record_id: The record's UUID.
         limit: Maximum notes to return (default 10).
 
     Returns:
         Formatted list of notes or error message.
     """
+    # Map target type to the correct ID field name
+    target_field_map = {
+        "person": "personId",
+        "company": "companyId",
+        "opportunity": "opportunityId",
+    }
+
+    target_field = target_field_map.get(target_type.lower())
+    if not target_field:
+        return f"Error: Invalid target_type '{target_type}'. Must be one of: person, company, opportunity"
+
     client = get_twenty()
     try:
-        # Twenty uses query-string filter format: field[op]:value
+        # First get noteTargets for this record
         params = {
-            "filter": f'and(targetObjectNameSingular[eq]:"{target_object}",targetRecordId[eq]:"{target_record_id}")',
+            "filter": f'{target_field}[eq]:"{target_record_id}"',
             "limit": limit,
         }
 
-        response = client.get("/notes", params=params)
-        notes = response.get("data", {}).get("notes", [])
+        response = client.get("/noteTargets", params=params)
+        targets = response.get("data", {}).get("noteTargets", [])
 
-        if not notes:
-            return "No notes found on this record."
+        if not targets:
+            return f"No notes found on this {target_type}."
 
+        # Get the note IDs and fetch notes
+        note_ids = [t.get("noteId") for t in targets if t.get("noteId")]
+        if not note_ids:
+            return f"No notes found on this {target_type}."
+
+        # Fetch notes by IDs
         output = ["Notes:"]
-        for note in notes:
-            title = note.get("title", "(No title)")
-            created = note.get("createdAt", "")[:10] if note.get("createdAt") else ""
-            output.append(f"- {title} (Created: {created})")
+        for note_id in note_ids:
+            try:
+                note_response = client.get(f"/notes/{note_id}")
+                note = note_response.get("data", {}).get("note", {})
+                if note:
+                    title = note.get("title", "(No title)")
+                    created = note.get("createdAt", "")[:10] if note.get("createdAt") else ""
+                    body = note.get("bodyV2", {}).get("markdown", "")
+                    preview = body[:100] + "..." if len(body) > 100 else body
+                    output.append(f"- [{note_id}] {title} (Created: {created})")
+                    if preview:
+                        output.append(f"  {preview}")
+            except Exception:
+                continue
+
+        if len(output) == 1:
+            return f"No notes found on this {target_type}."
 
         return "\n".join(output)
     except Exception as e:
         return f"Error listing notes: {str(e)}"
+
+
+@tool
+def twenty_update_note(
+    note_id: str,
+    title: str | None = None,
+    body_markdown: str | None = None,
+) -> str:
+    """Update an existing note in Twenty.
+
+    Args:
+        note_id: The UUID of the note to update.
+        title: New title for the note (optional).
+        body_markdown: New content in markdown format (optional).
+
+    Returns:
+        Success message or error message.
+    """
+    client = get_twenty()
+    try:
+        payload = {}
+        if title is not None:
+            payload["title"] = title
+        if body_markdown is not None:
+            payload["bodyV2"] = {"markdown": body_markdown}
+
+        if not payload:
+            return "Error: No fields provided to update. Provide title and/or body_markdown."
+
+        client.patch(f"/notes/{note_id}", json=payload)
+        return f"Successfully updated note {note_id}"
+    except Exception as e:
+        return f"Error updating note: {str(e)}"
+
+
+@tool
+def twenty_delete_note(note_id: str) -> str:
+    """Delete a note from Twenty.
+
+    Args:
+        note_id: The UUID of the note to delete.
+
+    Returns:
+        Success message or error message.
+    """
+    client = get_twenty()
+    try:
+        client.delete(f"/notes/{note_id}")
+        return f"Successfully deleted note {note_id}"
+    except Exception as e:
+        return f"Error deleting note: {str(e)}"
 
 
 @tool
@@ -196,8 +300,10 @@ def get_static_tools() -> list[BaseTool]:
         List of schema-independent Twenty tools.
     """
     return [
-        twenty_create_note,
-        twenty_list_notes,
+        twenty_create_note_on_record,
+        twenty_list_notes_on_record,
+        twenty_update_note,
+        twenty_delete_note,
         twenty_search_records,
         twenty_get_record,
     ]

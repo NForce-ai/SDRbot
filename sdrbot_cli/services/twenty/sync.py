@@ -46,9 +46,9 @@ SYSTEM_OBJECTS = {
 }
 
 # Objects with static tools in tools.py - skip generating to avoid duplicates
-STATIC_TOOL_OBJECTS = {
-    "note",  # twenty_create_note, twenty_list_notes exist in tools.py
-}
+# Note: We no longer skip "note" - the static tools handle target associations,
+# while generated tools provide full CRUD. They complement each other.
+STATIC_TOOL_OBJECTS: set[str] = set()
 
 
 def sync_schema() -> dict[str, Any]:
