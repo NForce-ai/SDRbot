@@ -567,9 +567,11 @@ class SDRBotTUI(App[None]):
                 tool_count,
                 skill_count,
                 checkpointer,
+                model_instance,
             ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
+            self.session_state.model = model_instance
             self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
@@ -592,7 +594,7 @@ class SDRBotTUI(App[None]):
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
                 # Pass existing checkpointer to preserve conversation history
-                new_agent, new_backend, new_tool_count, new_skill_count, _ = (
+                new_agent, new_backend, new_tool_count, new_skill_count, _, new_model = (
                     create_agent_with_config(
                         fresh_model,
                         self.assistant_id,
@@ -604,6 +606,7 @@ class SDRBotTUI(App[None]):
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
+                self.session_state.model = new_model
                 self.session_state.tool_count = new_tool_count
                 self.session_state.skill_count = new_skill_count
                 return new_failed
@@ -680,9 +683,11 @@ class SDRBotTUI(App[None]):
                 tool_count,
                 skill_count,
                 checkpointer,
+                model_instance,
             ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
+            self.session_state.model = model_instance
             self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
@@ -705,7 +710,7 @@ class SDRBotTUI(App[None]):
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
                 # Pass existing checkpointer to preserve conversation history
-                new_agent, new_backend, new_tool_count, new_skill_count, _ = (
+                new_agent, new_backend, new_tool_count, new_skill_count, _, new_model = (
                     create_agent_with_config(
                         fresh_model,
                         self.assistant_id,
@@ -717,6 +722,7 @@ class SDRBotTUI(App[None]):
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
+                self.session_state.model = new_model
                 self.session_state.tool_count = new_tool_count
                 self.session_state.skill_count = new_skill_count
                 return new_failed

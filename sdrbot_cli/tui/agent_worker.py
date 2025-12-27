@@ -263,6 +263,24 @@ class AgentWorker(Worker):
                     results = self.token_tracker.display_session()
                     self._send_command_result_to_app(results)
                     return
+                elif user_input == "/context":
+                    from sdrbot_cli.config import settings
+                    from sdrbot_cli.tui.context_screen import ContextScreen
+
+                    # Get model max tokens from session state
+                    model = self.session_state.model
+                    max_tokens = None
+                    if model and hasattr(model, "profile") and isinstance(model.profile, dict):
+                        max_tokens = model.profile.get("max_input_tokens")
+
+                    self.app.push_screen(
+                        ContextScreen(
+                            self.token_tracker.current_context,
+                            max_tokens,
+                            trigger_setting=settings.summarization_threshold,
+                        )
+                    )
+                    return
                 elif user_input == "/tools":
                     from sdrbot_cli.tui.tools_screen import ToolsScreen
 
