@@ -455,17 +455,17 @@ def create_agent_with_config(
     settings.ensure_agent_prompt(assistant_id, default_content)
     settings.ensure_agent_memory(assistant_id)
 
-    # Ensure skills and files directories exist
+    # Ensure skills directory exists
     skills_dir = settings.ensure_skills_dir()
-    settings.ensure_files_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
     if sandbox is None:
         # ========== LOCAL MODE ==========
-        # Backend: Local filesystem for code (no virtual routes)
+        # Backend: Restrict file operations to ./files/ directory
+        files_dir = settings.ensure_files_dir()
         composite_backend = CompositeBackend(
-            default=FilesystemBackend(),  # Current working directory
-            routes={},  # No virtualization - use real paths
+            default=FilesystemBackend(root_dir=files_dir),
+            routes={},
         )
 
         # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellMiddleware
