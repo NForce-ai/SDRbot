@@ -19,7 +19,7 @@ from langgraph.runtime import Runtime
 
 from sdrbot_cli.agent_memory import AgentMemoryMiddleware
 from sdrbot_cli.config import COLORS, config, console, get_default_coding_instructions, settings
-from sdrbot_cli.deep_agent import create_deep_agent
+from sdrbot_cli.deep_agent import create_custom_deep_agent
 from sdrbot_cli.integrations.sandbox_factory import get_default_working_dir
 from sdrbot_cli.mcp.manager import get_mcp_manager
 from sdrbot_cli.memory_tools import create_memory_tools
@@ -27,7 +27,64 @@ from sdrbot_cli.services import get_enabled_tools
 from sdrbot_cli.shell import ShellMiddleware
 from sdrbot_cli.skills import SkillsMiddleware
 from sdrbot_cli.skills.load import list_skills
+from sdrbot_cli.token_utils import calculate_baseline_tokens
 from sdrbot_cli.tracing import get_tracing_callbacks
+
+# Default summarization settings
+DEFAULT_TRIGGER_FRACTION = 0.85
+FALLBACK_TRIGGER_TOKENS = 170_000
+
+
+def _get_model_max_tokens(model: BaseChatModel) -> int | None:
+    """Try to get max input tokens from the model's profile."""
+    try:
+        if hasattr(model, "profile") and isinstance(model.profile, dict):
+            return model.profile.get("max_input_tokens")
+    except Exception:
+        pass
+    return None
+
+
+def _calculate_summarization_threshold(model: BaseChatModel) -> int:
+    """Calculate the summarization threshold based on model and settings.
+
+    Uses SUMMARIZATION_THRESHOLD env var if set, otherwise:
+    - If model has max_input_tokens profile: 85% of that
+    - Otherwise: 170k tokens fallback
+
+    Args:
+        model: The LLM model instance
+
+    Returns:
+        Threshold in tokens when summarization should trigger
+    """
+    max_tokens = _get_model_max_tokens(model)
+    threshold_setting = settings.summarization_threshold
+
+    if threshold_setting is None:
+        # No env var set - use defaults
+        if max_tokens:
+            return int(max_tokens * DEFAULT_TRIGGER_FRACTION)
+        return FALLBACK_TRIGGER_TOKENS
+
+    try:
+        value = float(threshold_setting)
+        if 0 < value <= 1:
+            # Fraction-based (e.g., 0.85 = 85%)
+            if max_tokens:
+                return int(max_tokens * value)
+            # No max_tokens but fraction specified - scale from fallback
+            return int(FALLBACK_TRIGGER_TOKENS * value / DEFAULT_TRIGGER_FRACTION)
+        elif value > 1:
+            # Absolute token count
+            return int(value)
+    except ValueError:
+        pass
+
+    # Invalid value, use defaults
+    if max_tokens:
+        return int(max_tokens * DEFAULT_TRIGGER_FRACTION)
+    return FALLBACK_TRIGGER_TOKENS
 
 
 def list_agents() -> None:
@@ -375,7 +432,8 @@ def create_agent_with_config(
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
     checkpointer: InMemorySaver | None = None,
-) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver, BaseChatModel]:
+    session_state=None,
+) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver, int]:
     """Create and configure an agent with the specified model and tools.
 
     Args:
@@ -387,9 +445,10 @@ def create_agent_with_config(
         sandbox_type: Type of sandbox provider ("modal", "runloop", "daytona")
         checkpointer: Optional existing checkpointer to preserve conversation history.
                      If None, creates a new InMemorySaver.
+        session_state: Optional session state for status callbacks during summarization.
 
     Returns:
-        6-tuple of (agent, backend, tool_count, skill_count, checkpointer, model)
+        6-tuple of (agent, backend, tool_count, skill_count, checkpointer, baseline_tokens)
     """
     # Setup agent directory with prompt.md and memory.md (creates if needed)
     default_content = get_default_coding_instructions()
@@ -401,9 +460,6 @@ def create_agent_with_config(
     settings.ensure_files_dir()
 
     # CONDITIONAL SETUP: Local vs Remote Sandbox
-    # Note: Context summarization is configurable via SUMMARIZATION_TRIGGER env var
-    # Default: 0.85 (85%) of max context with model profile, 170k tokens fallback
-
     if sandbox is None:
         # ========== LOCAL MODE ==========
         # Backend: Local filesystem for code (no virtual routes)
@@ -432,7 +488,7 @@ def create_agent_with_config(
             routes={},  # No virtualization
         )
 
-        # Middleware: AgentMemoryMiddleware, SkillsMiddleware
+        # Middleware: AgentMemoryMiddleware and SkillsMiddleware
         # NOTE: File operations (ls, read, write, edit, glob, grep) and execute tool
         # are automatically provided by create_deep_agent when backend is a SandboxBackend.
         agent_middleware = [
@@ -525,13 +581,37 @@ def create_agent_with_config(
     if tracing_callbacks:
         agent_config["callbacks"] = tracing_callbacks
 
-    agent = create_deep_agent(
+    # Calculate baseline tokens BEFORE creating agent (includes memory section + all tools)
+    baseline_tokens = 0
+    if hasattr(model, "get_num_tokens_from_messages"):
+        try:
+            baseline_tokens = calculate_baseline_tokens(model, system_prompt, tools, assistant_id)
+        except Exception:
+            pass  # Fallback to 0 if calculation fails
+
+    # Calculate dynamic summarization threshold based on model profile
+    max_total_tokens = _calculate_summarization_threshold(model)
+
+    # Store model in session_state for profile access (e.g., /context command)
+    if session_state:
+        session_state.model = model
+
+    agent = create_custom_deep_agent(
         model=model,
         system_prompt=system_prompt,
         tools=tools,
         backend=composite_backend,
         middleware=agent_middleware,
         interrupt_on=interrupt_on,
+        max_total_tokens=max_total_tokens,
+        messages_to_keep=6,
+        on_summarize=lambda msg: (
+            session_state._status_callback(msg)
+            if session_state and session_state._status_callback
+            else (console.print(f"[dim]{msg}[/dim]") if msg else None)
+        ),
+        context_overhead=baseline_tokens,  # Pass accurate overhead including memory section
+        session_state=session_state,
     ).with_config(agent_config)
 
     # Use existing checkpointer or create new one to preserve conversation history
@@ -552,4 +632,4 @@ def create_agent_with_config(
     DEEPAGENTS_BUILTIN_TOOLS = 9
     tool_count = len(tools) + DEEPAGENTS_BUILTIN_TOOLS
 
-    return agent, composite_backend, tool_count, skill_count, checkpointer, model
+    return agent, composite_backend, tool_count, skill_count, checkpointer, baseline_tokens

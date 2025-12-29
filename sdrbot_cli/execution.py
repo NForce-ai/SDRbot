@@ -25,7 +25,7 @@ from pydantic import TypeAdapter, ValidationError
 from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 
-from sdrbot_cli.config import COLORS, settings
+from sdrbot_cli.config import COLORS
 from sdrbot_cli.file_ops import FileOpTracker
 from sdrbot_cli.image_utils import ImageData, create_multimodal_content
 from sdrbot_cli.input import parse_file_mentions
@@ -36,26 +36,6 @@ from sdrbot_cli.ui import (
     format_tool_message_content,
     render_file_operation,
 )
-
-# Token tracking for context compression
-_current_tokens: int = 0
-
-
-def set_current_tokens(tokens: int) -> None:
-    """Set the current token count (called after each API response)."""
-    global _current_tokens
-    _current_tokens = tokens
-
-
-def get_current_tokens() -> int:
-    """Get the current token count."""
-    return _current_tokens
-
-
-def reset_current_tokens() -> None:
-    """Reset the token count (called on compression or /clear)."""
-    global _current_tokens
-    _current_tokens = 0
 
 
 class Markdown(RichMarkdown):
@@ -98,151 +78,12 @@ async def prompt_for_tool_approval(
             ui_callback(Text("\n"))
         return ApproveDecision(type="approve")
     elif result == "auto_approve_all":
-        if ui_callback:
-            ui_callback(
-                Text.from_markup(
-                    "  [blue]⚡ Auto-approve enabled for future actions.[/blue]", style="dim"
-                )
-            )
-            ui_callback(Text("\n"))
         return {"type": "auto_approve_all"}
     else:  # reject
         if ui_callback:
             ui_callback(Text.from_markup("  [red]❌ Tool action rejected.[/red]", style="dim"))
             ui_callback(Text("\n"))
         return RejectDecision(type="reject", message="User rejected the command")
-
-
-def _get_summarization_threshold(model) -> int | None:
-    """Get the summarization threshold in tokens."""
-    # Get model max tokens
-    max_tokens = None
-    if model and hasattr(model, "profile") and isinstance(model.profile, dict):
-        max_tokens = model.profile.get("max_input_tokens")
-
-    threshold_setting = settings.summarization_threshold
-
-    if threshold_setting is None:
-        if max_tokens:
-            return int(max_tokens * 0.85)
-        return 170_000  # Fallback
-
-    try:
-        value = float(threshold_setting)
-        if 0 < value <= 1:
-            # Fraction
-            if max_tokens:
-                return int(max_tokens * value)
-            return int(170_000 * value / 0.85)
-        elif value > 1:
-            # Absolute
-            return int(value)
-    except ValueError:
-        pass
-
-    # Default
-    if max_tokens:
-        return int(max_tokens * 0.85)
-    return 170_000
-
-
-async def _maybe_summarize_and_reset(
-    agent,
-    session_state,
-    config: dict,
-    ui_callback: Callable | None,
-    token_tracker: TokenTracker | None,
-    token_callback: Callable | None,
-) -> str | None:
-    """Check if summarization is needed and reset checkpointer with summary.
-
-    Returns the summary string to prepend to user input, or None if no compression needed.
-    """
-    from langgraph.checkpoint.memory import InMemorySaver
-
-    # Use token_tracker's value (what UI displays) for consistent threshold check
-    current_tokens = token_tracker.current_context if token_tracker else get_current_tokens()
-    threshold = _get_summarization_threshold(session_state.model)
-
-    if threshold is None or current_tokens < threshold:
-        return None
-
-    # Get current messages from agent state
-    try:
-        state = await agent.aget_state(config)
-        messages = state.values.get("messages", [])
-    except Exception:
-        return None
-
-    if len(messages) <= 6:
-        return None
-
-    # Generate summary from all messages (we'll start fresh)
-    # Format messages for summary
-    formatted = []
-    for msg in messages:
-        role = getattr(msg, "type", "unknown")
-        content = getattr(msg, "content", "")
-        if isinstance(content, list):
-            content = " ".join(
-                item.get("text", str(item)) if isinstance(item, dict) else str(item)
-                for item in content
-            )
-        if content:
-            formatted.append(f"{role}: {content[:500]}...")
-
-    if not formatted:
-        return None
-
-    messages_text = "\n\n".join(formatted[-50:])
-
-    summary_prompt = """Summarize the following conversation history, preserving:
-1. Key decisions and outcomes
-2. Important context and facts discovered
-3. Current state of any ongoing tasks
-4. Any errors or issues encountered
-
-Be concise but comprehensive. This summary will replace the conversation history.
-
-Conversation to summarize:
-{messages}"""
-
-    if ui_callback:
-        ui_callback(Text("Compressing context...", style="dim italic"))
-
-    try:
-        # Generate summary using the model without streaming callbacks
-        model = session_state.model
-        if model:
-            model_no_stream = model.with_config(callbacks=[])
-            response = await model_no_stream.ainvoke(
-                [HumanMessage(content=summary_prompt.format(messages=messages_text))]
-            )
-            summary = (
-                response.content if isinstance(response.content, str) else str(response.content)
-            )
-        else:
-            summary = "Previous conversation context (summarization unavailable)"
-    except Exception as e:
-        summary = f"Previous conversation (summary error: {e})"
-
-    # Create new checkpointer and replace the old one - this clears all messages
-    new_checkpointer = InMemorySaver()
-    agent.checkpointer = new_checkpointer
-    session_state.checkpointer = new_checkpointer
-
-    # Reset token tracking
-    reset_current_tokens()
-    if token_tracker:
-        token_tracker.reset()
-        if token_callback:
-            token_callback(token_tracker.current_context)
-
-    if ui_callback:
-        ui_callback(Text("Context compressed. Continuing with summary.", style="dim italic"))
-        ui_callback(Text(""))
-
-    return summary
 
 
 async def execute_task(
@@ -303,14 +144,8 @@ async def execute_task(
         "metadata": {"assistant_id": assistant_id} if assistant_id else {},
     }
 
-    # Check if context compression is needed before processing
-    summary = await _maybe_summarize_and_reset(
-        agent, session_state, config, ui_callback, token_tracker, token_callback
-    )
-
-    # If we compressed, prepend summary context to user's input
-    if summary:
-        final_input = f"[Context from previous conversation]\n{summary}\n\n---\n\nUser's current request: {final_input}"
+    # Store status_callback in session_state so middleware can use it (e.g., for "Compacting...")
+    session_state._status_callback = status_callback
 
     has_responded = False
     captured_input_tokens = 0
@@ -330,8 +165,7 @@ async def execute_task(
 
         def update(self, message: str):
             if status_callback:
-                # Extract just the text content from markup like "[bold cyan]Executing..."
-                # Strip the markup tags for cleaner display
+                # Strip markup tags for cleaner display
                 clean_message = re.sub(r"\[/?[^\]]+\]", "", message)
                 status_callback(clean_message)
 
@@ -463,6 +297,25 @@ async def execute_task(
                     if isinstance(message, HumanMessage):
                         content = message.text
                         if content:
+                            # Show brief notification when compaction completes
+                            if content.startswith("[Previous conversation summary]"):
+                                if ui_callback:
+                                    savings = getattr(session_state, "_last_compaction_savings", 0)
+                                    if savings > 0:
+                                        # Format savings nicely (e.g., 15000 -> "15k")
+                                        if savings >= 1000:
+                                            savings_str = f"~{savings // 1000}k"
+                                        else:
+                                            savings_str = str(savings)
+                                        ui_callback(
+                                            Text(
+                                                f"\n📦 Context compacted (saved {savings_str} tokens)\n",
+                                                style="dim",
+                                            )
+                                        )
+                                    else:
+                                        ui_callback(Text("\n📦 Context compacted\n", style="dim"))
+                                continue
                             flush_text_buffer(final=True)
                             if spinner_active:
                                 status.stop()
@@ -558,10 +411,9 @@ async def execute_task(
                                 )
 
                         if input_toks or output_toks:
-                            captured_input_tokens = max(captured_input_tokens, input_toks)
-                            captured_output_tokens = max(captured_output_tokens, output_toks)
-                            # Update current tokens for summarization middleware
-                            set_current_tokens(captured_input_tokens)
+                            # Use latest values (not max) so post-compaction count is accurate
+                            captured_input_tokens = input_toks
+                            captured_output_tokens = output_toks
 
                     # Process content blocks (this is the key fix!)
                     for block in message.content_blocks:
@@ -679,8 +531,7 @@ async def execute_task(
                                     current_todos = new_todos
                                     todo_callback(new_todos)
 
-                            # Restart spinner with context about which tool is executing
-                            status.update(f"[bold {COLORS['thinking']}]Executing {display_str}...")
+                            # Restart spinner
                             status.start()
                             spinner_active = True
 
@@ -745,22 +596,6 @@ async def execute_task(
                                 # Notify UI to update auto-approve indicator
                                 if auto_approve_callback:
                                     auto_approve_callback(True)
-                                if ui_callback:
-                                    ui_callback(Text("\n"))
-                                if ui_callback:
-                                    ui_callback(
-                                        Text.from_markup(
-                                            "[bold blue]✓ Auto-approve mode enabled[/bold blue]"
-                                        )
-                                    )
-                                if ui_callback:
-                                    ui_callback(
-                                        Text.from_markup(
-                                            "[dim]All future tool actions will be automatically approved.[/dim]"
-                                        )
-                                    )
-                                if ui_callback:
-                                    ui_callback(Text("\n"))
 
                                 # Approve this action and all remaining actions in the batch
                                 decisions.append({"type": "approve"})
