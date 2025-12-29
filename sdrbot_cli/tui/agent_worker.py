@@ -259,10 +259,6 @@ class AgentWorker(Worker):
 
                     self.app.push_screen(HelpScreen())
                     return
-                elif user_input == "/tokens":
-                    results = self.token_tracker.display_session()
-                    self._send_command_result_to_app(results)
-                    return
                 elif user_input == "/context":
                     from sdrbot_cli.config import settings
                     from sdrbot_cli.tui.context_screen import ContextScreen
@@ -394,8 +390,10 @@ class AgentWorker(Worker):
                     AutoApproveUpdate(enabled)
                 ),
                 token_callback=lambda total: self.app.post_message(TokenUpdate(total)),
-                # Simplify status to just "Thinking" - detailed tool info is too verbose
-                status_callback=lambda _: self.app.post_message(StatusUpdate("Thinking")),
+                # Pass through status messages (e.g., "Compacting..." during summarization)
+                status_callback=lambda msg: self.app.post_message(
+                    StatusUpdate(msg if msg else "Thinking")
+                ),
                 images=images,
             )
         finally:

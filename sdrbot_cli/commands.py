@@ -16,7 +16,7 @@ from .setup.models import setup_models
 from .setup.services import setup_services
 from .ui import TokenTracker, show_interactive_help
 
-# Default summarization settings
+# Default summarization settings (must match agent.py)
 DEFAULT_TRIGGER_FRACTION = 0.85
 DEFAULT_KEEP_FRACTION = 0.10
 FALLBACK_TRIGGER_TOKENS = 170_000
@@ -81,7 +81,7 @@ def _parse_threshold(value: str | None, max_tokens: int | None) -> tuple[int, st
 
 
 def display_context_usage(token_tracker: TokenTracker, session_state: SessionState) -> list[Text]:
-    """Display context usage and summarization status."""
+    """Display context usage and compaction status."""
     output_lines = []
     output_lines.append(Text("\nContext Usage:", style=f"bold {COLORS['primary']}"))
 
@@ -94,11 +94,11 @@ def display_context_usage(token_tracker: TokenTracker, session_state: SessionSta
     if max_tokens:
         keep_tokens = int(max_tokens * DEFAULT_KEEP_FRACTION)
         output_lines.append(Text(f"  Model max: {max_tokens:,} tokens", style=COLORS["dim"]))
-        output_lines.append(Text(f"  Summarization at: {trigger_label}", style=COLORS["dim"]))
-        keep_info = f"Keeps ~{keep_tokens:,} tokens (10%) after summarization"
+        output_lines.append(Text(f"  Compaction at: {trigger_label}", style=COLORS["dim"]))
+        keep_info = f"Keeps ~{keep_tokens:,} tokens (10%) after compaction"
     else:
-        output_lines.append(Text(f"  Summarization at: {trigger_label}", style=COLORS["dim"]))
-        keep_info = f"Keeps last {FALLBACK_KEEP_MESSAGES} messages after summarization"
+        output_lines.append(Text(f"  Compaction at: {trigger_label}", style=COLORS["dim"]))
+        keep_info = f"Keeps last {FALLBACK_KEEP_MESSAGES} messages after compaction"
 
     remaining = max(0, trigger_at - current)
     usage_pct = (current / trigger_at) * 100 if trigger_at > 0 else 0
@@ -111,13 +111,13 @@ def display_context_usage(token_tracker: TokenTracker, session_state: SessionSta
     # Color based on usage
     if current >= trigger_at:
         bar_style = "red"
-        status = "Summarization will trigger on next message"
+        status = "Compaction will trigger on next message"
     elif usage_pct >= 90:
         bar_style = "yellow"
-        status = f"~{remaining:,} tokens until summarization"
+        status = f"~{remaining:,} tokens until compaction"
     else:
         bar_style = "green"
-        status = f"~{remaining:,} tokens until summarization"
+        status = f"~{remaining:,} tokens until compaction"
 
     output_lines.append(Text(f"  [{bar}] {usage_pct:.1f}%", style=bar_style))
     output_lines.append(Text(f"  {status}", style=COLORS["dim"]))
@@ -210,9 +210,6 @@ async def handle_command(
 
     if cmd == "help":
         return show_interactive_help()
-
-    if cmd == "tokens":
-        return token_tracker.display_session()
 
     if cmd == "context":
         return display_context_usage(token_tracker, session_state)

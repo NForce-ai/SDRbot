@@ -664,7 +664,7 @@ SDRbot automatically manages conversation context to prevent hitting model token
 ### How It Works
 
 1. **Monitoring**: SDRbot tracks token usage throughout your conversation
-2. **Threshold**: When context reaches 85% of the model's limit, summarization triggers
+2. **Threshold**: When context reaches 85% of the model's limit, summarization triggers (adjustable via SUMMARIZATION_THRESHOLD env param)
 3. **Summarization**: Older messages are summarized into a condensed form
 4. **Preservation**: 10% of context is preserved after summarization
 5. **Continuation**: The conversation continues seamlessly with the summarized history
@@ -680,27 +680,11 @@ The summarization system adapts to each model's context window:
 
 ### Checking Context Usage
 
-Use the `/context` command to see your current context status:
-
-```
-Context Usage:
-  Current: 45,234 tokens
-  Model max: 200,000 tokens
-  Summarization at: 170,000 tokens (85%)
-  [████████░░░░░░░░░░░░░░░░░░░░░░] 26.6%
-  ~124,766 tokens until summarization
-  Keeps ~20,000 tokens (10%) after summarization
-```
-
-The progress bar shows:
-- **Green**: Normal usage
-- **Yellow**: Approaching threshold (>90%)
-- **Red**: At or past threshold (summarization imminent)
+Use the `/context` command to see your current context status.
 
 ### What Gets Summarized
 
-- Older conversation turns (user messages + assistant responses)
-- Tool call results from earlier in the conversation
+- Older conversation turns (user messages + assistant responses + tool call results)
 - The summary captures key context, decisions made, and important information
 
 ### What's Preserved

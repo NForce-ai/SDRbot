@@ -10,7 +10,7 @@ from textual.widgets import Button, ProgressBar, Static
 # Path to shared CSS
 SETUP_CSS_PATH = Path(__file__).parent / "setup_common.tcss"
 
-# Default summarization settings
+# Default compaction settings (must match agent.py and commands.py)
 DEFAULT_TRIGGER_FRACTION = 0.85
 DEFAULT_KEEP_FRACTION = 0.10
 FALLBACK_TRIGGER_TOKENS = 170_000
@@ -32,7 +32,7 @@ def _parse_trigger_fraction(value: str | None) -> float:
 
 
 class ContextScreen(ModalScreen[None]):
-    """Modal screen displaying context usage and summarization status."""
+    """Modal screen displaying context usage and compaction status."""
 
     CSS_PATH = [SETUP_CSS_PATH]
 
@@ -132,7 +132,7 @@ class ContextScreen(ModalScreen[None]):
 
                 yield Static(f"Model max: {max_tokens:,} tokens", classes="context-label")
                 yield Static(
-                    f"Summarization at: {trigger_at:,} tokens ({trigger_pct}%)",
+                    f"Compaction at: {trigger_at:,} tokens ({trigger_pct}%)",
                     classes="context-label",
                 )
 
@@ -143,22 +143,22 @@ class ContextScreen(ModalScreen[None]):
                 # Status message
                 if current >= trigger_at:
                     yield Static(
-                        "Summarization will trigger on next message",
+                        "Compaction will trigger on next message",
                         classes="context-status status-red",
                     )
                 elif usage_pct >= 90:
                     yield Static(
-                        f"~{remaining:,} tokens until summarization",
+                        f"~{remaining:,} tokens until compaction",
                         classes="context-status status-yellow",
                     )
                 else:
                     yield Static(
-                        f"~{remaining:,} tokens until summarization",
+                        f"~{remaining:,} tokens until compaction",
                         classes="context-status status-green",
                     )
 
                 yield Static(
-                    f"Keeps ~{keep_tokens:,} tokens (10%) after summarization",
+                    f"Keeps ~{keep_tokens:,} tokens (10%) after compaction",
                     classes="context-label",
                 )
             else:
@@ -175,7 +175,7 @@ class ContextScreen(ModalScreen[None]):
                 remaining = max(0, trigger_at - current)
 
                 yield Static(
-                    f"Summarization at: {trigger_at:,} tokens (fallback)",
+                    f"Compaction at: {trigger_at:,} tokens (fallback)",
                     classes="context-label",
                 )
 
@@ -184,11 +184,11 @@ class ContextScreen(ModalScreen[None]):
                 yield bar
 
                 yield Static(
-                    f"~{remaining:,} tokens until summarization",
+                    f"~{remaining:,} tokens until compaction",
                     classes="context-status status-green",
                 )
                 yield Static(
-                    f"Keeps last {FALLBACK_KEEP_MESSAGES} messages after summarization",
+                    f"Keeps last {FALLBACK_KEEP_MESSAGES} messages after compaction",
                     classes="context-label",
                 )
 
