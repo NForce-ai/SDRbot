@@ -88,3 +88,9 @@ class ImageCountUpdate(Message):
     def __init__(self, count: int) -> None:
         self.count = count
         super().__init__()
+
+
+class ClearChatLog(Message):
+    """Message to clear the chat log widget."""
+
+    pass

@@ -6,6 +6,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from sdrbot_cli.ui import format_token_count
 from sdrbot_cli.version import __version__
 
 # Spinner frames for the thinking animation
@@ -213,7 +214,7 @@ class StatusDisplay(Static):
             spinner = SPINNER_FRAMES[self._frame_index]
             status_part = f"[dim]Status:[/] [bold cyan]{spinner}[/] [bold #00a2c7]{self.status}[/]"
 
-        tokens_part = f"[dim]Tokens: {self.total_tokens:,}[/]"
+        tokens_part = f"[dim]Tokens: {format_token_count(self.total_tokens)}[/]"
         # Use @click markup for clickable model name (color set via CSS link-color)
         model_part = f"[dim]Model:[/] [@click=show_models]{self.model_name}[/]"
 
