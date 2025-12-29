@@ -12,6 +12,7 @@ from typing import Any
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
+    AIMessage,
     AnyMessage,
     HumanMessage,
     RemoveMessage,
@@ -193,14 +194,27 @@ class CustomSummarizationMiddleware(AgentMiddleware):
                 msg.id = str(uuid.uuid4())
 
     def _stub_tool_messages(self, messages: list[AnyMessage]) -> list[AnyMessage]:
-        """Replace ToolMessage content with stubs to save tokens.
+        """Replace ToolMessage content with stubs and remove orphaned tool results.
 
-        The actual tool results are captured in the conversation summary,
-        so we only need stubs to maintain message structure.
+        The actual tool results are captured in the conversation summary.
+        ToolMessages whose corresponding AIMessage (with tool_calls) was summarized
+        away must be removed entirely to avoid API errors.
         """
+        # Collect all valid tool_call_ids from AIMessages in the preserved set
+        valid_tool_call_ids: set[str] = set()
+        for msg in messages:
+            if isinstance(msg, AIMessage) and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if "id" in tc:
+                        valid_tool_call_ids.add(tc["id"])
+
         result = []
         for msg in messages:
             if isinstance(msg, ToolMessage):
+                # Only keep ToolMessages with valid (non-orphaned) tool_call_ids
+                if msg.tool_call_id not in valid_tool_call_ids:
+                    # Orphaned - the AIMessage with this tool_call was summarized away
+                    continue
                 # Create a new ToolMessage with stubbed content
                 stubbed = ToolMessage(
                     content="[Tool result included in conversation summary]",
