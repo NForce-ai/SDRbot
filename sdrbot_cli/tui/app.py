@@ -6,7 +6,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
-from textual.widgets import Header, OptionList, RichLog, Static, TextArea
+from textual.widgets import Header, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
 from sdrbot_cli.auth.oauth_server import shutdown_server as shutdown_oauth_server
@@ -36,6 +36,7 @@ from sdrbot_cli.tui.messages import (
 from sdrbot_cli.tui.widgets import (
     AgentInfo,
     AppFooter,
+    CopyableRichLog,
     ImageAttachmentBar,
     StatusDisplay,
     ThinkingIndicator,
@@ -384,7 +385,7 @@ class SDRBotTUI(App[None]):
             )
             yield StatusDisplay(id="status_display")
         with Container(id="app_grid"):
-            yield RichLog(id="chat_log", wrap=True, auto_scroll=True)
+            yield CopyableRichLog(id="chat_log", wrap=True, auto_scroll=True)
             with VerticalScroll(id="task_list_container"):
                 yield Static("", id="task_list_display")
         yield ApprovalBar(id="approval_bar")
@@ -772,7 +773,7 @@ class SDRBotTUI(App[None]):
 
         # Don't show slash commands in chat log
         if not value.startswith("/"):
-            chat_log = self.query_one("#chat_log", RichLog)
+            chat_log = self.query_one("#chat_log", CopyableRichLog)
             chat_log.write(Text(f"> {value}", style="bold #00a2c7"))
 
         # Update status to "Thinking" and show thinking indicator
@@ -794,7 +795,7 @@ class SDRBotTUI(App[None]):
 
     async def on_agent_message(self, message: AgentMessage) -> None:
         """Handle messages from the agent worker."""
-        chat_log = self.query_one("#chat_log", RichLog)
+        chat_log = self.query_one("#chat_log", CopyableRichLog)
         chat_log.write(message.renderable)
 
     async def on_agent_exit(self, message: AgentExit) -> None:
@@ -802,8 +803,8 @@ class SDRBotTUI(App[None]):
         self.exit()
 
     async def on_clear_chat_log(self, message: ClearChatLog) -> None:
-        """Handle clear chat log message - clears the RichLog widget."""
-        chat_log = self.query_one("#chat_log", RichLog)
+        """Handle clear chat log message."""
+        chat_log = self.query_one("#chat_log", CopyableRichLog)
         chat_log.clear()
 
     async def on_task_list_update(self, message: TaskListUpdate) -> None:
