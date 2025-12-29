@@ -744,4 +744,4 @@ async def execute_task(
         if token_tracker and (captured_input_tokens or captured_output_tokens):
             token_tracker.add(captured_input_tokens, captured_output_tokens)
             if token_callback:
-                token_callback(token_tracker.current_context)
+                token_callback(token_tracker.total_session_tokens)
