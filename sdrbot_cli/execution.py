@@ -148,8 +148,6 @@ async def execute_task(
     session_state._status_callback = status_callback
 
     has_responded = False
-    captured_input_tokens = 0
-    captured_output_tokens = 0
     current_todos = None  # Track current todo list state
 
     # Status tracker - updates ChatInput placeholder via status_callback
@@ -411,9 +409,15 @@ async def execute_task(
                                 )
 
                         if input_toks or output_toks:
-                            # Use latest values (not max) so post-compaction count is accurate
-                            captured_input_tokens = input_toks
-                            captured_output_tokens = output_toks
+                            # Update token tracker immediately for real-time UI updates
+                            token_tracker.add(
+                                input_toks,
+                                output_toks,
+                                context_input=input_toks,
+                                context_output=output_toks,
+                            )
+                            if token_callback:
+                                token_callback(token_tracker.total_session_tokens)
 
                     # Process content blocks (this is the key fix!)
                     for block in message.content_blocks:
@@ -769,11 +773,6 @@ async def execute_task(
     if has_responded:
         if ui_callback:
             ui_callback(Text("\n"))
-        # Track token usage
-        if token_tracker and (captured_input_tokens or captured_output_tokens):
-            token_tracker.add(captured_input_tokens, captured_output_tokens)
-            if token_callback:
-                token_callback(token_tracker.total_session_tokens)
 
     # Auto-reload agent if schema-modifying tools were used successfully
     if services_to_reload:
