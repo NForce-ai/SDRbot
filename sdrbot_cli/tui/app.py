@@ -558,6 +558,7 @@ class SDRBotTUI(App[None]):
                     tools,
                     sandbox=sandbox_backend,
                     sandbox_type=sandbox_type,
+                    session_state=self.session_state,
                 )
 
             loading.update_message("Initializing agent...")
@@ -567,14 +568,14 @@ class SDRBotTUI(App[None]):
                 tool_count,
                 skill_count,
                 checkpointer,
-                model_instance,
+                baseline_tokens,
             ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
-            self.session_state.model = model_instance
             self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
+            self.session_state.baseline_tokens = baseline_tokens
 
             # Set up reload callback
             async def reload_agent():
@@ -594,7 +595,7 @@ class SDRBotTUI(App[None]):
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
                 # Pass existing checkpointer to preserve conversation history
-                new_agent, new_backend, new_tool_count, new_skill_count, _, new_model = (
+                new_agent, new_backend, new_tool_count, new_skill_count, _, new_baseline = (
                     create_agent_with_config(
                         fresh_model,
                         self.assistant_id,
@@ -602,13 +603,14 @@ class SDRBotTUI(App[None]):
                         sandbox=sandbox_backend,
                         sandbox_type=sandbox_type,
                         checkpointer=self.session_state.checkpointer,
+                        session_state=self.session_state,
                     )
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
-                self.session_state.model = new_model
                 self.session_state.tool_count = new_tool_count
                 self.session_state.skill_count = new_skill_count
+                self.session_state.baseline_tokens = new_baseline
                 return new_failed
 
             self.session_state.set_reload_callback(reload_agent)
@@ -672,7 +674,12 @@ class SDRBotTUI(App[None]):
             def create_agent():
                 tools = [http_request, fetch_url]
                 return create_agent_with_config(
-                    model, self.assistant_id, tools, sandbox=None, sandbox_type=None
+                    model,
+                    self.assistant_id,
+                    tools,
+                    sandbox=None,
+                    sandbox_type=None,
+                    session_state=self.session_state,
                 )
 
             # Initialize agent in thread pool
@@ -683,14 +690,14 @@ class SDRBotTUI(App[None]):
                 tool_count,
                 skill_count,
                 checkpointer,
-                model_instance,
+                baseline_tokens,
             ) = await loop.run_in_executor(None, create_agent)
             self.session_state.agent = agent
             self.session_state.backend = composite_backend
-            self.session_state.model = model_instance
             self.session_state.checkpointer = checkpointer
             self.session_state.tool_count = tool_count
             self.session_state.skill_count = skill_count
+            self.session_state.baseline_tokens = baseline_tokens
 
             # Set up reload callback
             async def reload_agent():
@@ -710,7 +717,7 @@ class SDRBotTUI(App[None]):
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
                 tools = [http_request, fetch_url]
                 # Pass existing checkpointer to preserve conversation history
-                new_agent, new_backend, new_tool_count, new_skill_count, _, new_model = (
+                new_agent, new_backend, new_tool_count, new_skill_count, _, new_baseline = (
                     create_agent_with_config(
                         fresh_model,
                         self.assistant_id,
@@ -718,13 +725,14 @@ class SDRBotTUI(App[None]):
                         sandbox=None,
                         sandbox_type=None,
                         checkpointer=self.session_state.checkpointer,
+                        session_state=self.session_state,
                     )
                 )
                 self.session_state.agent = new_agent
                 self.session_state.backend = new_backend
-                self.session_state.model = new_model
                 self.session_state.tool_count = new_tool_count
                 self.session_state.skill_count = new_skill_count
+                self.session_state.baseline_tokens = new_baseline
                 return new_failed
 
             self.session_state.set_reload_callback(reload_agent)

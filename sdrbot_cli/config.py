@@ -43,9 +43,8 @@ DEEP_AGENTS_ASCII = """
 # Interactive commands (shared between CLI and TUI)
 COMMANDS = {
     "clear": "Clear screen and reset conversation",
-    "context": "Show context usage and summarization status",
+    "context": "Show context usage and compaction status",
     "help": "Show help information",
-    "tokens": "Show token usage for current session",
     "quit": "Exit the CLI",
     "exit": "Exit the CLI",
     "setup": "Re-run the setup wizard",
@@ -55,8 +54,7 @@ COMMANDS = {
 # TUI-specific commands (superset of COMMANDS)
 TUI_COMMANDS = {
     "help": "Show help information",
-    "tokens": "Show token usage for current session",
-    "context": "Show context usage and summarization status",
+    "context": "Show context usage and compaction status",
     "tools": "Show tools management screen",
     "models": "Open model configuration",
     "services": "Open services setup screen",
@@ -322,7 +320,7 @@ class Settings:
     huggingface_api_key: str | None
 
     # Summarization Config
-    summarization_threshold: str | None  # Fraction (0-1) or token count
+    summarization_threshold: str | None  # Fraction (0-1) or absolute token count
 
     # Project information
     project_root: Path | None
@@ -887,10 +885,15 @@ class SessionState:
         self.checkpointer = None  # Preserved across reloads to maintain conversation history
         self.tool_count = 0  # Number of tools loaded
         self.skill_count = 0  # Number of skills loaded
+        self.baseline_tokens = 0  # Baseline context tokens (system + tools)
         # Reload callback - set by main.py to allow commands to trigger agent reload
         self._reload_callback = None
         # Post-reload callback - called after agent reload completes (for UI updates)
         self._post_reload_callback = None
+        # Status callback - set by execute_task for UI status updates (e.g., "Compacting...")
+        self._status_callback = None
+        # Token savings from last compaction (for UI display)
+        self._last_compaction_savings = 0
 
     def toggle_auto_approve(self) -> bool:
         """Toggle auto-approve and return new state."""
