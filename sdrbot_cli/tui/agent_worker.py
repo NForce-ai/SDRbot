@@ -16,6 +16,7 @@ from sdrbot_cli.tui.messages import (
     AgentExit,
     AgentMessage,
     AutoApproveUpdate,
+    ClearChatLog,
     ImageCountUpdate,
     SkillCountUpdate,
     StatusUpdate,
@@ -189,12 +190,8 @@ class AgentWorker(Worker):
         self.app.post_message(ToolApprovalRequest(future))
         return await future
 
-    async def _run_agent_loop(self, failed_mcp_servers: list[str] | None = None) -> None:
-        """The main agent loop, adapted for a Textual worker."""
-        if self.is_cancelled:
-            return
-
-        # Initial splash and greetings (adapted from simple_cli)
+    def _display_splash_and_greeting(self, show_tips: bool = True) -> None:
+        """Display the splash screen and a random greeting."""
         if not self.session_state.no_splash:
             version_display = f"v{__version__}"
             visible_length = len(version_display) + 2
@@ -217,6 +214,19 @@ class AgentWorker(Worker):
         ]
         self._send_message_to_app(Text(random.choice(greetings), style=COLORS["agent"]))
         self._send_message_to_app(Text(""))
+
+        if show_tips:
+            tips = "/help to view the user guide"
+            self._send_message_to_app(Text(tips, style=COLORS["dim"]))
+            self._send_message_to_app(Text(""))
+
+    async def _run_agent_loop(self, failed_mcp_servers: list[str] | None = None) -> None:
+        """The main agent loop, adapted for a Textual worker."""
+        if self.is_cancelled:
+            return
+
+        # Initial splash and greetings
+        self._display_splash_and_greeting(show_tips=False)
 
         # Display warning about failed MCP servers
         if failed_mcp_servers:
@@ -333,6 +343,31 @@ class AgentWorker(Worker):
                         SkillsManagementScreen(),
                         self._on_setup_screen_closed,
                     )
+                    return
+                elif user_input == "/clear":
+                    # Full reset: clear chat log, reset state, re-display splash
+                    from langgraph.checkpoint.memory import InMemorySaver
+
+                    # Reset checkpointer (conversation state)
+                    new_checkpointer = InMemorySaver()
+                    if self.session_state.agent:
+                        self.session_state.agent.checkpointer = new_checkpointer
+                    self.session_state.checkpointer = new_checkpointer
+
+                    # Reset token tracker
+                    self.token_tracker.reset()
+
+                    # Clear the chat log widget
+                    self.app.post_message(ClearChatLog())
+
+                    # Clear task list
+                    self.app.post_message(TaskListUpdate([]))
+
+                    # Re-display splash and greeting
+                    self._display_splash_and_greeting(show_tips=True)
+
+                    # Update UI with reset token count
+                    self.app.post_message(TokenUpdate(0))
                     return
                 else:
                     result = await handle_command(

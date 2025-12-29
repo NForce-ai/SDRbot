@@ -24,6 +24,7 @@ from sdrbot_cli.tui.messages import (
     AgentExit,
     AgentMessage,
     AutoApproveUpdate,
+    ClearChatLog,
     ImageCountUpdate,
     SkillCountUpdate,
     StatusUpdate,
@@ -799,6 +800,11 @@ class SDRBotTUI(App[None]):
     async def on_agent_exit(self, message: AgentExit) -> None:
         """Handle agent exit message."""
         self.exit()
+
+    async def on_clear_chat_log(self, message: ClearChatLog) -> None:
+        """Handle clear chat log message - clears the RichLog widget."""
+        chat_log = self.query_one("#chat_log", RichLog)
+        chat_log.clear()
 
     async def on_task_list_update(self, message: TaskListUpdate) -> None:
         """Handle task list updates from the agent worker."""
