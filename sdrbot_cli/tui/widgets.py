@@ -1,13 +1,43 @@
 """Custom Textual widgets for SDRbot."""
 
+import pyperclip
 from rich.text import Text
+from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
-from textual.widgets import Static
+from textual.widgets import RichLog, Static
 
 from sdrbot_cli.ui import format_token_count
 from sdrbot_cli.version import __version__
+
+
+class CopyableRichLog(RichLog):
+    """RichLog that copies content to clipboard on right-click."""
+
+    def on_click(self, event: Click) -> None:
+        """Handle click events - right-click copies content to clipboard."""
+        if event.button == 3:  # Right-click
+            self._copy_to_clipboard()
+            event.stop()
+
+    def _copy_to_clipboard(self) -> None:
+        """Extract text content and copy to clipboard."""
+        # Extract plain text from all lines (Strip objects)
+        text_lines = []
+        for strip in self.lines:
+            # Strip contains Segments, each with text attribute
+            line_text = "".join(segment.text for segment in strip._segments)
+            text_lines.append(line_text)
+
+        full_text = "\n".join(text_lines)
+
+        try:
+            pyperclip.copy(full_text)
+            self.app.notify("Chat log copied to clipboard", timeout=2)
+        except Exception as e:
+            self.app.notify(f"Failed to copy: {e}", severity="error", timeout=3)
+
 
 # Spinner frames for the thinking animation
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
