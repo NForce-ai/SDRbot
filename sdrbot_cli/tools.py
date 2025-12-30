@@ -179,6 +179,58 @@ def http_request(
         }
 
 
+def sync_crm_schema(service_name: str | None = None) -> str:
+    """Sync CRM schema(s) and regenerate tools.
+
+    Use this tool to refresh the available fields and tools for CRM services.
+    This is useful after creating custom fields or modifying the CRM schema.
+
+    Args:
+        service_name: Optional. Name of a specific service to sync (e.g., "pipedrive",
+                     "twenty", "hubspot", "salesforce", "attio", "zohocrm").
+                     If not provided, syncs ALL enabled syncable services.
+
+    Returns:
+        Success message with synced services, or error message.
+    """
+    from sdrbot_cli.services import SYNCABLE_SERVICES, resync_service
+    from sdrbot_cli.services.registry import load_config
+
+    # If specific service requested, sync just that one
+    if service_name:
+        if service_name not in SYNCABLE_SERVICES:
+            return f"Error: '{service_name}' is not a syncable service. Valid options: {', '.join(SYNCABLE_SERVICES)}"
+
+        try:
+            success = resync_service(service_name, verbose=False)
+            if success:
+                return f"Successfully synced {service_name} schema. Tools have been regenerated."
+            else:
+                return f"Failed to sync {service_name}. Check that the service is enabled and credentials are valid."
+        except Exception as e:
+            return f"Error syncing {service_name}: {str(e)}"
+
+    # No service specified - sync all enabled syncable services
+    config = load_config()
+    enabled_syncable = [s for s in SYNCABLE_SERVICES if config.is_enabled(s)]
+
+    if not enabled_syncable:
+        return "No syncable services are enabled. Enable a CRM service first with /services enable <name>"
+
+    results = []
+    for svc in enabled_syncable:
+        try:
+            success = resync_service(svc, verbose=False)
+            if success:
+                results.append(f"✓ {svc}")
+            else:
+                results.append(f"✗ {svc} (failed)")
+        except Exception as e:
+            results.append(f"✗ {svc} ({str(e)[:50]})")
+
+    return f"Synced {len(enabled_syncable)} service(s):\n" + "\n".join(results)
+
+
 def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:
     """Fetch content from a URL and convert HTML to markdown format.
 

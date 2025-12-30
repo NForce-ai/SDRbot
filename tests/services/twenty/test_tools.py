@@ -16,12 +16,19 @@ class TestTwentyToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 6
+        assert len(tools) == 10
         tool_names = [t.name for t in tools]
+        # Note tools
         assert "twenty_create_note_on_record" in tool_names
         assert "twenty_list_notes_on_record" in tool_names
         assert "twenty_update_note" in tool_names
         assert "twenty_delete_note" in tool_names
+        # Task tools
+        assert "twenty_create_task_on_record" in tool_names
+        assert "twenty_list_tasks_on_record" in tool_names
+        assert "twenty_update_task" in tool_names
+        assert "twenty_delete_task" in tool_names
+        # Search/get tools
         assert "twenty_search_records" in tool_names
         assert "twenty_get_record" in tool_names
 

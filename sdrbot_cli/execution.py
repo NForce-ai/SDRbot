@@ -787,9 +787,9 @@ async def execute_task(
                     )
                 )
 
-            # Resync each affected service
+            # Resync each affected service (run sync function in thread pool)
             for service in services_to_reload:
-                await resync_service(service, verbose=False)
+                await asyncio.to_thread(resync_service, service, verbose=False)
 
             # Reload agent with fresh tools
             await session_state.reload_agent()

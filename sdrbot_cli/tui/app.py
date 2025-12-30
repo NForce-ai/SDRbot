@@ -543,7 +543,7 @@ class SDRBotTUI(App[None]):
 
             # Create agent
             from sdrbot_cli.agent import create_agent_with_config
-            from sdrbot_cli.tools import fetch_url, http_request
+            from sdrbot_cli.tools import fetch_url, http_request, sync_crm_schema
 
             # Get sandbox backend if provided
             sandbox_backend = getattr(self.session_state, "sandbox_backend", None)
@@ -553,7 +553,7 @@ class SDRBotTUI(App[None]):
                 sandbox_type = None
 
             def create_agent():
-                tools = [http_request, fetch_url]
+                tools = [http_request, fetch_url, sync_crm_schema]
                 return create_agent_with_config(
                     model,
                     self.assistant_id,
@@ -595,7 +595,7 @@ class SDRBotTUI(App[None]):
                 _, new_failed = await reinitialize_mcp()
                 # Re-create model from current config (don't use stale closure)
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
-                tools = [http_request, fetch_url]
+                tools = [http_request, fetch_url, sync_crm_schema]
                 # Pass existing checkpointer to preserve conversation history
                 new_agent, new_backend, new_tool_count, new_skill_count, _, new_baseline = (
                     create_agent_with_config(
@@ -671,10 +671,10 @@ class SDRBotTUI(App[None]):
 
             # Now we need to create the agent
             from sdrbot_cli.agent import create_agent_with_config
-            from sdrbot_cli.tools import fetch_url, http_request
+            from sdrbot_cli.tools import fetch_url, http_request, sync_crm_schema
 
             def create_agent():
-                tools = [http_request, fetch_url]
+                tools = [http_request, fetch_url, sync_crm_schema]
                 return create_agent_with_config(
                     model,
                     self.assistant_id,
@@ -717,7 +717,7 @@ class SDRBotTUI(App[None]):
                 _, new_failed = await reinitialize_mcp()
                 # Re-create model from current config (don't use stale closure)
                 fresh_model = await loop.run_in_executor(None, create_fresh_model)
-                tools = [http_request, fetch_url]
+                tools = [http_request, fetch_url, sync_crm_schema]
                 # Pass existing checkpointer to preserve conversation history
                 new_agent, new_backend, new_tool_count, new_skill_count, _, new_baseline = (
                     create_agent_with_config(

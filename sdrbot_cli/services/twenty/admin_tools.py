@@ -11,14 +11,140 @@ via /setup > Privileged Mode. When disabled, these tools are not available.
 """
 
 import json
+import re
+from datetime import datetime
+from pathlib import Path
 
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.twenty import TwentyClient
 from sdrbot_cli.tools import privileged_tool
 
+# Twenty SELECT field validation rules (from source code)
+# packages/twenty-server/src/.../validate-enum-flat-field-metadata.util.ts
+_SELECT_VALUE_PATTERN = re.compile(r"^(?!.*__)[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$")
+_VALID_COLORS = {
+    "green",
+    "turquoise",
+    "sky",
+    "blue",
+    "purple",
+    "pink",
+    "red",
+    "orange",
+    "yellow",
+    "gray",
+}
+
+
+def _validate_select_options(options: list[dict]) -> str | None:
+    """Validate SELECT/MULTI_SELECT options according to Twenty's rules.
+
+    Rules from Twenty source:
+    - value: 1-63 chars, ALL_CAPS (underscores optional), no consecutive underscores, must start with letter
+    - label: 1-63 chars, no commas, no whitespace-only
+    - position: required number, must be unique
+    - color: REQUIRED, must be one of valid colors
+
+    Returns:
+        Error message string if validation fails, None if valid.
+    """
+    if not isinstance(options, list):
+        return "Error: options must be a list"
+
+    seen_values = set()
+    seen_positions = set()
+
+    for i, opt in enumerate(options):
+        if not isinstance(opt, dict):
+            return f"Error: Option {i} must be an object"
+
+        # Check required fields
+        missing = []
+        if "value" not in opt:
+            missing.append("value")
+        if "label" not in opt:
+            missing.append("label")
+        if "position" not in opt:
+            missing.append("position")
+        if "color" not in opt:
+            missing.append("color")
+
+        if missing:
+            return (
+                f"Error: Option {i} missing required fields: {', '.join(missing)}. "
+                f"Each option needs: value (ALL_CAPS), label (no commas), "
+                f"position (0, 1, 2...), color ({', '.join(sorted(_VALID_COLORS))})"
+            )
+
+        value = opt["value"]
+        label = opt["label"]
+        position = opt["position"]
+        color = opt["color"]
+
+        # Validate value format and length
+        if not isinstance(value, str) or len(value) < 1 or len(value) > 63:
+            return f"Error: Option {i} value must be 1-63 characters"
+        if not _SELECT_VALUE_PATTERN.match(value):
+            return (
+                f"Error: Option {i} value '{value}' invalid. "
+                f"Must be ALL_CAPS (e.g., 'ACTIVE', 'HOT_LEAD'), "
+                f"start with a letter, no consecutive underscores."
+            )
+
+        # Validate label - no commas, 1-63 chars, not whitespace-only
+        if not isinstance(label, str) or len(label) < 1 or len(label) > 63:
+            return f"Error: Option {i} label must be 1-63 characters"
+        if "," in label:
+            return (
+                f"Error: Option {i} label '{label}' contains a comma. "
+                f"Twenty does not allow commas in option labels."
+            )
+        if label.strip() == "":
+            return f"Error: Option {i} label cannot be whitespace-only"
+
+        # Validate position
+        if not isinstance(position, int):
+            return f"Error: Option {i} position must be a number"
+
+        # Validate color
+        if color not in _VALID_COLORS:
+            return (
+                f"Error: Option {i} color '{color}' invalid. "
+                f"Must be one of: {', '.join(sorted(_VALID_COLORS))}"
+            )
+
+        # Check for duplicates
+        if value in seen_values:
+            return f"Error: Option {i} has duplicate value '{value}'"
+        seen_values.add(value)
+
+        if position in seen_positions:
+            return f"Error: Option {i} has duplicate position {position}"
+        seen_positions.add(position)
+
+    return None  # Valid
+
+
 # Shared client instance for admin operations
 _admin_client = None
+
+# Error log file
+_ERROR_LOG = Path("files/twenty_admin_errors.log")
+
+
+def _log_error(tool_name: str, params: dict, error: str) -> None:
+    """Log admin tool errors to file for debugging."""
+    try:
+        _ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ERROR_LOG, "a") as f:
+            f.write(f"\n{'=' * 60}\n")
+            f.write(f"Time: {datetime.now().isoformat()}\n")
+            f.write(f"Tool: {tool_name}\n")
+            f.write(f"Params: {json.dumps(params, indent=2)}\n")
+            f.write(f"Error: {error}\n")
+    except Exception:
+        pass  # Don't fail if logging fails
 
 
 def _get_admin_client() -> TwentyClient:
@@ -58,7 +184,7 @@ def twenty_admin_list_objects(limit: int = 50) -> str:
         # Metadata endpoints are at /rest/objects, /rest/fields, etc.
         data = client.get("/metadata/objects")
 
-        objects = data.get("data", {}).get("objects", []) if isinstance(data, dict) else data
+        objects = data.get("data", {}).get("objects", [])
         if not objects:
             return "No objects found."
 
@@ -230,7 +356,8 @@ def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> 
     """List fields, optionally filtered by object.
 
     Args:
-        object_id: Filter by object metadata ID (optional).
+        object_id: Filter by object metadata ID (optional). When provided,
+                   fetches fields from the object endpoint (more reliable).
         limit: Maximum fields to return (default 100).
 
     Returns:
@@ -238,15 +365,23 @@ def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> 
     """
     client = _get_admin_client()
     try:
-        params = {"limit": limit}
         if object_id:
-            params["filter"] = f'objectMetadataId[eq]:"{object_id}"'
+            # Get fields from the object endpoint (fields are nested in object response)
+            data = client.get(f"/metadata/objects/{object_id}")
+            obj = data.get("data", {}).get("object", {})
+            fields = obj.get("fields", [])
+        else:
+            # Get all fields from the fields endpoint
+            data = client.get("/metadata/fields")
+            fields = data.get("data", {}).get("fields", [])
 
-        data = client.get("/metadata/fields")
-
-        fields = data.get("data", {}).get("fields", []) if isinstance(data, dict) else data
         if not fields:
+            if object_id:
+                return f"No fields found for object {object_id}."
             return "No fields found."
+
+        # Apply limit
+        fields = fields[:limit]
 
         results = []
         for field in fields:
@@ -256,9 +391,9 @@ def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> 
                     "name": field.get("name"),
                     "label": field.get("label"),
                     "type": field.get("type"),
-                    "objectMetadataId": field.get("objectMetadataId"),
                     "isCustom": field.get("isCustom", False),
                     "isNullable": field.get("isNullable", True),
+                    "isActive": field.get("isActive", True),
                 }
             )
 
@@ -324,21 +459,29 @@ def twenty_admin_create_field(
         is_nullable: Whether field can be empty (default True).
         default_value: Default value as JSON string.
         options: For SELECT/MULTI_SELECT: JSON array of options.
-                 REQUIRED fields for each option:
-                 - "value": SCREAMING_SNAKE_CASE (pattern: ^[A-Z0-9]+_[A-Z0-9]+$)
-                 - "label": Display text
-                 - "position": Number (0, 1, 2, ...) - REQUIRED!
-                 - "color": One of: green, turquoise, sky, blue, purple, pink,
-                           red, orange, yellow, gray
-                 Example:
-                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green", "position": 0},
-                   {"value": "WARM_LEAD", "label": "Warm Lead", "color": "yellow", "position": 1}]'
+                 ALL fields are REQUIRED:
+                 - "value": ALL_CAPS (e.g., "ACTIVE", "HOT_LEAD"), 1-63 chars,
+                            must start with letter, underscores optional, no double underscores
+                 - "label": Display text, 1-63 chars, NO COMMAS ALLOWED
+                 - "position": Number (0, 1, 2, ...) - must be unique
+                 - "color": REQUIRED - green, turquoise, sky, blue, purple, pink, red, orange, yellow, gray
+                 Example: '[{"value": "WON", "label": "Won", "position": 0, "color": "green"}, {"value": "LOST", "label": "Lost", "position": 1, "color": "red"}]'
 
     Returns:
         Success message with the new field ID.
     """
     client = _get_admin_client()
     try:
+        # Check if field with this name already exists on the object
+        obj_data = client.get(f"/metadata/objects/{object_id}")
+        fields = obj_data.get("data", {}).get("object", {}).get("fields", [])
+        for field in fields:
+            if field.get("name") == name:
+                return (
+                    f"Error: Field '{name}' already exists on this object (ID: {field.get('id')}). "
+                    f"Use twenty_admin_update_field to modify it, or choose a different name."
+                )
+
         payload = {
             "objectMetadataId": object_id,
             "name": name,
@@ -358,34 +501,19 @@ def twenty_admin_create_field(
         if options:
             try:
                 parsed_options = json.loads(options)
-                # Validate required fields in options
-                if isinstance(parsed_options, list):
-                    for i, opt in enumerate(parsed_options):
-                        if not isinstance(opt, dict):
-                            return f"Error: Option {i} must be an object"
-                        missing = []
-                        if "value" not in opt:
-                            missing.append("value")
-                        if "label" not in opt:
-                            missing.append("label")
-                        if "position" not in opt:
-                            missing.append("position")
-                        if "color" not in opt:
-                            missing.append("color")
-                        if missing:
-                            return (
-                                f"Error: Option {i} missing required fields: {missing}. "
-                                f"Each option needs: value (SCREAMING_SNAKE_CASE), label, "
-                                f"position (0, 1, 2...), and color (green/blue/red/etc)."
-                            )
+                # Validate options using centralized validation
+                validation_error = _validate_select_options(parsed_options)
+                if validation_error:
+                    return validation_error
                 payload["options"] = parsed_options
             except json.JSONDecodeError:
                 return "Error: 'options' must be a valid JSON array"
 
         data = client.post("/metadata/fields", json=payload)
 
+        # Handle successful response
         field = (
-            data.get("data", {}).get("field", {})
+            data.get("data", {}).get("createOneField", {})
             if isinstance(data, dict) and "data" in data
             else data
         )
@@ -393,7 +521,29 @@ def twenty_admin_create_field(
 
         return f"Successfully created field '{label}' (ID: {field_id})"
     except Exception as e:
-        return f"Error creating field: {str(e)}"
+        error_str = str(e)
+        _log_error(
+            "twenty_admin_create_field",
+            {
+                "object_id": object_id,
+                "name": name,
+                "label": label,
+                "field_type": field_type,
+                "options": options,
+            },
+            error_str,
+        )
+        # Provide helpful guidance for common errors
+        if "validation errors" in error_str.lower():
+            return (
+                f"Error creating field: {error_str}\n\n"
+                "Common causes:\n"
+                "1. Field with this name already exists (check with twenty_admin_list_fields)\n"
+                "2. For SELECT fields: options must have value, label, position, AND color (all required)\n"
+                "3. SELECT option labels cannot contain commas\n"
+                "4. Invalid object_id (verify with twenty_admin_list_objects)"
+            )
+        return f"Error creating field: {error_str}"
 
 
 @privileged_tool(schema_modifying="twenty")
@@ -418,14 +568,12 @@ def twenty_admin_update_field(
         is_active: Whether field is active (set False to deactivate).
         default_value: New default value as JSON string.
         options: For SELECT/MULTI_SELECT: JSON array of options.
-                 REQUIRED fields for each option:
-                 - "value": SCREAMING_SNAKE_CASE (pattern: ^[A-Z0-9]+_[A-Z0-9]+$)
-                 - "label": Display text
-                 - "position": Number (0, 1, 2, ...) - REQUIRED!
-                 - "color": One of: green, turquoise, sky, blue, purple, pink,
-                           red, orange, yellow, gray
-                 Example:
-                 '[{"value": "HOT_LEAD", "label": "Hot Lead", "color": "green", "position": 0}]'
+                 ALL fields are REQUIRED:
+                 - "value": ALL_CAPS (e.g., "ACTIVE", "HOT_LEAD"), 1-63 chars
+                 - "label": Display text, 1-63 chars, NO COMMAS
+                 - "position": Number (0, 1, 2, ...) - must be unique
+                 - "color": REQUIRED - green, turquoise, sky, blue, purple, pink, red, orange, yellow, gray
+                 Example: '[{"value": "WON", "label": "Won", "position": 0, "color": "green"}]'
 
     Returns:
         Success message confirming the update.
@@ -451,26 +599,10 @@ def twenty_admin_update_field(
         if options:
             try:
                 parsed_options = json.loads(options)
-                # Validate required fields in options
-                if isinstance(parsed_options, list):
-                    for i, opt in enumerate(parsed_options):
-                        if not isinstance(opt, dict):
-                            return f"Error: Option {i} must be an object"
-                        missing = []
-                        if "value" not in opt:
-                            missing.append("value")
-                        if "label" not in opt:
-                            missing.append("label")
-                        if "position" not in opt:
-                            missing.append("position")
-                        if "color" not in opt:
-                            missing.append("color")
-                        if missing:
-                            return (
-                                f"Error: Option {i} missing required fields: {missing}. "
-                                f"Each option needs: value (SCREAMING_SNAKE_CASE), label, "
-                                f"position (0, 1, 2...), and color (green/blue/red/etc)."
-                            )
+                # Validate options using centralized validation
+                validation_error = _validate_select_options(parsed_options)
+                if validation_error:
+                    return validation_error
                 payload["options"] = parsed_options
             except json.JSONDecodeError:
                 return "Error: 'options' must be a valid JSON array"
@@ -481,7 +613,17 @@ def twenty_admin_update_field(
         client.patch(f"/metadata/fields/{field_id}", json=payload)
         return f"Successfully updated field {field_id}"
     except Exception as e:
-        return f"Error updating field: {str(e)}"
+        error_str = str(e)
+        _log_error(
+            "twenty_admin_update_field",
+            {
+                "field_id": field_id,
+                "label": label,
+                "options": options,
+            },
+            error_str,
+        )
+        return f"Error updating field: {error_str}"
 
 
 @privileged_tool(schema_modifying="twenty")
@@ -1183,6 +1325,52 @@ def twenty_admin_delete_view_group(view_group_id: str) -> str:
 
 
 # =============================================================================
+# WORKSPACE MEMBERS - User management
+# =============================================================================
+
+
+@privileged_tool
+def twenty_admin_list_workspace_members(limit: int = 50) -> str:
+    """List all workspace members (users) in Twenty.
+
+    Use this to discover team members for task assignment or to understand
+    who has access to the CRM.
+
+    Args:
+        limit: Maximum members to return (default 50).
+
+    Returns:
+        JSON list of workspace members with their details.
+    """
+    client = _get_admin_client()
+    try:
+        data = client.get("/workspaceMembers", params={"limit": limit})
+
+        members = (
+            data.get("data", {}).get("workspaceMembers", []) if isinstance(data, dict) else data
+        )
+        if not members:
+            return "No workspace members found."
+
+        results = []
+        for member in members:
+            name = member.get("name", {})
+            results.append(
+                {
+                    "id": member.get("id"),
+                    "name": f"{name.get('firstName', '')} {name.get('lastName', '')}".strip(),
+                    "email": member.get("userEmail"),
+                    "role": member.get("role"),
+                    "avatarUrl": member.get("avatarUrl"),
+                }
+            )
+
+        return f"Found {len(results)} workspace members:\n" + json.dumps(results, indent=2)
+    except Exception as e:
+        return f"Error listing workspace members: {str(e)}"
+
+
+# =============================================================================
 # TOOL EXPORT
 # =============================================================================
 
@@ -1232,4 +1420,6 @@ def get_admin_tools() -> list[BaseTool]:
         twenty_admin_create_view_group,
         twenty_admin_update_view_group,
         twenty_admin_delete_view_group,
+        # Workspace Members
+        twenty_admin_list_workspace_members,
     ]

@@ -42,8 +42,13 @@ def pipedrive_search(term: str, item_types: str | None = None, limit: int = 10) 
     """
     Search across all Pipedrive entities (deals, persons, organizations, etc.).
 
+    IMPORTANT: This is for keyword search only, NOT for listing all records.
+    To list all records, use the appropriate list tool (e.g., pipedrive_list_persons,
+    pipedrive_list_deals, pipedrive_list_organizations).
+
     Args:
-        term: Search term to look for.
+        term: Search term to look for. Must be at least 2 characters.
+              Wildcards like "*" are NOT supported.
         item_types: Comma-separated entity types to search (e.g., "deal,person,organization").
                     If not specified, searches all types.
         limit: Maximum results to return (default 10).
@@ -51,6 +56,14 @@ def pipedrive_search(term: str, item_types: str | None = None, limit: int = 10) 
     Returns:
         JSON string with search results grouped by type.
     """
+    # Validate search term - Pipedrive requires at least 2 characters
+    if not term or len(term.strip()) < 2 or term.strip() in ("*", "**", ".*"):
+        return (
+            "Error: Search term must be at least 2 characters. Wildcards like '*' are not "
+            "supported. To list all records, use the appropriate list tool instead "
+            "(e.g., pipedrive_list_persons, pipedrive_list_deals, pipedrive_list_organizations)."
+        )
+
     client = get_pipedrive()
     try:
         params = {"term": term, "limit": limit}
@@ -74,7 +87,7 @@ def pipedrive_search(term: str, item_types: str | None = None, limit: int = 10) 
             results_by_type[item_type].append(
                 {
                     "id": result_item.get("id"),
-                    "title": result_item.get("title"),
+                    "name": result_item.get("name") or result_item.get("title"),
                     "type": item_type,
                 }
             )

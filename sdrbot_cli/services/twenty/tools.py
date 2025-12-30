@@ -29,27 +29,24 @@ def reset_client():
 
 
 @tool
-def twenty_create_note_on_record(
+def twenty_link_note_to_record(
+    note_id: str,
     target_type: str,
     target_record_id: str,
-    title: str,
-    body_markdown: str,
 ) -> str:
-    """Create a note attached to a specific Twenty record.
+    """Link an existing note to a Twenty record via noteTargets.
 
-    Use this to add notes to people, companies, opportunities, etc.
-    For standalone note operations (update, delete), use the twenty_*_note tools.
+    Use this after creating a note with twenty_create_note to associate it
+    with a person, company, or opportunity.
 
     Args:
+        note_id: The UUID of the note to link.
         target_type: Object type - one of "person", "company", or "opportunity".
-        target_record_id: The record's UUID.
-        title: Note title.
-        body_markdown: Note content in markdown format.
+        target_record_id: The record's UUID to link the note to.
 
     Returns:
-        Success message with note ID or error message.
+        Success message or error message.
     """
-    # Map target type to the correct ID field name
     target_field_map = {
         "person": "personId",
         "company": "companyId",
@@ -62,29 +59,15 @@ def twenty_create_note_on_record(
 
     client = get_twenty()
     try:
-        # First create the note
-        payload = {
-            "title": title,
-            "bodyV2": {"markdown": body_markdown},
-        }
-
-        response = client.post("/notes", json=payload)
-        note = response.get("data", {}).get("createNote", {})
-        note_id = note.get("id")
-
-        if not note_id:
-            return "Error: Failed to create note - no ID returned"
-
-        # Then create the noteTarget association
         target_payload = {
             "noteId": note_id,
             target_field: target_record_id,
         }
         client.post("/noteTargets", json=target_payload)
 
-        return f"Successfully created note (ID: {note_id}) on {target_type} {target_record_id}"
+        return f"Successfully linked note {note_id} to {target_type} {target_record_id}"
     except Exception as e:
-        return f"Error creating note: {str(e)}"
+        return f"Error linking note: {str(e)}"
 
 
 @tool
@@ -158,55 +141,118 @@ def twenty_list_notes_on_record(
         return f"Error listing notes: {str(e)}"
 
 
+# =============================================================================
+# TASK TOOLS - Tasks with target associations
+# =============================================================================
+
+
 @tool
-def twenty_update_note(
-    note_id: str,
-    title: str | None = None,
-    body_markdown: str | None = None,
+def twenty_link_task_to_record(
+    task_id: str,
+    target_type: str,
+    target_record_id: str,
 ) -> str:
-    """Update an existing note in Twenty.
+    """Link an existing task to a Twenty record via taskTargets.
+
+    Use this after creating a task with twenty_create_task to associate it
+    with a person, company, or opportunity.
 
     Args:
-        note_id: The UUID of the note to update.
-        title: New title for the note (optional).
-        body_markdown: New content in markdown format (optional).
+        task_id: The UUID of the task to link.
+        target_type: Object type - one of "person", "company", or "opportunity".
+        target_record_id: The record's UUID to link the task to.
 
     Returns:
         Success message or error message.
     """
+    target_field_map = {
+        "person": "personId",
+        "company": "companyId",
+        "opportunity": "opportunityId",
+    }
+
+    target_field = target_field_map.get(target_type.lower())
+    if not target_field:
+        return f"Error: Invalid target_type '{target_type}'. Must be one of: person, company, opportunity"
+
     client = get_twenty()
     try:
-        payload = {}
-        if title is not None:
-            payload["title"] = title
-        if body_markdown is not None:
-            payload["bodyV2"] = {"markdown": body_markdown}
+        target_payload = {
+            "taskId": task_id,
+            target_field: target_record_id,
+        }
+        client.post("/taskTargets", json=target_payload)
 
-        if not payload:
-            return "Error: No fields provided to update. Provide title and/or body_markdown."
-
-        client.patch(f"/notes/{note_id}", json=payload)
-        return f"Successfully updated note {note_id}"
+        return f"Successfully linked task {task_id} to {target_type} {target_record_id}"
     except Exception as e:
-        return f"Error updating note: {str(e)}"
+        return f"Error linking task: {str(e)}"
 
 
 @tool
-def twenty_delete_note(note_id: str) -> str:
-    """Delete a note from Twenty.
+def twenty_list_tasks_on_record(
+    target_type: str,
+    target_record_id: str,
+    limit: int = 10,
+) -> str:
+    """List tasks attached to a specific Twenty record.
 
     Args:
-        note_id: The UUID of the note to delete.
+        target_type: Object type - one of "person", "company", or "opportunity".
+        target_record_id: The record's UUID.
+        limit: Maximum tasks to return (default 10).
 
     Returns:
-        Success message or error message.
+        Formatted list of tasks or error message.
     """
+    target_field_map = {
+        "person": "personId",
+        "company": "companyId",
+        "opportunity": "opportunityId",
+    }
+
+    target_field = target_field_map.get(target_type.lower())
+    if not target_field:
+        return f"Error: Invalid target_type '{target_type}'. Must be one of: person, company, opportunity"
+
     client = get_twenty()
     try:
-        client.delete(f"/notes/{note_id}")
-        return f"Successfully deleted note {note_id}"
+        # First get taskTargets for this record
+        params = {
+            "filter": f'{target_field}[eq]:"{target_record_id}"',
+            "limit": limit,
+        }
+
+        response = client.get("/taskTargets", params=params)
+        targets = response.get("data", {}).get("taskTargets", [])
+
+        if not targets:
+            return f"No tasks found on this {target_type}."
+
+        # Get the task IDs and fetch tasks
+        task_ids = [t.get("taskId") for t in targets if t.get("taskId")]
+        if not task_ids:
+            return f"No tasks found on this {target_type}."
+
+        # Fetch tasks by IDs
+        output = ["Tasks:"]
+        for task_id in task_ids:
+            try:
+                task_response = client.get(f"/tasks/{task_id}")
+                task = task_response.get("data", {}).get("task", {})
+                if task:
+                    title = task.get("title", "(No title)")
+                    status = task.get("status", "")
+                    created = task.get("createdAt", "")[:10] if task.get("createdAt") else ""
+                    output.append(f"- [{task_id}] {title} ({status}) - Created: {created}")
+            except Exception:
+                continue
+
+        if len(output) == 1:
+            return f"No tasks found on this {target_type}."
+
+        return "\n".join(output)
     except Exception as e:
-        return f"Error deleting note: {str(e)}"
+        return f"Error listing tasks: {str(e)}"
 
 
 @tool
@@ -300,10 +346,12 @@ def get_static_tools() -> list[BaseTool]:
         List of schema-independent Twenty tools.
     """
     return [
-        twenty_create_note_on_record,
+        # Note/Task target associations (CRUD is generated, linking is static)
+        twenty_link_note_to_record,
         twenty_list_notes_on_record,
-        twenty_update_note,
-        twenty_delete_note,
+        twenty_link_task_to_record,
+        twenty_list_tasks_on_record,
+        # Generic tools
         twenty_search_records,
         twenty_get_record,
     ]

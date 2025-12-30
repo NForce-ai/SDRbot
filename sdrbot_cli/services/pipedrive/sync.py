@@ -22,7 +22,8 @@ STANDARD_OBJECTS = {
     "leads": "leadFields",
 }
 
-# Fields to exclude from generated tools (system/read-only/calculated fields)
+# Fields to exclude from input tools (system/read-only/calculated fields)
+# These ARE returned by the API but shouldn't be used for create/update
 EXCLUDED_FIELD_KEYS = [
     "add_time",
     "update_time",
@@ -59,6 +60,13 @@ EXCLUDED_FIELD_KEYS = [
     "related_closed_deals_count",
     "first_char",
 ]
+
+# System fields always present in API responses (not in field endpoints)
+SYSTEM_RESPONSE_FIELDS = {
+    "id": {"name": "ID", "field_type": "int"},
+    "add_time": {"name": "Created at", "field_type": "datetime"},
+    "update_time": {"name": "Updated at", "field_type": "datetime"},
+}
 
 # Maximum fields per tool to keep signatures manageable
 MAX_FIELDS_PER_TOOL = 20
@@ -191,9 +199,12 @@ def sync_schema() -> dict[str, Any]:
     objects_schema = {}
     for obj_type, fields_endpoint in STANDARD_OBJECTS.items():
         try:
-            fields = _fetch_object_fields(client, fields_endpoint)
-            if fields:
-                objects_schema[obj_type] = fields
+            field_data = _fetch_object_fields(client, fields_endpoint)
+            if field_data["input"]:
+                objects_schema[obj_type] = {
+                    "fields": field_data["input"],
+                    "output_fields": field_data["output"],
+                }
         except Exception:
             # Skip objects we can't access
             continue
@@ -214,7 +225,7 @@ def sync_schema() -> dict[str, Any]:
     }
 
 
-def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
+def _fetch_object_fields(client, fields_endpoint: str) -> dict[str, list[dict[str, Any]]]:
     """Fetch fields for a specific object type.
 
     Args:
@@ -222,7 +233,9 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
         fields_endpoint: API endpoint for fields (e.g., "dealFields").
 
     Returns:
-        List of field dictionaries with key, name, type, etc.
+        Dict with:
+        - 'input': Writable fields for create/update operations
+        - 'output': All fields returned by the API (including id, timestamps)
     """
     response = client.get(f"/{fields_endpoint}")
     raw_fields = response.get("data", [])
@@ -242,21 +255,33 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
     # Determine if this is leads (need special handling)
     is_lead = fields_endpoint == "leadFields"
 
-    fields = []
+    input_fields = []
+    output_fields = []
+
+    # Add system fields that are always in responses (like id)
+    for key, info in SYSTEM_RESPONSE_FIELDS.items():
+        output_fields.append(
+            {
+                "key": key,
+                "param_name": key,
+                "name": info["name"],
+                "field_type": info["field_type"],
+                "mandatory_flag": False,
+                "is_writable": False,
+                "options": [],
+                "is_standard": True,
+            }
+        )
+
     for f in raw_fields:
         field_key = f.get("key", "")
-
-        # Skip system/internal fields
-        if field_key in EXCLUDED_FIELD_KEYS:
-            continue
 
         # Skip fields starting with hash (internal/custom field IDs sometimes)
         if field_key.startswith("#"):
             continue
 
-        # Skip read-only lead fields
-        if is_lead and field_key in LEADS_READONLY_FIELDS:
-            continue
+        is_excluded = field_key in EXCLUDED_FIELD_KEYS
+        is_lead_readonly = is_lead and field_key in LEADS_READONLY_FIELDS
 
         # Determine if this is a standard field or custom field
         is_standard = field_key in standard_keys
@@ -282,21 +307,26 @@ def _fetch_object_fields(client, fields_endpoint: str) -> list[dict[str, Any]]:
         # edit_flag is misleading (often False for writable fields)
         is_writable = f.get("add_visible_flag", False) or f.get("bulk_edit_allowed", False)
 
-        fields.append(
-            {
-                "key": field_key,  # The actual API key (may be hash for custom fields)
-                "param_name": param_name,  # Python parameter name (human-readable)
-                "name": f.get("name", field_key),  # Display name for docstring
-                "field_type": f.get("field_type", "text"),
-                "mandatory_flag": f.get("mandatory_flag", False),
-                "is_writable": is_writable,
-                "add_visible_flag": f.get("add_visible_flag", False),
-                "options": options,
-                "is_standard": is_standard,
-            }
-        )
+        field_dict = {
+            "key": field_key,  # The actual API key (may be hash for custom fields)
+            "param_name": param_name,  # Python parameter name (human-readable)
+            "name": f.get("name", field_key),  # Display name for docstring
+            "field_type": f.get("field_type", "text"),
+            "mandatory_flag": f.get("mandatory_flag", False),
+            "is_writable": is_writable,
+            "add_visible_flag": f.get("add_visible_flag", False),
+            "options": options,
+            "is_standard": is_standard,
+        }
 
-    return fields
+        # Add to output fields (all fields returned by API)
+        output_fields.append(field_dict)
+
+        # Add to input fields only if writable and not excluded
+        if not is_excluded and not is_lead_readonly:
+            input_fields.append(field_dict)
+
+    return {"input": input_fields, "output": output_fields}
 
 
 def _sanitize_param_name(name: str) -> str:
@@ -355,7 +385,16 @@ def _generate_tools_code(schema: dict[str, list[dict]]) -> str:
         "",
     ]
 
-    for obj_type, fields in schema.items():
+    for obj_type, obj_data in schema.items():
+        # Handle both old format (list) and new format (dict with fields/output_fields)
+        if isinstance(obj_data, dict):
+            fields = obj_data.get("fields", [])
+            output_fields = obj_data.get("output_fields", fields)
+        else:
+            # Backward compatibility with old format
+            fields = obj_data
+            output_fields = fields
+
         # Handle singular forms correctly
         singular_map = {
             "deals": "deal",
@@ -372,6 +411,7 @@ def _generate_tools_code(schema: dict[str, list[dict]]) -> str:
 
         # Prioritize important fields
         writable_fields = _prioritize_fields(writable_fields, obj_type)
+        output_fields = _prioritize_fields(output_fields, obj_type)
 
         # Limit fields per tool
         create_fields = writable_fields[:MAX_FIELDS_PER_TOOL]
@@ -390,11 +430,11 @@ def _generate_tools_code(schema: dict[str, list[dict]]) -> str:
         lines.append("")
 
         # Generate search tool
-        lines.extend(_generate_search_tool(obj_type, singular, search_fields))
+        lines.extend(_generate_search_tool(obj_type, singular, search_fields, output_fields))
         lines.append("")
 
         # Generate get tool
-        lines.extend(_generate_get_tool(obj_type, singular))
+        lines.extend(_generate_get_tool(obj_type, singular, output_fields))
         lines.append("")
 
         # Generate delete tool
@@ -750,7 +790,9 @@ def _generate_update_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     ]
 
 
-def _generate_search_tool(obj_type: str, singular: str, fields: list[dict]) -> list[str]:
+def _generate_search_tool(
+    obj_type: str, singular: str, fields: list[dict], output_fields: list[dict]
+) -> list[str]:
     """Generate a search tool for an object type."""
     func_name = f"pipedrive_search_{obj_type}"
 
@@ -761,7 +803,7 @@ def _generate_search_tool(obj_type: str, singular: str, fields: list[dict]) -> l
 
     params_str = "\n".join(params)
 
-    # Build docstring
+    # Build docstring with output field info
     doc_lines = [f'    """Search for {obj_type} in Pipedrive.']
     doc_lines.append("")
     doc_lines.append("    Args:")
@@ -769,7 +811,16 @@ def _generate_search_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     doc_lines.append("        limit: Maximum results to return (default 10).")
     doc_lines.append("")
     doc_lines.append("    Returns:")
-    doc_lines.append(f"        JSON string with matching {obj_type}.")
+    doc_lines.append(f"        JSON array of {obj_type}. Each object contains:")
+    doc_lines.append("        - id: Record identifier (use for get/update/delete)")
+    # List top output fields (skip id since we already mentioned it)
+    # Use param_name for human-readable output, not the raw API key (which may be a hash)
+    for f in output_fields[:5]:
+        if f["key"] != "id":
+            field_name = f.get("param_name", f["key"])
+            doc_lines.append(f"        - {field_name}: {f.get('name', field_name)}")
+    if len(output_fields) > 6:
+        doc_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
     doc_lines.append('    """')
 
     # The item_type for search varies
@@ -799,7 +850,7 @@ def _generate_search_tool(obj_type: str, singular: str, fields: list[dict]) -> l
         "            if not records:",
         f'                return "No {obj_type} found."',
         "",
-        '        results = [{"id": r.get("id"), "title": r.get("title") or r.get("name"), **{k: v for k, v in r.items() if k not in ["id", "title", "name"] and not k.startswith("$")}} for r in records[:limit]]',
+        '        results = [{"id": r.get("id"), **{k: v for k, v in r.items() if k != "id" and not k.startswith("$")}} for r in records[:limit]]',
         "",
         f'        return f"Found {{len(results)}} {obj_type}:\\n" + json.dumps(results, indent=2)',
         "    except Exception as e:",
@@ -816,17 +867,26 @@ def _generate_search_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     ]
 
 
-def _generate_get_tool(obj_type: str, singular: str) -> list[str]:
+def _generate_get_tool(obj_type: str, singular: str, output_fields: list[dict]) -> list[str]:
     """Generate a get-by-ID tool for an object type."""
     func_name = f"pipedrive_get_{singular}"
 
+    # Build returns docstring with field info
     doc_lines = [f'    """Get a {singular} by ID from Pipedrive.']
     doc_lines.append("")
     doc_lines.append("    Args:")
     doc_lines.append(f"        {singular}_id: The ID of the {singular} to retrieve.")
     doc_lines.append("")
     doc_lines.append("    Returns:")
-    doc_lines.append(f"        JSON string with the {singular} data.")
+    doc_lines.append(f"        JSON object with {singular} data containing:")
+    doc_lines.append("        - id: Record identifier")
+    # Use param_name for human-readable output, not the raw API key (which may be a hash)
+    for f in output_fields[:5]:
+        if f["key"] != "id":
+            field_name = f.get("param_name", f["key"])
+            doc_lines.append(f"        - {field_name}: {f.get('name', field_name)}")
+    if len(output_fields) > 6:
+        doc_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
     doc_lines.append('    """')
 
     body = [

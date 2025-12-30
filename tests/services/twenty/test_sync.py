@@ -93,47 +93,68 @@ class TestTwentySyncUnit:
                 "email": {"type": "string", "format": "email"},
                 "name": {"type": "string"},
                 "count": {"type": "integer"},
-                "id": {"type": "string", "format": "uuid"},  # Should be filtered
+                "id": {"type": "string", "format": "uuid"},  # Should be in output only
             },
             "required": ["email"],
         }
 
-        fields = _extract_fields_from_schema(schema)
+        result = _extract_fields_from_schema(schema)
 
-        field_names = [f["name"] for f in fields]
-        assert "email" in field_names
-        assert "name" in field_names
-        # id is in EXCLUDED_FIELDS
-        assert "id" not in field_names
+        # Should return dict with input and output keys
+        assert "input" in result
+        assert "output" in result
+
+        # Input fields should exclude id
+        input_names = [f["name"] for f in result["input"]]
+        assert "email" in input_names
+        assert "name" in input_names
+        assert "id" not in input_names
+
+        # Output fields should include id
+        output_names = [f["name"] for f in result["output"]]
+        assert "email" in output_names
+        assert "name" in output_names
+        assert "id" in output_names
 
         # Check required field
-        email_field = next(f for f in fields if f["name"] == "email")
+        email_field = next(f for f in result["input"] if f["name"] == "email")
         assert email_field["required"] is True
 
     def test_generate_tools_code_valid_python(self):
         """_generate_tools_code should produce valid Python."""
         from sdrbot_cli.services.twenty.sync import _generate_tools_code
 
+        fields = [
+            {
+                "name": "email",
+                "label": "Email",
+                "type": "EMAIL",
+                "required": True,
+                "options": [],
+            },
+            {
+                "name": "name",
+                "label": "Name",
+                "type": "TEXT",
+                "required": False,
+                "options": [],
+            },
+        ]
+        output_fields = fields + [
+            {
+                "name": "id",
+                "label": "Id",
+                "type": "UUID",
+                "required": False,
+                "options": [],
+            },
+        ]
         schema = {
             "person": {
                 "name_singular": "person",
                 "name_plural": "people",
-                "fields": [
-                    {
-                        "name": "email",
-                        "label": "Email",
-                        "type": "EMAIL",
-                        "required": True,
-                        "options": [],
-                    },
-                    {
-                        "name": "name",
-                        "label": "Name",
-                        "type": "TEXT",
-                        "required": False,
-                        "options": [],
-                    },
-                ],
+                "fields": fields,
+                "output_fields": output_fields,
             }
         }
         code = _generate_tools_code(schema)
@@ -148,36 +169,44 @@ class TestTwentySyncUnit:
         assert "twenty_get_person" in code
         assert "twenty_delete_person" in code
 
+        # Verify return docstrings include field info
+        assert "- id: Record identifier" in code
+        assert "- email: Email" in code
+
     def test_generate_tools_code_multiple_objects(self):
         """_generate_tools_code should handle multiple objects."""
         from sdrbot_cli.services.twenty.sync import _generate_tools_code
 
+        person_fields = [
+            {
+                "name": "email",
+                "label": "Email",
+                "type": "EMAIL",
+                "required": True,
+                "options": [],
+            },
+        ]
+        company_fields = [
+            {
+                "name": "name",
+                "label": "Name",
+                "type": "TEXT",
+                "required": True,
+                "options": [],
+            },
+        ]
         schema = {
             "person": {
                 "name_singular": "person",
                 "name_plural": "people",
-                "fields": [
-                    {
-                        "name": "email",
-                        "label": "Email",
-                        "type": "EMAIL",
-                        "required": True,
-                        "options": [],
-                    },
-                ],
+                "fields": person_fields,
+                "output_fields": person_fields + [{"name": "id", "label": "Id", "type": "UUID"}],
             },
             "company": {
                 "name_singular": "company",
                 "name_plural": "companies",
-                "fields": [
-                    {
-                        "name": "name",
-                        "label": "Name",
-                        "type": "TEXT",
-                        "required": True,
-                        "options": [],
-                    },
-                ],
+                "fields": company_fields,
+                "output_fields": company_fields + [{"name": "id", "label": "Id", "type": "UUID"}],
             },
         }
         code = _generate_tools_code(schema)
