@@ -6,7 +6,7 @@ from sdrbot_cli.config import settings
 
 
 def get_tools() -> list[BaseTool]:
-    """Get all Zoho CRM tools (static + generated).
+    """Get all Zoho CRM tools (static + generated + admin).
 
     Returns:
         List of Zoho CRM tools available for the agent.
@@ -32,6 +32,11 @@ def get_tools() -> list[BaseTool]:
                     tools.append(obj)
         except Exception:
             pass  # Failed to load generated tools - only static tools available
+
+    # Admin tools (privileged mode only)
+    from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+    tools.extend(get_admin_tools())
 
     return tools
 

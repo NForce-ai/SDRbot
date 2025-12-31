@@ -397,6 +397,725 @@ class TestZohoCRMToolsUnit:
         assert "Unauthorized" in result
 
 
+class TestZohoCRMAdminToolLoading:
+    """Test that Zoho CRM admin tools load correctly."""
+
+    def test_admin_tools_load(self):
+        """Admin tools should load."""
+        from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        assert len(tools) == 11
+        tool_names = [t.name for t in tools]
+        # Modules
+        assert "zohocrm_admin_list_modules" in tool_names
+        assert "zohocrm_admin_get_module" in tool_names
+        assert "zohocrm_admin_create_module" in tool_names
+        assert "zohocrm_admin_update_module" in tool_names
+        # Fields
+        assert "zohocrm_admin_list_fields" in tool_names
+        assert "zohocrm_admin_get_field" in tool_names
+        assert "zohocrm_admin_create_field" in tool_names
+        assert "zohocrm_admin_update_field" in tool_names
+        assert "zohocrm_admin_delete_field" in tool_names
+        # Users & Profiles
+        assert "zohocrm_admin_list_users" in tool_names
+        assert "zohocrm_admin_list_profiles" in tool_names
+
+    def test_admin_tools_are_base_tool_instances(self):
+        """All admin tools should be BaseTool instances."""
+        from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        for tool in tools:
+            assert isinstance(tool, BaseTool), f"{tool.name} is not a BaseTool"
+
+    def test_admin_tools_have_descriptions(self):
+        """All admin tools should have descriptions."""
+        from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        for tool in tools:
+            assert tool.description, f"{tool.name} has no description"
+
+    def test_admin_tools_are_privileged(self):
+        """Admin tools should be marked as privileged."""
+        from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        for tool in tools:
+            assert tool.metadata.get("privileged"), f"{tool.name} is not marked privileged"
+
+    def test_schema_modifying_tools_are_marked(self):
+        """Schema-modifying tools should be marked."""
+        from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+        schema_modifying_tools = [
+            "zohocrm_admin_create_module",
+            "zohocrm_admin_update_module",
+            "zohocrm_admin_create_field",
+            "zohocrm_admin_update_field",
+            "zohocrm_admin_delete_field",
+        ]
+
+        for tool in tools:
+            if tool.name in schema_modifying_tools:
+                assert tool.metadata.get("schema_modifying"), (
+                    f"{tool.name} should be marked schema_modifying"
+                )
+            else:
+                assert not tool.metadata.get("schema_modifying"), (
+                    f"{tool.name} should not be marked schema_modifying"
+                )
+
+
+class TestZohoCRMAdminToolsUnit:
+    """Unit tests for Zoho CRM admin tools with mocked API."""
+
+    @pytest.fixture
+    def mock_zoho_client(self):
+        """Create a mock Zoho CRM client."""
+        mock_client = MagicMock()
+        return mock_client
+
+    @pytest.fixture
+    def patch_admin_client(self, mock_zoho_client):
+        """Patch Zoho CRM admin client."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+
+        original_client = admin_module._admin_client
+        admin_module._admin_client = None
+
+        with patch(
+            "sdrbot_cli.services.zohocrm.admin_tools.get_zoho_client",
+            return_value=mock_zoho_client,
+        ):
+            yield mock_zoho_client
+
+        admin_module._admin_client = original_client
+
+    def test_list_modules_success(self, patch_admin_client):
+        """list_modules should return formatted modules."""
+        patch_admin_client.get.return_value = {
+            "modules": [
+                {
+                    "api_name": "Leads",
+                    "singular_label": "Lead",
+                    "plural_label": "Leads",
+                    "module_name": "Leads",
+                    "id": "1",
+                    "generated_type": "default",
+                    "api_supported": True,
+                    "creatable": True,
+                    "editable": True,
+                    "viewable": True,
+                    "deletable": True,
+                },
+                {
+                    "api_name": "Custom_Module",
+                    "singular_label": "Custom Item",
+                    "plural_label": "Custom Items",
+                    "module_name": "Custom_Module",
+                    "id": "2",
+                    "generated_type": "custom",
+                    "api_supported": True,
+                    "creatable": True,
+                    "editable": True,
+                    "viewable": True,
+                    "deletable": True,
+                },
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_modules
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_modules.invoke({})
+
+        assert "2 API-accessible modules" in result
+        assert "Leads" in result
+        assert "Custom_Module" in result
+
+    def test_list_modules_empty(self, patch_admin_client):
+        """list_modules should handle no modules."""
+        patch_admin_client.get.return_value = {"modules": []}
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_modules
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_modules.invoke({})
+
+        assert "No modules found" in result
+
+    def test_get_module_success(self, patch_admin_client):
+        """get_module should return module details."""
+        patch_admin_client.get.side_effect = [
+            {
+                "modules": [
+                    {
+                        "api_name": "Leads",
+                        "singular_label": "Lead",
+                        "plural_label": "Leads",
+                        "module_name": "Leads",
+                        "id": "1",
+                        "generated_type": "default",
+                        "api_supported": True,
+                        "creatable": True,
+                        "editable": True,
+                        "viewable": True,
+                        "deletable": True,
+                    }
+                ]
+            },
+            {
+                "fields": [
+                    {"api_name": "Last_Name", "custom_field": False},
+                    {"api_name": "Custom_Field", "custom_field": True},
+                ]
+            },
+        ]
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_get_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_get_module.invoke({"module_api_name": "Leads"})
+
+        assert "Module 'Leads'" in result
+        assert "field_count" in result
+        assert "custom_field_count" in result
+
+    def test_get_module_not_found(self, patch_admin_client):
+        """get_module should handle module not found."""
+        patch_admin_client.get.return_value = {"modules": []}
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_get_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_get_module.invoke({"module_api_name": "NonExistent"})
+
+        assert "not found" in result
+
+    def test_list_fields_success(self, patch_admin_client):
+        """list_fields should return formatted fields."""
+        patch_admin_client.get.return_value = {
+            "fields": [
+                {
+                    "api_name": "Last_Name",
+                    "field_label": "Last Name",
+                    "data_type": "text",
+                    "id": "1",
+                    "custom_field": False,
+                    "system_mandatory": True,
+                    "read_only": False,
+                    "visible": True,
+                    "length": 100,
+                },
+                {
+                    "api_name": "Email",
+                    "field_label": "Email",
+                    "data_type": "email",
+                    "id": "2",
+                    "custom_field": False,
+                    "system_mandatory": False,
+                    "read_only": False,
+                    "visible": True,
+                    "length": 100,
+                },
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_fields
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_fields.invoke({"module_api_name": "Leads"})
+
+        assert "2 fields" in result
+        assert "Last_Name" in result
+        assert "Email" in result
+
+    def test_list_fields_with_picklist(self, patch_admin_client):
+        """list_fields should include picklist values."""
+        patch_admin_client.get.return_value = {
+            "fields": [
+                {
+                    "api_name": "Lead_Status",
+                    "field_label": "Lead Status",
+                    "data_type": "picklist",
+                    "id": "3",
+                    "custom_field": False,
+                    "system_mandatory": False,
+                    "read_only": False,
+                    "visible": True,
+                    "pick_list_values": [
+                        {"display_value": "New"},
+                        {"display_value": "Contacted"},
+                        {"display_value": "Qualified"},
+                    ],
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_fields
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_fields.invoke({"module_api_name": "Leads"})
+
+        assert "Lead_Status" in result
+        assert "New" in result
+        assert "Contacted" in result
+
+    def test_get_field_success(self, patch_admin_client):
+        """get_field should return field details."""
+        patch_admin_client.get.return_value = {
+            "fields": [
+                {
+                    "api_name": "Email",
+                    "field_label": "Email",
+                    "data_type": "email",
+                    "id": "field-123",
+                    "custom_field": False,
+                    "system_mandatory": False,
+                    "read_only": False,
+                    "visible": True,
+                    "length": 100,
+                    "tooltip": "Primary email address",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_get_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_get_field.invoke(
+            {"module_api_name": "Leads", "field_api_name": "Email"}
+        )
+
+        assert "Field 'Email'" in result
+        assert "field-123" in result
+
+    def test_get_field_not_found(self, patch_admin_client):
+        """get_field should handle field not found."""
+        patch_admin_client.get.return_value = {"fields": [{"api_name": "Other_Field", "id": "1"}]}
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_get_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_get_field.invoke(
+            {"module_api_name": "Leads", "field_api_name": "NonExistent"}
+        )
+
+        assert "not found" in result
+
+    def test_create_field_success(self, patch_admin_client):
+        """create_field should return success message."""
+        patch_admin_client.post.return_value = {
+            "fields": [
+                {
+                    "code": "SUCCESS",
+                    "details": {"id": "field-new-123"},
+                    "message": "field created",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_field.invoke(
+            {
+                "module_api_name": "Leads",
+                "field_label": "Custom Score",
+                "data_type": "integer",
+                "length": 5,
+            }
+        )
+
+        assert "Successfully created" in result
+        assert "Custom Score" in result
+        assert "field-new-123" in result
+
+    def test_create_field_with_picklist(self, patch_admin_client):
+        """create_field should handle picklist values."""
+        patch_admin_client.post.return_value = {
+            "fields": [
+                {
+                    "code": "SUCCESS",
+                    "details": {"id": "field-pick-123"},
+                    "message": "field created",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_field.invoke(
+            {
+                "module_api_name": "Leads",
+                "field_label": "Rating",
+                "data_type": "picklist",
+                "pick_list_values": '["Hot", "Warm", "Cold"]',
+            }
+        )
+
+        assert "Successfully created" in result
+        assert "Rating" in result
+
+    def test_create_field_invalid_picklist_json(self, patch_admin_client):
+        """create_field should handle invalid picklist JSON."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_field.invoke(
+            {
+                "module_api_name": "Leads",
+                "field_label": "Rating",
+                "data_type": "picklist",
+                "pick_list_values": "not valid json",
+            }
+        )
+
+        assert "Error" in result
+        assert "JSON array" in result
+
+    def test_create_field_error(self, patch_admin_client):
+        """create_field should handle API errors."""
+        patch_admin_client.post.return_value = {
+            "fields": [
+                {
+                    "code": "DUPLICATE_DATA",
+                    "message": "A field with this label already exists",
+                    "status": "error",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_field.invoke(
+            {
+                "module_api_name": "Leads",
+                "field_label": "Existing Field",
+                "data_type": "text",
+            }
+        )
+
+        assert "Failed" in result
+        assert "DUPLICATE_DATA" in result
+
+    def test_update_field_success(self, patch_admin_client):
+        """update_field should return success message."""
+        patch_admin_client.request.return_value = {
+            "fields": [
+                {
+                    "code": "SUCCESS",
+                    "message": "field updated",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_update_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_update_field.invoke(
+            {
+                "module_api_name": "Leads",
+                "field_id": "field-123",
+                "field_label": "Updated Label",
+            }
+        )
+
+        assert "Successfully updated" in result
+        assert "field-123" in result
+
+    def test_update_field_no_changes(self, patch_admin_client):
+        """update_field should require at least one change."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_update_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_update_field.invoke(
+            {"module_api_name": "Leads", "field_id": "field-123"}
+        )
+
+        assert "Error" in result
+        assert "At least one" in result
+
+    def test_delete_field_success(self, patch_admin_client):
+        """delete_field should return success message."""
+        patch_admin_client.delete.return_value = {
+            "fields": [
+                {
+                    "code": "SUCCESS",
+                    "message": "field deleted",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_delete_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_delete_field.invoke(
+            {"module_api_name": "Leads", "field_id": "field-custom-123"}
+        )
+
+        assert "Successfully deleted" in result
+        assert "field-custom-123" in result
+
+    def test_delete_field_dependency_error(self, patch_admin_client):
+        """delete_field should handle dependency errors."""
+        patch_admin_client.delete.return_value = {
+            "fields": [
+                {
+                    "code": "DEPENDENCY_ERROR",
+                    "message": "Field cannot be deleted due to workflow dependency",
+                    "status": "error",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_delete_field
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_delete_field.invoke(
+            {"module_api_name": "Leads", "field_id": "field-123"}
+        )
+
+        assert "Error" in result
+        assert "Cannot delete" in result or "dependency" in result.lower()
+
+    def test_list_users_admin_success(self, patch_admin_client):
+        """admin list_users should return detailed user info."""
+        patch_admin_client.get.return_value = {
+            "users": [
+                {
+                    "id": "user-1",
+                    "full_name": "John Admin",
+                    "email": "john@company.com",
+                    "role": {"name": "Administrator"},
+                    "profile": {"name": "Admin"},
+                    "status": "active",
+                    "confirm": True,
+                    "created_time": "2024-01-01T00:00:00Z",
+                    "time_zone": "America/New_York",
+                },
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_users
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_users.invoke({})
+
+        assert "1 users" in result
+        assert "John Admin" in result
+        assert "Administrator" in result
+
+    def test_create_module_success(self, patch_admin_client):
+        """create_module should return success message."""
+        patch_admin_client.post.return_value = {
+            "modules": [
+                {
+                    "code": "SUCCESS",
+                    "details": {"id": "module-new-123"},
+                    "message": "module created successfully",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_module.invoke(
+            {
+                "singular_label": "Project",
+                "plural_label": "Projects",
+                "profile_ids": '["123456789"]',
+            }
+        )
+
+        assert "Successfully created" in result
+        assert "Project" in result
+        assert "module-new-123" in result
+
+    def test_create_module_invalid_profile_json(self, patch_admin_client):
+        """create_module should handle invalid profile JSON."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_module.invoke(
+            {
+                "singular_label": "Project",
+                "plural_label": "Projects",
+                "profile_ids": "not valid json",
+            }
+        )
+
+        assert "Error" in result
+        assert "JSON array" in result
+
+    def test_create_module_error(self, patch_admin_client):
+        """create_module should handle API errors."""
+        patch_admin_client.post.return_value = {
+            "modules": [
+                {
+                    "code": "DUPLICATE_DATA",
+                    "message": "A module with this name already exists",
+                    "status": "error",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_create_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_create_module.invoke(
+            {
+                "singular_label": "Lead",
+                "plural_label": "Leads",
+                "profile_ids": '["123456789"]',
+            }
+        )
+
+        assert "Failed" in result
+        assert "DUPLICATE_DATA" in result
+
+    def test_update_module_success(self, patch_admin_client):
+        """update_module should return success message."""
+        patch_admin_client.put.return_value = {
+            "modules": [
+                {
+                    "code": "SUCCESS",
+                    "message": "module updated successfully",
+                    "status": "success",
+                }
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_update_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_update_module.invoke(
+            {
+                "module_id_or_api_name": "Custom_Module",
+                "singular_label": "Updated Name",
+            }
+        )
+
+        assert "Successfully updated" in result
+        assert "Custom_Module" in result
+
+    def test_update_module_no_changes(self, patch_admin_client):
+        """update_module should require at least one change."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_update_module
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_update_module.invoke({"module_id_or_api_name": "Custom_Module"})
+
+        assert "Error" in result
+        assert "At least one" in result
+
+    def test_list_profiles_success(self, patch_admin_client):
+        """list_profiles should return formatted profiles."""
+        patch_admin_client.get.return_value = {
+            "profiles": [
+                {
+                    "id": "profile-1",
+                    "name": "Administrator",
+                    "description": "Admin profile",
+                    "default": True,
+                    "created_time": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "id": "profile-2",
+                    "name": "Standard",
+                    "description": "Standard user profile",
+                    "default": False,
+                    "created_time": "2024-01-01T00:00:00Z",
+                },
+            ]
+        }
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_profiles
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_profiles.invoke({})
+
+        assert "2 profiles" in result
+        assert "Administrator" in result
+        assert "Standard" in result
+        assert "profile-1" in result
+
+    def test_list_profiles_empty(self, patch_admin_client):
+        """list_profiles should handle no profiles."""
+        patch_admin_client.get.return_value = {"profiles": []}
+
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_profiles
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_profiles.invoke({})
+
+        assert "No profiles found" in result
+
+
 @pytest.mark.integration
 class TestZohoCRMToolsIntegration:
     """Integration tests for Zoho CRM tools.
@@ -440,3 +1159,46 @@ class TestZohoCRMToolsIntegration:
 
         # Should either return users or handle gracefully
         assert "users" in result.lower() or "error" in result.lower()
+
+
+@pytest.mark.integration
+class TestZohoCRMAdminToolsIntegration:
+    """Integration tests for Zoho CRM admin tools.
+
+    Run with: pytest -m integration
+    Requires Zoho CRM OAuth credentials.
+    """
+
+    @pytest.fixture
+    def check_zoho_credentials(self):
+        """Skip if Zoho CRM credentials not available."""
+        if not (
+            os.getenv("ZOHO_CLIENT_ID")
+            and os.getenv("ZOHO_CLIENT_SECRET")
+            and os.getenv("ZOHO_REGION")
+        ):
+            pytest.skip("Zoho CRM credentials not set - skipping integration test")
+
+    def test_list_modules_real(self, check_zoho_credentials):
+        """Test listing modules against real API."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_modules
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_modules.invoke({})
+
+        # Should return modules or handle gracefully
+        assert "modules" in result.lower() or "error" in result.lower()
+
+    def test_list_fields_real(self, check_zoho_credentials):
+        """Test listing fields against real API."""
+        import sdrbot_cli.services.zohocrm.admin_tools as admin_module
+        from sdrbot_cli.services.zohocrm.admin_tools import zohocrm_admin_list_fields
+
+        admin_module._admin_client = None
+
+        result = zohocrm_admin_list_fields.invoke({"module_api_name": "Leads"})
+
+        # Should return fields or handle gracefully
+        assert "fields" in result.lower() or "error" in result.lower()
