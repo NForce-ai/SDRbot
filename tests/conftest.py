@@ -74,6 +74,166 @@ def real_hubspot_client():
     return HubSpot(access_token=pat)
 
 
+class SimpleNamespace:
+    """Simple object with attributes set from kwargs (JSON-serializable compatible)."""
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+@pytest.fixture
+def mock_hubspot_admin_client():
+    """Create a mock HubSpot client for admin tool unit tests."""
+    mock_client = MagicMock()
+
+    # Mock schemas API - use SimpleNamespace for JSON-serializable attributes
+    schema_labels = SimpleNamespace(singular="Contact", plural="Contacts")
+    schema_obj = SimpleNamespace(
+        name="contacts",
+        object_type_id="0-1",
+        labels=schema_labels,
+        primary_display_property="email",
+        fully_qualified_name="contacts",
+    )
+    mock_client.crm.schemas.core_api.get_all.return_value = SimpleNamespace(results=[schema_obj])
+
+    schema_detail = SimpleNamespace(
+        name="contacts",
+        object_type_id="0-1",
+        labels=schema_labels,
+        primary_display_property="email",
+        secondary_display_properties=["firstname", "lastname"],
+        required_properties=["email"],
+        searchable_properties=["email", "firstname"],
+        properties=[],
+    )
+    mock_client.crm.schemas.core_api.get_by_id.return_value = schema_detail
+    mock_client.crm.schemas.core_api.create.return_value = SimpleNamespace(object_type_id="2-12345")
+
+    # Mock properties API - use SimpleNamespace for JSON-serializable attributes
+    email_mod_meta = SimpleNamespace(read_only_value=False)
+    email_prop = SimpleNamespace(
+        name="email",
+        label="Email",
+        type="string",
+        field_type="text",
+        group_name="contactinformation",
+        hidden=False,
+        modification_metadata=email_mod_meta,
+        options=None,
+        description="Contact email",
+    )
+
+    lead_status_options = [
+        SimpleNamespace(value="new", label="New", hidden=False),
+        SimpleNamespace(value="open", label="Open", hidden=False),
+    ]
+    lead_status_prop = SimpleNamespace(
+        name="lead_status",
+        label="Lead Status",
+        type="enumeration",
+        field_type="select",
+        group_name="contactinformation",
+        hidden=False,
+        modification_metadata=email_mod_meta,
+        options=lead_status_options,
+        description="Lead status",
+    )
+
+    mock_client.crm.properties.core_api.get_all.return_value = SimpleNamespace(
+        results=[email_prop, lead_status_prop]
+    )
+
+    email_prop_detail = SimpleNamespace(
+        name="email",
+        label="Email",
+        type="string",
+        field_type="text",
+        description="Contact email",
+        group_name="contactinformation",
+        hidden=False,
+        display_order=1,
+        has_unique_value=True,
+        form_field=True,
+        modification_metadata=email_mod_meta,
+        options=None,
+    )
+    mock_client.crm.properties.core_api.get_by_name.return_value = email_prop_detail
+    mock_client.crm.properties.core_api.create.return_value = SimpleNamespace(name="custom_field")
+
+    # Mock owners API - use SimpleNamespace for JSON-serializable attributes
+    owner_teams = [SimpleNamespace(id="team1", name="Sales")]
+    owner_obj = SimpleNamespace(
+        id="123",
+        user_id=123,
+        email="owner@example.com",
+        first_name="Test",
+        last_name="Owner",
+        teams=owner_teams,
+    )
+    mock_client.crm.owners.owners_api.get_page.return_value = SimpleNamespace(results=[owner_obj])
+
+    # Mock notes API
+    mock_client.crm.objects.notes.basic_api.create.return_value = MagicMock(id="note123")
+    mock_client.crm.objects.notes.basic_api.get_by_id.return_value = MagicMock(
+        id="note123",
+        properties={
+            "hs_note_body": "Test note",
+            "hs_timestamp": "2024-01-01T00:00:00Z",
+            "hubspot_owner_id": "123",
+        },
+    )
+
+    # Mock tasks API
+    mock_client.crm.objects.tasks.basic_api.create.return_value = MagicMock(id="task123")
+    mock_client.crm.objects.tasks.basic_api.get_by_id.return_value = MagicMock(
+        id="task123",
+        properties={
+            "hs_task_subject": "Test task",
+            "hs_task_body": "Task body",
+            "hs_task_status": "NOT_STARTED",
+            "hs_task_priority": "HIGH",
+            "hs_timestamp": "2024-01-01T00:00:00Z",
+            "hubspot_owner_id": "123",
+        },
+    )
+
+    # Mock generic objects API
+    mock_client.crm.objects.basic_api.get_by_id.return_value = MagicMock(
+        id="record123",
+        properties={"name": "Test Record", "email": "test@example.com"},
+    )
+    mock_client.crm.objects.search_api.do_search.return_value = MagicMock(
+        total=1,
+        results=[MagicMock(id="record123", properties={"name": "Test Record"})],
+    )
+
+    # Mock associations API for notes/tasks listing
+    mock_client.crm.associations.v4.basic_api.get_page.return_value = MagicMock(
+        results=[MagicMock(to_object_id="note123")]
+    )
+
+    return mock_client
+
+
+@pytest.fixture
+def patch_hubspot_admin_client(mock_hubspot_admin_client):
+    """Patch get_client for admin tools to return mock."""
+    import sdrbot_cli.services.hubspot.admin_tools as admin_module
+
+    original_client = admin_module._admin_client
+    admin_module._admin_client = None
+
+    with patch(
+        "sdrbot_cli.services.hubspot.admin_tools.get_client",
+        return_value=mock_hubspot_admin_client,
+    ):
+        yield mock_hubspot_admin_client
+
+    admin_module._admin_client = original_client
+
+
 @pytest.fixture
 def mock_postgres_conn():
     """Create a mock PostgreSQL connection and cursor."""
