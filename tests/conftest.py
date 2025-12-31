@@ -341,3 +341,247 @@ def patch_mongo_db():
 
     with patch("sdrbot_cli.services.mongodb.tools.get_mongo_db", return_value=mock_db):
         yield mock_db
+
+
+@pytest.fixture
+def mock_salesforce_admin_client():
+    """Create a mock Salesforce client for admin tool unit tests."""
+    mock_client = MagicMock()
+
+    # Mock describe() for list_objects
+    mock_client.describe.return_value = {
+        "sobjects": [
+            {
+                "name": "Contact",
+                "label": "Contact",
+                "labelPlural": "Contacts",
+                "keyPrefix": "003",
+                "custom": False,
+                "createable": True,
+                "updateable": True,
+                "queryable": True,
+            },
+            {
+                "name": "Account",
+                "label": "Account",
+                "labelPlural": "Accounts",
+                "keyPrefix": "001",
+                "custom": False,
+                "createable": True,
+                "updateable": True,
+                "queryable": True,
+            },
+            {
+                "name": "Custom_Object__c",
+                "label": "Custom Object",
+                "labelPlural": "Custom Objects",
+                "keyPrefix": "a01",
+                "custom": True,
+                "createable": True,
+                "updateable": True,
+                "queryable": True,
+            },
+        ]
+    }
+
+    # Mock restful() for get_object/get_field
+    def mock_restful(path, method="GET", json=None):
+        if "describe" in path:
+            # Object describe
+            return {
+                "name": "Contact",
+                "label": "Contact",
+                "labelPlural": "Contacts",
+                "keyPrefix": "003",
+                "custom": False,
+                "createable": True,
+                "updateable": True,
+                "queryable": True,
+                "fields": [
+                    {
+                        "name": "Id",
+                        "label": "Contact ID",
+                        "type": "id",
+                        "nillable": False,
+                        "createable": False,
+                        "updateable": False,
+                        "custom": False,
+                    },
+                    {
+                        "name": "FirstName",
+                        "label": "First Name",
+                        "type": "string",
+                        "length": 40,
+                        "nillable": True,
+                        "createable": True,
+                        "updateable": True,
+                        "custom": False,
+                    },
+                    {
+                        "name": "LastName",
+                        "label": "Last Name",
+                        "type": "string",
+                        "length": 80,
+                        "nillable": False,
+                        "createable": True,
+                        "updateable": True,
+                        "custom": False,
+                    },
+                    {
+                        "name": "Email",
+                        "label": "Email",
+                        "type": "email",
+                        "nillable": True,
+                        "createable": True,
+                        "updateable": True,
+                        "custom": False,
+                    },
+                    {
+                        "name": "LeadSource",
+                        "label": "Lead Source",
+                        "type": "picklist",
+                        "nillable": True,
+                        "createable": True,
+                        "updateable": True,
+                        "custom": False,
+                        "picklistValues": [
+                            {"value": "Web", "label": "Web", "active": True},
+                            {"value": "Phone", "label": "Phone Inquiry", "active": True},
+                            {"value": "Referral", "label": "Partner Referral", "active": True},
+                        ],
+                    },
+                    {
+                        "name": "Custom_Field__c",
+                        "label": "Custom Field",
+                        "type": "string",
+                        "length": 255,
+                        "nillable": True,
+                        "createable": True,
+                        "updateable": True,
+                        "custom": True,
+                    },
+                ],
+                "recordTypeInfos": [],
+            }
+        elif "tooling/query" in path:
+            # Tooling API query for field ID
+            return {
+                "records": [{"Id": "00N000000000001"}],
+            }
+        elif "tooling/sobjects/CustomField" in path:
+            if method == "POST":
+                return {"success": True, "id": "00N000000000002"}
+            elif method == "PATCH":
+                return None
+            elif method == "DELETE":
+                return None
+        elif "sobjects/Note" in path:
+            if method == "POST":
+                return {"success": True, "id": "002000000000001"}
+        elif "sobjects/Task" in path:
+            if method == "POST":
+                return {"success": True, "id": "00T000000000001"}
+        elif "sobjects/" in path:
+            # Get record
+            return {
+                "Id": "003000000000001",
+                "Name": "Test Contact",
+                "Email": "test@example.com",
+                "attributes": {"type": "Contact"},
+            }
+        return {}
+
+    mock_client.restful = MagicMock(side_effect=mock_restful)
+
+    # Mock query() for users/notes/tasks
+    def mock_query(soql):
+        if "FROM User" in soql:
+            return {
+                "records": [
+                    {
+                        "Id": "005000000000001",
+                        "Username": "user@example.com",
+                        "Name": "Test User",
+                        "Email": "user@example.com",
+                        "Title": "Sales Rep",
+                        "Department": "Sales",
+                        "UserRole": {"Name": "Sales Manager"},
+                        "Profile": {"Name": "Standard User"},
+                        "IsActive": True,
+                    }
+                ]
+            }
+        elif "FROM Note" in soql:
+            return {
+                "records": [
+                    {
+                        "Id": "002000000000001",
+                        "Title": "Test Note",
+                        "Body": "Note body",
+                        "CreatedDate": "2024-01-01T00:00:00.000Z",
+                        "CreatedBy": {"Name": "Test User"},
+                        "attributes": {"type": "Note"},
+                    }
+                ]
+            }
+        elif "FROM Task" in soql:
+            return {
+                "records": [
+                    {
+                        "Id": "00T000000000001",
+                        "Subject": "Follow up",
+                        "Description": "Call customer",
+                        "Status": "Not Started",
+                        "Priority": "Normal",
+                        "ActivityDate": "2024-12-31",
+                        "Owner": {"Name": "Test User"},
+                        "CreatedDate": "2024-01-01T00:00:00.000Z",
+                        "attributes": {"type": "Task"},
+                    }
+                ]
+            }
+        elif "FROM Contact" in soql or "FROM Account" in soql:
+            return {
+                "totalSize": 1,
+                "records": [
+                    {
+                        "Id": "003000000000001",
+                        "Name": "Test Record",
+                        "CreatedDate": "2024-01-01T00:00:00.000Z",
+                        "LastModifiedDate": "2024-01-01T00:00:00.000Z",
+                        "attributes": {"type": "Contact"},
+                    }
+                ],
+            }
+        return {"records": []}
+
+    mock_client.query = MagicMock(side_effect=mock_query)
+
+    return mock_client
+
+
+@pytest.fixture
+def patch_salesforce_admin_client(mock_salesforce_admin_client):
+    """Patch get_client for Salesforce admin tools to return mock."""
+    import sdrbot_cli.services.salesforce.admin_tools as admin_module
+    import sdrbot_cli.services.salesforce.tools as tools_module
+
+    original_admin_client = admin_module._admin_client
+    original_tools_client = tools_module._sf_client
+    admin_module._admin_client = None
+    tools_module._sf_client = None
+
+    with (
+        patch(
+            "sdrbot_cli.services.salesforce.admin_tools.get_client",
+            return_value=mock_salesforce_admin_client,
+        ),
+        patch(
+            "sdrbot_cli.services.salesforce.tools.get_client",
+            return_value=mock_salesforce_admin_client,
+        ),
+    ):
+        yield mock_salesforce_admin_client
+
+    admin_module._admin_client = original_admin_client
+    tools_module._sf_client = original_tools_client

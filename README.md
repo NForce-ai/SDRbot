@@ -197,29 +197,35 @@ You can switch between providers at any time using `/models` or `/setup`. Your c
 
 SDRbot uses OAuth 2.0 to securely connect to Salesforce, HubSpot, Zoho CRM, and Pipedrive. You'll need to create your own app credentials in each platform.
 
-### Salesforce Connected App
+### Salesforce External Client App
 
-Salesforce requires OAuth - there's no API key alternative.
+Salesforce requires OAuth via an External Client App.
 
 1. **Log in to Salesforce** and go to **Setup**
 2. Search for **App Manager** in the Quick Find box
-3. Click **New Connected App**
+3. Click **New External Client App**
 4. Fill in the basic information:
-   - **Connected App Name:** `SDRbot` (or any name you prefer)
-   - **API Name:** `SDRbot`
+   - **Name:** `SDRbot` (or any name you prefer)
+   - **API Name:** Will auto-populate as `SDRbot`
    - **Contact Email:** Your email
-5. Under **API (Enable OAuth Settings)**:
-   - Check **Enable OAuth Settings**
+   - **Distribution State:** `Local`
+5. Expand **Enable OAuth** and configure:
    - **Callback URL:** `http://localhost:8080/callback/salesforce`
-   - **Selected OAuth Scopes:** Add these scopes:
-     - `Full access (full)`
-     - Or more granular: `Manage user data via APIs (api)`, `Perform requests at any time (refresh_token, offline_access)`
-6. Click **Save** (it may take 2-10 minutes to activate)
-7. Go back to your Connected App and click **Manage Consumer Details**
-8. Copy the **Consumer Key** → This is your `SF_CLIENT_ID`
-9. Copy the **Consumer Secret** → This is your `SF_CLIENT_SECRET`
+   - **Selected OAuth Scopes:**
+     - `Manage user data via APIs (api)` - Required for all CRM operations
+     - `Perform requests at any time (refresh_token, offline_access)` - Required for token refresh
+6. Under **Security** settings:
+   - Uncheck **Require Proof Key for Code Exchange (PKCE)**
+   - Check **Require Secret for Web Server Flow**
+   - Check **Require Secret for Refresh Token Flow**
+7. Click **Create**
+8. On the app page, select the `Settnings` tab, then click **Consumer Key and Secret**
+9. Copy the **Consumer Key** → This is your `SF_CLIENT_ID`
+10. Copy the **Consumer Secret** → This is your `SF_CLIENT_SECRET`
 
 **Important:** If using a Salesforce Sandbox, set `SF_LOGIN_URL=https://test.salesforce.com` in your `.env`.
+
+**Admin Tools (Tooling API):** The admin tools for creating, updating, and deleting custom fields use the Salesforce Tooling API. These don't require additional OAuth scopes, but the authenticating user must have the **"Customize Application"** or **"Modify All Data"** permission in their Salesforce profile.
 
 ### HubSpot Authentication
 
@@ -234,13 +240,20 @@ This is the simplest method - no OAuth callback server needed.
 3. Click **Create a legacy app**
 4. Give it a name (e.g., `SDRbot`)
 5. Go to the **Scopes** tab and add:
-   - `crm.objects.contacts.read` / `write`
-   - `crm.objects.companies.read` / `write`
-   - `crm.objects.deals.read` / `write`
-   - `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read`
-   - `crm.schemas.custom.read` (for custom objects)
-   - `tickets` (for ticket access)
-   - `e-commerce` (for line items, products, quotes)
+   - **CRM Objects (read/write):**
+     - `crm.objects.contacts.read` / `crm.objects.contacts.write`
+     - `crm.objects.companies.read` / `crm.objects.companies.write`
+     - `crm.objects.deals.read` / `crm.objects.deals.write`
+     - `crm.objects.owners.read` (for listing team members)
+   - **Additional Objects:**
+     - `tickets` (for ticket access)
+     - `e-commerce` (for line items, products, quotes)
+   - **Schema Access (read):**
+     - `crm.schemas.contacts.read`, `crm.schemas.companies.read`, `crm.schemas.deals.read`
+     - `crm.schemas.custom.read` (for custom objects)
+   - **Schema Access (write) - for admin tools:**
+     - `crm.schemas.contacts.write`, `crm.schemas.companies.write`, `crm.schemas.deals.write`
+     - `crm.schemas.custom.write` (for creating custom objects)
 6. Click **Create app**
 7. Copy the **Access token** → This is your `HUBSPOT_ACCESS_TOKEN`
 
@@ -253,9 +266,11 @@ Use this if you need refresh tokens or plan to distribute SDRbot to others.
 3. Create a new app and fill in the details
 4. Go to the **Auth** tab:
    - **Redirect URL:** `http://localhost:8080/callback/hubspot`
-   - Add the same scopes as above
+   - Add the same scopes as listed in Option 1 above
 5. Copy the **Client ID** → This is your `HUBSPOT_CLIENT_ID`
 6. Copy the **Client Secret** → This is your `HUBSPOT_CLIENT_SECRET`
+
+**Admin Tools:** The `crm.schemas.*.write` scopes are required for the admin tools that create, update, or delete custom properties and objects. If you don't need these capabilities, you can omit the write scopes.
 
 ### Zoho CRM Self Client
 

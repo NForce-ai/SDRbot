@@ -1046,12 +1046,14 @@ class TestHubSpotAdminToolsLoading:
 
         tools = get_admin_tools()
 
-        assert len(tools) == 9
+        assert len(tools) == 11
         tool_names = [t.name for t in tools]
         # Object management
         assert "hubspot_admin_list_objects" in tool_names
         assert "hubspot_admin_get_object" in tool_names
         assert "hubspot_admin_create_object" in tool_names
+        assert "hubspot_admin_update_object" in tool_names
+        assert "hubspot_admin_delete_object" in tool_names
         # Property management
         assert "hubspot_admin_list_properties" in tool_names
         assert "hubspot_admin_get_property" in tool_names

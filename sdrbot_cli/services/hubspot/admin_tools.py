@@ -195,6 +195,97 @@ def hubspot_admin_create_object(
         return f"Error creating object: {error_str}"
 
 
+@privileged_tool(schema_modifying="hubspot")
+def hubspot_admin_update_object(
+    object_type: str,
+    label_singular: str | None = None,
+    label_plural: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Update a custom object schema's configuration.
+
+    Note: Only custom objects can be updated. Standard HubSpot objects
+    (contacts, companies, deals, tickets) cannot be modified.
+
+    Args:
+        object_type: The object type ID (e.g., "2-12345" for custom objects).
+        label_singular: New display label in singular.
+        label_plural: New display label in plural.
+        description: New description.
+
+    Returns:
+        Success message confirming the update.
+    """
+    hs = _get_admin_client()
+    try:
+        from hubspot.crm.schemas import ObjectTypeDefinitionPatch
+
+        update_data = {}
+
+        if label_singular is not None or label_plural is not None:
+            update_data["labels"] = {}
+            if label_singular is not None:
+                update_data["labels"]["singular"] = label_singular
+            if label_plural is not None:
+                update_data["labels"]["plural"] = label_plural
+
+        if description is not None:
+            update_data["description"] = description
+
+        if not update_data:
+            return "Error: At least one field must be provided to update."
+
+        patch = ObjectTypeDefinitionPatch(**update_data)
+
+        hs.crm.schemas.core_api.update(object_type=object_type, object_type_definition_patch=patch)
+
+        return f"Successfully updated object '{object_type}'"
+    except Exception as e:
+        error_str = str(e)
+        _log_error(
+            "hubspot_admin_update_object",
+            {"object_type": object_type},
+            error_str,
+        )
+        return f"Error updating object: {error_str}"
+
+
+@privileged_tool(schema_modifying="hubspot")
+def hubspot_admin_delete_object(object_type: str) -> str:
+    """Delete a custom object schema.
+
+    WARNING: This will delete the object schema and ALL its records!
+
+    Note: Only custom objects can be deleted. Standard HubSpot objects
+    (contacts, companies, deals, tickets) cannot be deleted. The object
+    must have no records before it can be deleted.
+
+    Args:
+        object_type: The object type ID (e.g., "2-12345" for custom objects).
+
+    Returns:
+        Success message confirming deletion.
+    """
+    hs = _get_admin_client()
+    try:
+        hs.crm.schemas.core_api.archive(object_type=object_type)
+
+        return f"Successfully deleted object '{object_type}'"
+    except Exception as e:
+        error_str = str(e)
+        if "records" in error_str.lower() or "not empty" in error_str.lower():
+            return (
+                f"Error: Cannot delete object '{object_type}'. "
+                "Delete all records first before deleting the schema."
+            )
+        _log_error(
+            "hubspot_admin_delete_object",
+            {"object_type": object_type},
+            error_str,
+        )
+        return f"Error deleting object: {error_str}"
+
+
 # =============================================================================
 # PROPERTIES - Field management
 # =============================================================================
@@ -567,6 +658,8 @@ def get_admin_tools() -> list[BaseTool]:
         hubspot_admin_list_objects,
         hubspot_admin_get_object,
         hubspot_admin_create_object,
+        hubspot_admin_update_object,
+        hubspot_admin_delete_object,
         # Properties
         hubspot_admin_list_properties,
         hubspot_admin_get_property,
