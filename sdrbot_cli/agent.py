@@ -213,14 +213,34 @@ Respect the user's decisions and work with them collaboratively.
 
 ### Action Plan Management
 
-If the user explicitly asks you to plan something, or if you're being asked to carry out a task with more than 3 steps, use the write_todos tool to document the plan and present it to them.
+If the user explicitly asks you to plan something first check to see if there are any relevant skills as they may provide more specific guidance for the task at hand.
+
+As a rule of thumb if you're being asked to carry out a task with more than 3 steps, use the write_todos tool to document the plan and present it to them.
 
 If you do use the write_todos:
 1. Aim for 3-6 action items unless the task is truly complex in which case its fine to plan more extensively.
 2. Update the plan status as you complete each item.
 3. You can keep your final response succint since the plan will be presented to them in a separate widget.
+
+### Privileged Actions
+The following actions require privileged mode:
+- CRM Migration
+
+Before any planning, decomposition, write_todos usage, or skill selection:
+1. Determine whether the user's request involves a privileged action.
+2. If the action is privileged and privileged mode is disabled:
+   - IMMEDIATELY abort the request
+   - Do NOT plan, decompose, explain steps, or suggest an approach
+   - Only instruct the user to enable privileged mode via /setup
+3. This rule overrides Action Plan Management and all other planning behaviors.
+
+### Scripting as Alternative to Tool Calling
+You have the ability to write your own scripts and execute them using the write_file read_file and shell execution tools.
+
+For complex or large batch operations, it may be more efficient to write a script that imports and uses the tools, and then executing the script, rather than using the tools directly.
 """
         + _get_enabled_services_prompt()
+        + _get_privileged_mode_prompt()
     )
 
 
@@ -229,9 +249,17 @@ def _get_enabled_services_prompt() -> str:
     from sdrbot_cli.services.registry import load_config
 
     config = load_config()
-    enabled = [
-        s for s in ["hubspot", "salesforce", "attio", "lusha", "hunter"] if config.is_enabled(s)
+    all_services = [
+        "hubspot",
+        "salesforce",
+        "attio",
+        "pipedrive",
+        "twenty",
+        "zohocrm",
+        "lusha",
+        "hunter",
     ]
+    enabled = [s for s in all_services if config.is_enabled(s)]
 
     if not enabled:
         return """### Services
@@ -243,7 +271,11 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
     lines = ["### Enabled Services\n"]
 
     # Count CRMs for the single-CRM rule
-    crm_services = [s for s in enabled if s in ["hubspot", "salesforce", "attio"]]
+    crm_services = [
+        s
+        for s in enabled
+        if s in ["hubspot", "salesforce", "attio", "pipedrive", "twenty", "zohocrm"]
+    ]
 
     if len(crm_services) == 1:
         lines.append(
@@ -276,6 +308,16 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
         )
 
     return "\n".join(lines)
+
+
+def _get_privileged_mode_prompt() -> str:
+    """Generate prompt section for privileged mode status."""
+    from sdrbot_cli.services.registry import is_privileged_mode
+
+    if is_privileged_mode():
+        return "\n### Privileged Mode: Enabled\n"
+    else:
+        return "\n### Privileged Mode: Disabled\n"
 
 
 def _format_write_file_description(
@@ -445,7 +487,7 @@ def create_agent_with_config(
             routes={},
         )
 
-        # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellToolMiddleware
+        # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellMiddleware
         agent_middleware = [
             AgentMemoryMiddleware(settings=settings, assistant_id=assistant_id),
             SkillsMiddleware(
@@ -498,44 +540,17 @@ def create_agent_with_config(
     for tool in service_tools:
         tool_name = tool.name
         if tool_name not in interrupt_on:
-            # Add interrupt config for service tools based on their type
-            if "_create_" in tool_name or "_update_" in tool_name:
-                interrupt_on[tool_name] = {
-                    "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t,
-                    s,
-                    r,
-                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
-                }
-            elif "_delete_" in tool_name:
-                interrupt_on[tool_name] = {
-                    "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t,
-                    s,
-                    r,
-                    name=tool_name: f"{name}: Deleting record {t['args'].get('record_id', 'unknown')}",
-                }
-            elif (
-                "_search" in tool_name
-                or "_query" in tool_name
-                or "_soql" in tool_name
-                or "_sosl" in tool_name
+            # Require approval for CRUD, search/query, and credit-using tools
+            if (
+                "create" in tool_name
+                or "update" in tool_name
+                or "delete" in tool_name
+                or "lusha_" in tool_name
+                or "hunter_" in tool_name
+                or "apollo_" in tool_name
             ):
                 interrupt_on[tool_name] = {
                     "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t,
-                    s,
-                    r,
-                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
-                }
-            elif "lusha_" in tool_name or "hunter_" in tool_name:
-                # Lusha and Hunter tools use credits - always require approval
-                interrupt_on[tool_name] = {
-                    "allowed_decisions": ["approve", "reject"],
-                    "description": lambda t,
-                    s,
-                    r,
-                    name=tool_name: f"{name}: {str(t['args'])[:150]}...",
                 }
 
     # Register interrupt configs for MCP tools
@@ -544,10 +559,6 @@ def create_agent_with_config(
         if tool_name not in interrupt_on:
             interrupt_on[tool_name] = {
                 "allowed_decisions": ["approve", "reject"],
-                "description": lambda t,
-                s,
-                r,
-                name=tool_name: f"[MCP] {name}: {str(t['args'])[:150]}...",
             }
 
     # Get tracing callbacks
@@ -600,8 +611,13 @@ def create_agent_with_config(
     skill_count = len(
         list_skills(
             user_skills_dir=skills_dir,
-            project_skills_dir=settings.get_project_skills_dir(),
+            agent_skills_dir=settings.get_agent_skills_dir(assistant_id),
         )
     )
 
-    return agent, composite_backend, len(tools), skill_count, checkpointer, baseline_tokens
+    # Tool count includes deepagents built-in tools (9):
+    # write_todos, ls, read_file, write_file, edit_file, glob, grep, execute, task
+    DEEPAGENTS_BUILTIN_TOOLS = 9
+    tool_count = len(tools) + DEEPAGENTS_BUILTIN_TOOLS
+
+    return agent, composite_backend, tool_count, skill_count, checkpointer, baseline_tokens

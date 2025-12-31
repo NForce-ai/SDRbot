@@ -6,7 +6,10 @@ from sdrbot_cli.config import settings
 
 
 def get_tools() -> list[BaseTool]:
-    """Get all Twenty tools (static + generated).
+    """Get all Twenty tools (static + generated + privileged).
+
+    Note: Privileged tools are always returned here but filtered out
+    at the global level by get_enabled_tools() when privileged mode is off.
 
     Returns:
         List of Twenty tools available for the agent.
@@ -32,6 +35,12 @@ def get_tools() -> list[BaseTool]:
                     tools.append(obj)
         except Exception:
             pass  # Failed to load generated tools - only static tools available
+
+    # Privileged tools (metadata operations for schema management)
+    # These are marked as privileged and filtered by get_enabled_tools()
+    from sdrbot_cli.services.twenty.admin_tools import get_admin_tools
+
+    tools.extend(get_admin_tools())
 
     return tools
 

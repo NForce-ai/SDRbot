@@ -23,7 +23,7 @@ REDIRECT_URI = "http://localhost:8080/callback/hubspot"
 # Scopes required for dynamic discovery and manipulation
 # We request broad access to standard objects and schemas
 SCOPES = [
-    # Core CRM objects
+    # Core CRM objects - read/write
     "crm.objects.contacts.read",
     "crm.objects.contacts.write",
     "crm.objects.companies.read",
@@ -33,11 +33,18 @@ SCOPES = [
     # Additional objects
     "tickets",  # For tickets read/write
     "e-commerce",  # For line_items, products, quotes
-    # Schema and configuration
+    # Owners - for listing users/team members
+    "crm.objects.owners.read",
+    # Schema read - for discovering object types and properties
     "crm.schemas.contacts.read",
     "crm.schemas.companies.read",
     "crm.schemas.deals.read",
     "crm.schemas.custom.read",
+    # Schema write - for creating/updating/deleting properties (admin tools)
+    "crm.schemas.contacts.write",
+    "crm.schemas.companies.write",
+    "crm.schemas.deals.write",
+    "crm.schemas.custom.write",
 ]
 
 # Buffer time (in seconds) before token expiry to trigger proactive refresh

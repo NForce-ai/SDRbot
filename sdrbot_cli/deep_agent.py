@@ -23,6 +23,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
+from sdrbot_cli.subagents import MIGRATION_EXECUTOR
 from sdrbot_cli.summarization import CustomSummarizationMiddleware
 from sdrbot_cli.token_counting import calculate_context_overhead
 
@@ -91,6 +92,32 @@ def create_custom_deep_agent(
         session_state=session_state,
     )
 
+    # Built-in specialized subagents + any custom ones passed in
+    builtin_subagents: list[SubAgent | CompiledSubAgent] = [MIGRATION_EXECUTOR]
+    all_subagents = builtin_subagents + (subagents or [])
+
+    # Extract ShellMiddleware from passed middleware for subagents
+    # (subagents need shell access but not memory/skills middleware)
+    from sdrbot_cli.shell import ShellMiddleware
+
+    shell_middleware = [m for m in (middleware or []) if isinstance(m, ShellMiddleware)]
+
+    # Build subagent middleware stack
+    subagent_middleware: list[AgentMiddleware] = [
+        TodoListMiddleware(),
+        FilesystemMiddleware(backend=backend),
+        *shell_middleware,  # Include shell if available
+        # Subagents get their own summarization with same settings
+        CustomSummarizationMiddleware(
+            model=model,
+            context_overhead=context_overhead,
+            max_total_tokens=max_total_tokens,
+            messages_to_keep=messages_to_keep,
+        ),
+        AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+        PatchToolCallsMiddleware(),
+    ]
+
     # Build middleware stack
     deepagent_middleware: list[AgentMiddleware] = [
         TodoListMiddleware(),
@@ -98,20 +125,8 @@ def create_custom_deep_agent(
         SubAgentMiddleware(
             default_model=model,
             default_tools=tools,
-            subagents=subagents or [],
-            default_middleware=[
-                TodoListMiddleware(),
-                FilesystemMiddleware(backend=backend),
-                # Subagents get their own summarization with same settings
-                CustomSummarizationMiddleware(
-                    model=model,
-                    context_overhead=context_overhead,
-                    max_total_tokens=max_total_tokens,
-                    messages_to_keep=messages_to_keep,
-                ),
-                AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
-                PatchToolCallsMiddleware(),
-            ],
+            subagents=all_subagents,
+            default_middleware=subagent_middleware,
             default_interrupt_on=interrupt_on,
             general_purpose_agent=True,
         ),

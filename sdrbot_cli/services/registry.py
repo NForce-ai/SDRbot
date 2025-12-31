@@ -327,3 +327,33 @@ def compute_schema_hash(schema: dict[str, Any]) -> str:
     """
     schema_str = json.dumps(schema, sort_keys=True)
     return hashlib.sha256(schema_str.encode()).hexdigest()[:16]
+
+
+# =============================================================================
+# Privileged Mode (Runtime/Session State - Not Persisted)
+# =============================================================================
+
+_privileged_mode: bool = False
+
+
+def is_privileged_mode() -> bool:
+    """Check if privileged mode is enabled for this session.
+
+    Privileged mode enables loading of privileged tools (e.g., admin/metadata
+    tools for schema management). This is a session-only setting that resets
+    when the application restarts.
+
+    Returns:
+        True if privileged mode is enabled.
+    """
+    return _privileged_mode
+
+
+def set_privileged_mode(enabled: bool) -> None:
+    """Enable or disable privileged mode for this session.
+
+    Args:
+        enabled: Whether to enable privileged mode.
+    """
+    global _privileged_mode
+    _privileged_mode = enabled

@@ -1,9 +1,107 @@
 """Custom tools for the CLI agent."""
 
+from collections.abc import Callable
 from typing import Any
 
 import requests
+from langchain_core.tools import BaseTool
+from langchain_core.tools import tool as langchain_tool
 from markdownify import markdownify
+
+PRIVILEGED_METADATA_KEY = "privileged"
+SCHEMA_MODIFYING_KEY = "schema_modifying"
+SERVICE_KEY = "service_name"
+
+# Registry of schema-modifying tools: {tool_name: service_name}
+# Populated automatically when tools are decorated with schema_modifying param
+_SCHEMA_MODIFYING_REGISTRY: dict[str, str] = {}
+
+
+def privileged_tool(
+    func: Callable | None = None,
+    *,
+    schema_modifying: str | None = None,
+) -> BaseTool | Callable[[Callable], BaseTool]:
+    """Decorator to create a privileged tool.
+
+    Privileged tools are only available when privileged mode is enabled.
+    They include schema/metadata management and code execution capabilities.
+
+    Args:
+        func: The function to wrap (when used without parentheses).
+        schema_modifying: Service name if this tool modifies schema
+            (e.g., "twenty"). When set, triggers automatic schema
+            resync and agent reload after successful execution.
+
+    Usage:
+        @privileged_tool
+        def my_read_only_admin_tool(arg: str) -> str:
+            '''Tool docstring.'''
+            return "result"
+
+        @privileged_tool(schema_modifying="twenty")
+        def my_schema_changing_tool(arg: str) -> str:
+            '''This tool modifies CRM schema.'''
+            return "result"
+
+    The resulting tool will have metadata["privileged"] = True,
+    which is checked during tool loading to filter out privileged tools
+    when privileged mode is disabled.
+
+    Tools with schema_modifying set will also have:
+    - metadata["schema_modifying"] = True
+    - metadata["service_name"] = <service>
+
+    And will be registered in _SCHEMA_MODIFYING_REGISTRY for auto-reload.
+    """
+
+    def decorator(f: Callable) -> BaseTool:
+        # Create the tool using langchain's @tool decorator
+        lc_tool = langchain_tool(f)
+        # Mark it as privileged using the metadata field
+        if lc_tool.metadata is None:
+            lc_tool.metadata = {}
+        lc_tool.metadata[PRIVILEGED_METADATA_KEY] = True
+
+        # Add schema-modifying metadata if specified
+        if schema_modifying:
+            lc_tool.metadata[SCHEMA_MODIFYING_KEY] = True
+            lc_tool.metadata[SERVICE_KEY] = schema_modifying
+            # Register for auto-reload detection
+            _SCHEMA_MODIFYING_REGISTRY[lc_tool.name] = schema_modifying
+
+        return lc_tool
+
+    # Support both @privileged_tool and @privileged_tool(schema_modifying="x")
+    if func is not None:
+        # Called without parentheses: @privileged_tool
+        return decorator(func)
+    # Called with parentheses: @privileged_tool(...) or @privileged_tool()
+    return decorator
+
+
+def get_schema_modifying_tools() -> dict[str, str]:
+    """Get mapping of schema-modifying tool names to their services.
+
+    Returns:
+        Dict mapping tool_name -> service_name for tools that modify schema.
+        Used by execution.py to detect when to trigger auto-reload.
+    """
+    return _SCHEMA_MODIFYING_REGISTRY.copy()
+
+
+def is_privileged_tool(tool: BaseTool) -> bool:
+    """Check if a tool is marked as privileged.
+
+    Args:
+        tool: A LangChain tool instance.
+
+    Returns:
+        True if the tool is privileged, False otherwise.
+    """
+    if tool.metadata is None:
+        return False
+    return tool.metadata.get(PRIVILEGED_METADATA_KEY, False)
 
 
 def http_request(
@@ -79,6 +177,58 @@ def http_request(
             "content": f"Error making request: {e!s}",
             "url": url,
         }
+
+
+def sync_crm_schema(service_name: str | None = None) -> str:
+    """Sync CRM schema(s) and regenerate tools.
+
+    Use this tool to refresh the available fields and tools for CRM services.
+    This is useful after creating custom fields or modifying the CRM schema.
+
+    Args:
+        service_name: Optional. Name of a specific service to sync (e.g., "pipedrive",
+                     "twenty", "hubspot", "salesforce", "attio", "zohocrm").
+                     If not provided, syncs ALL enabled syncable services.
+
+    Returns:
+        Success message with synced services, or error message.
+    """
+    from sdrbot_cli.services import SYNCABLE_SERVICES, resync_service
+    from sdrbot_cli.services.registry import load_config
+
+    # If specific service requested, sync just that one
+    if service_name:
+        if service_name not in SYNCABLE_SERVICES:
+            return f"Error: '{service_name}' is not a syncable service. Valid options: {', '.join(SYNCABLE_SERVICES)}"
+
+        try:
+            success = resync_service(service_name, verbose=False)
+            if success:
+                return f"Successfully synced {service_name} schema. Tools have been regenerated."
+            else:
+                return f"Failed to sync {service_name}. Check that the service is enabled and credentials are valid."
+        except Exception as e:
+            return f"Error syncing {service_name}: {str(e)}"
+
+    # No service specified - sync all enabled syncable services
+    config = load_config()
+    enabled_syncable = [s for s in SYNCABLE_SERVICES if config.is_enabled(s)]
+
+    if not enabled_syncable:
+        return "No syncable services are enabled. Enable a CRM service first with /services enable <name>"
+
+    results = []
+    for svc in enabled_syncable:
+        try:
+            success = resync_service(svc, verbose=False)
+            if success:
+                results.append(f"✓ {svc}")
+            else:
+                results.append(f"✗ {svc} (failed)")
+        except Exception as e:
+            results.append(f"✗ {svc} ({str(e)[:50]})")
+
+    return f"Synced {len(enabled_syncable)} service(s):\n" + "\n".join(results)
 
 
 def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:

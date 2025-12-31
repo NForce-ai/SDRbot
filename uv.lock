@@ -3557,6 +3557,11 @@ dev = [
     { name = "ruff" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "deepagents", specifier = ">=0.1.0" },
@@ -3591,6 +3596,9 @@ requires-dist = [
     { name = "textual", specifier = ">=0.40.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.14.7" }]
 
 [[package]]
 name = "secretstorage"

@@ -136,7 +136,21 @@ class TwentyClient:
         if not response.ok:
             try:
                 error = response.json()
-                error_msg = error.get("error", {}).get("message", str(error))
+                # Handle different error response formats from Twenty API
+                if isinstance(error.get("messages"), list):
+                    # Format: {"statusCode": 400, "messages": [...], "error": "Bad Request"}
+                    # Include all messages for better debugging
+                    messages = error["messages"]
+                    if len(messages) == 1:
+                        error_msg = messages[0]
+                    else:
+                        error_msg = f"Multiple validation errors: {messages}"
+                elif error.get("error", {}).get("message"):
+                    # Format: {"error": {"message": "..."}}
+                    error_msg = error["error"]["message"]
+                else:
+                    # Include full error for unknown formats
+                    error_msg = str(error)
             except Exception:
                 error_msg = response.text
             raise Exception(f"Twenty API Error ({response.status_code}): {error_msg}")

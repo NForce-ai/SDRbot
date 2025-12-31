@@ -6,7 +6,7 @@ from sdrbot_cli.config import settings
 
 
 def get_tools() -> list[BaseTool]:
-    """Get all Pipedrive tools (static + generated).
+    """Get all Pipedrive tools (static + generated + admin).
 
     Returns:
         List of Pipedrive tools available for the agent.
@@ -32,6 +32,11 @@ def get_tools() -> list[BaseTool]:
                     tools.append(obj)
         except Exception:
             pass  # Failed to load generated tools - only static tools available
+
+    # Privileged admin tools (filtered by get_enabled_tools() based on privileged mode)
+    from sdrbot_cli.services.pipedrive.admin_tools import get_admin_tools
+
+    tools.extend(get_admin_tools())
 
     return tools
 

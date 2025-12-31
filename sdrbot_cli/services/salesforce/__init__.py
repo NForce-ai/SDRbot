@@ -6,7 +6,7 @@ from sdrbot_cli.config import settings
 
 
 def get_tools() -> list[BaseTool]:
-    """Get all Salesforce tools (static + generated).
+    """Get all Salesforce tools (static + generated + admin).
 
     Returns:
         List of Salesforce tools available for the agent.
@@ -32,6 +32,11 @@ def get_tools() -> list[BaseTool]:
                     tools.append(obj)
         except Exception:
             pass  # Failed to load generated tools - only static tools available
+
+    # Admin tools (privileged - filtered by privileged mode setting)
+    from sdrbot_cli.services.salesforce.admin_tools import get_admin_tools
+
+    tools.extend(get_admin_tools())
 
     return tools
 

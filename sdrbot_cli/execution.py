@@ -29,6 +29,7 @@ from sdrbot_cli.config import COLORS
 from sdrbot_cli.file_ops import FileOpTracker
 from sdrbot_cli.image_utils import ImageData, create_multimodal_content
 from sdrbot_cli.input import parse_file_mentions
+from sdrbot_cli.tools import get_schema_modifying_tools
 from sdrbot_cli.ui import (
     TokenTracker,
     format_tool_display,
@@ -185,6 +186,10 @@ async def execute_task(
 
     file_op_tracker = FileOpTracker(assistant_id=assistant_id, backend=backend)
 
+    # Track schema-modifying tools for auto-reload
+    schema_modifying_tools = get_schema_modifying_tools()
+    services_to_reload: set[str] = set()
+
     # Track which tool calls we've displayed to avoid duplicates
     displayed_tool_ids = set()
     # Buffer partial tool-call chunks keyed by streaming index
@@ -327,6 +332,13 @@ async def execute_task(
                         tool_status = getattr(message, "status", "success")
                         tool_content = format_tool_message_content(message.content)
                         record = file_op_tracker.complete_with_message(message)
+
+                        # Track schema-modifying tools for auto-reload
+                        # Only trigger if tool succeeded (no error in response)
+                        if tool_name in schema_modifying_tools:
+                            content_str = str(tool_content) if tool_content else ""
+                            if not content_str.lower().startswith("error"):
+                                services_to_reload.add(schema_modifying_tools[tool_name])
 
                         # Reset spinner message after tool completes
                         if spinner_active:
@@ -736,6 +748,23 @@ async def execute_task(
                 ui_callback(Text(error_str, style="dim"))
                 ui_callback(Text(""))
 
+        # Update agent state to preserve context after API errors
+        # This ensures the agent remembers what was being attempted if the user retries
+        try:
+            await agent.aupdate_state(
+                config=config,
+                values={
+                    "messages": [
+                        HumanMessage(
+                            content=f"[The previous request failed with an API error: {error_type}. "
+                            f"The user may ask to retry.]"
+                        )
+                    ]
+                },
+            )
+        except Exception:
+            pass  # Best effort - don't fail if state update also fails
+
         return
 
     if spinner_active:
@@ -744,3 +773,39 @@ async def execute_task(
     if has_responded:
         if ui_callback:
             ui_callback(Text("\n"))
+
+    # Auto-reload agent if schema-modifying tools were used successfully
+    if services_to_reload:
+        try:
+            from sdrbot_cli.services import resync_service
+
+            if ui_callback:
+                ui_callback(
+                    Text(
+                        f"  ⟳ Schema modified, resyncing {', '.join(services_to_reload)}...",
+                        style=f"dim {COLORS['tool']}",
+                    )
+                )
+
+            # Resync each affected service (run sync function in thread pool)
+            for service in services_to_reload:
+                await asyncio.to_thread(resync_service, service, verbose=False)
+
+            # Reload agent with fresh tools
+            await session_state.reload_agent()
+
+            if ui_callback:
+                ui_callback(
+                    Text(
+                        "  ✓ Tools refreshed with updated schema",
+                        style=f"dim {COLORS['agent']}",
+                    )
+                )
+        except Exception as e:
+            if ui_callback:
+                ui_callback(
+                    Text(
+                        f"  ⚠ Auto-reload failed: {e}. Run /sync manually.",
+                        style="dim yellow",
+                    )
+                )

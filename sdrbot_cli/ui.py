@@ -742,7 +742,7 @@ def show_help() -> list[RenderableType]:
 
     output_renderables.append(Text("[bold]Agent Storage:[/bold]", style=COLORS["primary"]))
     output_renderables.append(
-        Text("  Agents are stored in: ~/.deepagents/AGENT_NAME/", style=COLORS["dim"])
+        Text("  Agents are stored in: ./agents/AGENT_NAME/", style=COLORS["dim"])
     )
     output_renderables.append(
         Text("  Each agent has an agent.md file containing its prompt", style=COLORS["dim"])

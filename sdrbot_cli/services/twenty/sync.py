@@ -45,10 +45,10 @@ SYSTEM_OBJECTS = {
     "workspaceMember",
 }
 
-# Objects with static tools in tools.py - skip generating to avoid duplicates
-STATIC_TOOL_OBJECTS = {
-    "note",  # twenty_create_note, twenty_list_notes exist in tools.py
-}
+# Objects with static tools in tools.py - skip generating to avoid duplicates.
+# Notes and tasks are schema-dependent, so CRUD is generated.
+# Only the target association linking (noteTargets/taskTargets) is static.
+STATIC_TOOL_OBJECTS: set[str] = set()
 
 
 def sync_schema() -> dict[str, Any]:
@@ -161,13 +161,14 @@ def _parse_openapi_spec(spec: dict) -> dict[str, dict[str, Any]]:
             continue
 
         # Extract fields from schema properties
-        fields = _extract_fields_from_schema(schema)
+        field_data = _extract_fields_from_schema(schema)
 
-        if fields:
+        if field_data["input"]:
             result[singular] = {
                 "name_singular": singular,
                 "name_plural": plural,
-                "fields": fields,
+                "fields": field_data["input"],
+                "output_fields": field_data["output"],
             }
 
     return result
@@ -220,23 +221,25 @@ def _to_singular(plural: str) -> str:
     return plural.rstrip("s")
 
 
-def _extract_fields_from_schema(schema: dict) -> list[dict[str, Any]]:
+def _extract_fields_from_schema(schema: dict) -> dict[str, list[dict[str, Any]]]:
     """Extract fields from an OpenAPI schema, flattening nested objects.
 
     Args:
         schema: OpenAPI schema object.
 
     Returns:
-        List of field dictionaries with flattened nested fields.
+        Dict with:
+        - 'input': Writable fields for create/update operations
+        - 'output': All fields returned by the API (including id, timestamps)
     """
     properties = schema.get("properties", {})
     required_fields = set(schema.get("required", []))
 
-    result = []
+    input_fields = []
+    output_fields = []
+
     for name, prop in properties.items():
-        # Skip system/internal fields
-        if name in EXCLUDED_FIELDS:
-            continue
+        is_excluded = name in EXCLUDED_FIELDS
 
         # Handle nested objects by flattening them
         if prop.get("type") == "object" and "properties" in prop:
@@ -262,37 +265,39 @@ def _extract_fields_from_schema(schema: dict) -> list[dict[str, Any]]:
                     # Prefix with parent to avoid collisions (linkedinLink vs xLink)
                     param_name = f"{name.replace('Link', '')}_{nested_name}"
 
-                result.append(
-                    {
-                        "name": param_name,
-                        "api_field": nested_name,  # Actual API field name
-                        "label": _to_label(nested_name),
-                        "type": nested_type,
-                        "required": False,
-                        "options": [],
-                        "parent_field": name,  # Track parent for API calls
-                    }
-                )
+                field_dict = {
+                    "name": param_name,
+                    "api_field": nested_name,  # Actual API field name
+                    "label": _to_label(nested_name),
+                    "type": nested_type,
+                    "required": False,
+                    "options": [],
+                    "parent_field": name,  # Track parent for API calls
+                }
+                output_fields.append(field_dict)
+                if not is_excluded:
+                    input_fields.append(field_dict)
             continue
 
         # Get the type for non-nested fields
         field_type = _openapi_to_field_type(prop)
 
-        # Skip complex/excluded types
+        # Skip complex/excluded types for both input and output
         if field_type in EXCLUDED_FIELD_TYPES or field_type in COMPLEX_FIELD_TYPES:
             continue
 
-        result.append(
-            {
-                "name": name,
-                "label": _to_label(name),
-                "type": field_type,
-                "required": name in required_fields,
-                "options": [],
-            }
-        )
+        field_dict = {
+            "name": name,
+            "label": _to_label(name),
+            "type": field_type,
+            "required": name in required_fields,
+            "options": [],
+        }
+        output_fields.append(field_dict)
+        if not is_excluded:
+            input_fields.append(field_dict)
 
-    return result
+    return {"input": input_fields, "output": output_fields}
 
 
 def _openapi_to_field_type(prop: dict) -> str:
@@ -437,9 +442,11 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
         singular = obj_info["name_singular"]
         plural = obj_info["name_plural"]
         fields = obj_info["fields"]
+        output_fields = obj_info.get("output_fields", fields)
 
         # Prioritize fields and limit count
         fields = _prioritize_fields(fields, obj_name)[:MAX_FIELDS_PER_TOOL]
+        output_fields = _prioritize_fields(output_fields, obj_name)
 
         # Generate create tool
         lines.extend(_generate_create_tool(singular, plural, fields))
@@ -450,11 +457,11 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
         lines.append("")
 
         # Generate list tool
-        lines.extend(_generate_search_tool(singular, plural, fields))
+        lines.extend(_generate_search_tool(singular, plural, fields, output_fields))
         lines.append("")
 
         # Generate get tool
-        lines.extend(_generate_get_tool(singular, plural))
+        lines.extend(_generate_get_tool(singular, plural, output_fields))
         lines.append("")
 
         # Generate delete tool
@@ -631,8 +638,7 @@ def _generate_create_tool(singular: str, plural: str, fields: list[dict]) -> lis
             f'            return "Error: At least one field must be provided to create a {singular}."',
             "",
             f'        response = client.post("/{plural}", json=data)',
-            '        record = response.get("data", {})',
-            f'        record_id = record.get("{singular}", {{}}).get("id")',
+            f'        record_id = response.get("data", {{}}).get("create{singular.capitalize()}", {{}}).get("id")',
             "",
             f'        return f"Successfully created {singular} with ID: {{record_id}}"',
             "    except Exception as e:",
@@ -753,13 +759,16 @@ def _generate_update_tool(singular: str, plural: str, fields: list[dict]) -> lis
     ]
 
 
-def _generate_search_tool(singular: str, plural: str, fields: list[dict]) -> list[str]:
+def _generate_search_tool(
+    singular: str, plural: str, fields: list[dict], output_fields: list[dict]
+) -> list[str]:
     """Generate a search tool for an object.
 
     Args:
         singular: Object singular name.
         plural: Object plural name.
         fields: List of searchable fields.
+        output_fields: List of fields returned in the response.
 
     Returns:
         List of code lines.
@@ -779,7 +788,7 @@ def _generate_search_tool(singular: str, plural: str, fields: list[dict]) -> lis
 
     params_str = "\n".join(params)
 
-    # Build docstring
+    # Build docstring with output field info
     doc_lines = [f'    """Search for {plural} in Twenty.']
     doc_lines.append("")
     doc_lines.append("    Args:")
@@ -789,7 +798,14 @@ def _generate_search_tool(singular: str, plural: str, fields: list[dict]) -> lis
     doc_lines.append("        limit: Maximum results to return (default 10).")
     doc_lines.append("")
     doc_lines.append("    Returns:")
-    doc_lines.append(f"        JSON string with matching {plural}.")
+    doc_lines.append(f"        JSON array of {plural}. Each object contains:")
+    doc_lines.append("        - id: Record identifier (use for get/update/delete)")
+    # List top output fields (skip id since we already mentioned it)
+    for f in output_fields[:5]:
+        if f["name"] != "id":
+            doc_lines.append(f"        - {f['name']}: {f.get('label', f['name'])}")
+    if len(output_fields) > 6:
+        doc_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
     doc_lines.append('    """')
 
     # Build function body
@@ -834,7 +850,8 @@ def _generate_search_tool(singular: str, plural: str, fields: list[dict]) -> lis
             '                params["filter"] = f\'and({",".join(filters)})\'',
             "",
             f'        response = client.get("/{plural}", params=params)',
-            f'        records = response.get("data", {{}}).get("{plural}", [])',
+            f"        # Try flat response first, then nested under data.{plural}",
+            f'        records = response.get("{plural}", []) or response.get("data", {{}}).get("{plural}", [])',
             "",
             "        if not records:",
             f'            return "No {plural} found matching the criteria."',
@@ -864,17 +881,29 @@ def _generate_search_tool(singular: str, plural: str, fields: list[dict]) -> lis
     ]
 
 
-def _generate_get_tool(singular: str, plural: str) -> list[str]:
+def _generate_get_tool(singular: str, plural: str, output_fields: list[dict]) -> list[str]:
     """Generate a get-by-id tool for an object.
 
     Args:
         singular: Object singular name.
         plural: Object plural name.
+        output_fields: List of fields returned in the response.
 
     Returns:
         List of code lines.
     """
     func_name = f"twenty_get_{singular.lower()}"
+
+    # Build returns docstring with field info
+    returns_lines = [
+        f"        JSON object with {singular} data containing:",
+        "        - id: Record identifier",
+    ]
+    for f in output_fields[:5]:
+        if f["name"] != "id":
+            returns_lines.append(f"        - {f['name']}: {f.get('label', f['name'])}")
+    if len(output_fields) > 6:
+        returns_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
 
     return [
         "@tool",
@@ -885,12 +914,13 @@ def _generate_get_tool(singular: str, plural: str) -> list[str]:
         f"        {singular}_id: The Twenty record ID of the {singular}.",
         "",
         "    Returns:",
-        f"        JSON string with the {singular} details.",
+        *returns_lines,
         '    """',
         "    client = _get_twenty()",
         "    try:",
         f'        response = client.get(f"/{plural}/{{{singular}_id}}")',
-        f'        record = response.get("data", {{}}).get("{singular}", {{}})',
+        f"        # Try flat response (has id at root), then nested under data.{singular}",
+        f'        record = response if response.get("id") else response.get("data", {{}}).get("{singular}", {{}})',
         "",
         "        if not record:",
         f'            return f"{singular.title()} not found: {{{singular}_id}}"',

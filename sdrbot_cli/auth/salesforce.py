@@ -37,6 +37,7 @@ def get_auth_url() -> str:
         "response_type": "code",
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
+        "scope": "api refresh_token",
         "prompt": "login consent",
     }
     return f"{SF_LOGIN_URL}/services/oauth2/authorize?{urllib.parse.urlencode(params)}"

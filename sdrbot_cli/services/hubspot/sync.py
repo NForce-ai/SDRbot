@@ -12,8 +12,16 @@ from sdrbot_cli.auth.hubspot import get_client
 from sdrbot_cli.config import settings
 from sdrbot_cli.services.registry import compute_schema_hash
 
-# Standard HubSpot objects that are always available
-STANDARD_OBJECTS = ["contacts", "companies", "deals", "tickets", "line_items", "products", "quotes"]
+# Fallback objects if schemas API fails (common HubSpot objects)
+FALLBACK_OBJECTS = [
+    "contacts",
+    "companies",
+    "deals",
+    "tickets",
+    "line_items",
+    "products",
+    "quotes",
+]
 
 # Properties to exclude from generated tools (system/internal properties)
 EXCLUDED_PROPERTY_PREFIXES = [
@@ -79,7 +87,10 @@ def sync_schema() -> dict[str, Any]:
 
 
 def _discover_objects(hs) -> list[str]:
-    """Discover all available HubSpot object types.
+    """Discover all available HubSpot object types dynamically.
+
+    Uses the schemas API to discover all object types (standard + custom).
+    Falls back to a hardcoded list only if the API fails.
 
     Args:
         hs: HubSpot client instance.
@@ -87,16 +98,20 @@ def _discover_objects(hs) -> list[str]:
     Returns:
         List of object type names (e.g., ["contacts", "companies", "2-12345"])
     """
-    objects = set(STANDARD_OBJECTS)
+    objects = set()
 
     try:
-        # Get custom objects from schemas API
+        # Discover ALL objects from schemas API (standard + custom)
         response = hs.crm.schemas.core_api.get_all()
         for schema in response.results:
             objects.add(schema.name)
     except Exception:
-        # If schemas API fails, just use standard objects
+        # If schemas API fails completely, use fallback list
         pass
+
+    # If no objects discovered, use fallback list
+    if not objects:
+        objects = set(FALLBACK_OBJECTS)
 
     return sorted(objects)
 

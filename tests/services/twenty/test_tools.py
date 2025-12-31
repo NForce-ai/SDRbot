@@ -16,10 +16,14 @@ class TestTwentyToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 4
+        assert len(tools) == 6
         tool_names = [t.name for t in tools]
-        assert "twenty_create_note" in tool_names
-        assert "twenty_list_notes" in tool_names
+        # Note/Task linking tools (CRUD is generated, linking is static)
+        assert "twenty_link_note_to_record" in tool_names
+        assert "twenty_list_notes_on_record" in tool_names
+        assert "twenty_link_task_to_record" in tool_names
+        assert "twenty_list_tasks_on_record" in tool_names
+        # Search/get tools
         assert "twenty_search_records" in tool_names
         assert "twenty_get_record" in tool_names
 
@@ -49,8 +53,10 @@ class TestTwentyToolLoading:
         tool_names = [t.name for t in tools]
 
         # Static tools should always be present
-        assert "twenty_create_note" in tool_names
-        assert "twenty_list_notes" in tool_names
+        assert "twenty_link_note_to_record" in tool_names
+        assert "twenty_list_notes_on_record" in tool_names
+        assert "twenty_link_task_to_record" in tool_names
+        assert "twenty_list_tasks_on_record" in tool_names
         assert "twenty_search_records" in tool_names
         assert "twenty_get_record" in tool_names
 
@@ -79,85 +85,100 @@ class TestTwentyToolsUnit:
 
         tools_module._twenty_client = original_client
 
-    def test_create_note_success(self, patch_twenty_client):
-        """twenty_create_note should return success message."""
-        patch_twenty_client.post.return_value = {
-            "data": {
-                "id": "note-123",
-                "title": "Test Note",
-                "body": "Test content",
-            }
-        }
+    def test_link_note_to_record_success(self, patch_twenty_client):
+        """twenty_link_note_to_record should return success message."""
+        patch_twenty_client.post.return_value = {"data": {"noteTarget": {"id": "target-456"}}}
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_create_note
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
 
         tools_module._twenty_client = None
 
-        result = twenty_create_note.invoke(
+        result = twenty_link_note_to_record.invoke(
             {
-                "target_object": "person",
+                "note_id": "note-123",
+                "target_type": "person",
                 "target_record_id": "rec-123",
-                "title": "Test Note",
-                "body": "Test content",
             }
         )
 
-        assert "Successfully created note" in result
+        assert "Successfully linked note" in result
         assert "note-123" in result
-
-        # Verify API was called correctly
+        assert "person" in result
         patch_twenty_client.post.assert_called_once()
-        call_args = patch_twenty_client.post.call_args
-        assert call_args[0] == ("/notes",)
 
-    def test_create_note_error(self, patch_twenty_client):
-        """twenty_create_note should handle API errors."""
-        patch_twenty_client.post.side_effect = Exception("API Error: Invalid record")
-
+    def test_link_note_to_record_invalid_target(self, patch_twenty_client):
+        """twenty_link_note_to_record should reject invalid target types."""
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_create_note
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
 
         tools_module._twenty_client = None
 
-        result = twenty_create_note.invoke(
+        result = twenty_link_note_to_record.invoke(
             {
-                "target_object": "person",
+                "note_id": "note-123",
+                "target_type": "invalid_type",
+                "target_record_id": "rec-123",
+            }
+        )
+
+        assert "Error" in result
+        assert "Invalid target_type" in result
+
+    def test_link_note_to_record_error(self, patch_twenty_client):
+        """twenty_link_note_to_record should handle API errors."""
+        patch_twenty_client.post.side_effect = Exception("API Error: Invalid record")
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_link_note_to_record.invoke(
+            {
+                "note_id": "note-123",
+                "target_type": "person",
                 "target_record_id": "invalid-id",
-                "title": "Test",
-                "body": "Content",
             }
         )
 
         assert "Error" in result
         assert "Invalid record" in result
 
-    def test_list_notes_success(self, patch_twenty_client):
-        """twenty_list_notes should return formatted notes."""
-        patch_twenty_client.get.return_value = {
-            "data": {
-                "notes": [
-                    {
+    def test_list_notes_on_record_success(self, patch_twenty_client):
+        """twenty_list_notes_on_record should return formatted notes."""
+        # First call returns noteTargets, subsequent calls return individual notes
+        patch_twenty_client.get.side_effect = [
+            {"data": {"noteTargets": [{"noteId": "note-1"}, {"noteId": "note-2"}]}},
+            {
+                "data": {
+                    "note": {
                         "id": "note-1",
                         "title": "Meeting Notes",
                         "createdAt": "2024-01-15T10:30:00Z",
-                    },
-                    {
+                        "bodyV2": {"markdown": "Discussion about project"},
+                    }
+                }
+            },
+            {
+                "data": {
+                    "note": {
                         "id": "note-2",
                         "title": "Follow-up",
                         "createdAt": "2024-01-16T14:00:00Z",
-                    },
-                ]
-            }
-        }
+                        "bodyV2": {"markdown": "Action items"},
+                    }
+                }
+            },
+        ]
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_list_notes
+        from sdrbot_cli.services.twenty.tools import twenty_list_notes_on_record
 
         tools_module._twenty_client = None
 
-        result = twenty_list_notes.invoke(
-            {"target_object": "person", "target_record_id": "rec-123"}
+        result = twenty_list_notes_on_record.invoke(
+            {"target_type": "person", "target_record_id": "rec-123"}
         )
 
         assert "Notes:" in result
@@ -165,36 +186,120 @@ class TestTwentyToolsUnit:
         assert "Follow-up" in result
         assert "2024-01-15" in result
 
-    def test_list_notes_empty(self, patch_twenty_client):
-        """twenty_list_notes should handle no notes."""
-        patch_twenty_client.get.return_value = {"data": {"notes": []}}
+    def test_list_notes_on_record_empty(self, patch_twenty_client):
+        """twenty_list_notes_on_record should handle no notes."""
+        patch_twenty_client.get.return_value = {"data": {"noteTargets": []}}
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_list_notes
+        from sdrbot_cli.services.twenty.tools import twenty_list_notes_on_record
 
         tools_module._twenty_client = None
 
-        result = twenty_list_notes.invoke(
-            {"target_object": "company", "target_record_id": "rec-456"}
+        result = twenty_list_notes_on_record.invoke(
+            {"target_type": "company", "target_record_id": "rec-456"}
         )
 
         assert "No notes found" in result
 
-    def test_list_notes_error(self, patch_twenty_client):
-        """twenty_list_notes should handle API errors."""
+    def test_list_notes_on_record_error(self, patch_twenty_client):
+        """twenty_list_notes_on_record should handle API errors."""
         patch_twenty_client.get.side_effect = Exception("Connection timeout")
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_list_notes
+        from sdrbot_cli.services.twenty.tools import twenty_list_notes_on_record
 
         tools_module._twenty_client = None
 
-        result = twenty_list_notes.invoke(
-            {"target_object": "person", "target_record_id": "rec-123"}
+        result = twenty_list_notes_on_record.invoke(
+            {"target_type": "person", "target_record_id": "rec-123"}
         )
 
         assert "Error" in result
         assert "Connection timeout" in result
+
+    def test_link_task_to_record_success(self, patch_twenty_client):
+        """twenty_link_task_to_record should return success message."""
+        patch_twenty_client.post.return_value = {"data": {"taskTarget": {"id": "target-789"}}}
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_link_task_to_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_link_task_to_record.invoke(
+            {
+                "task_id": "task-123",
+                "target_type": "company",
+                "target_record_id": "rec-456",
+            }
+        )
+
+        assert "Successfully linked task" in result
+        assert "task-123" in result
+        assert "company" in result
+        patch_twenty_client.post.assert_called_once()
+
+    def test_link_task_to_record_invalid_target(self, patch_twenty_client):
+        """twenty_link_task_to_record should reject invalid target types."""
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_link_task_to_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_link_task_to_record.invoke(
+            {
+                "task_id": "task-123",
+                "target_type": "invalid_type",
+                "target_record_id": "rec-123",
+            }
+        )
+
+        assert "Error" in result
+        assert "Invalid target_type" in result
+
+    def test_list_tasks_on_record_success(self, patch_twenty_client):
+        """twenty_list_tasks_on_record should return formatted tasks."""
+        patch_twenty_client.get.side_effect = [
+            {"data": {"taskTargets": [{"taskId": "task-1"}]}},
+            {
+                "data": {
+                    "task": {
+                        "id": "task-1",
+                        "title": "Follow up call",
+                        "status": "TODO",
+                        "createdAt": "2024-01-15T10:30:00Z",
+                    }
+                }
+            },
+        ]
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_list_tasks_on_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_list_tasks_on_record.invoke(
+            {"target_type": "person", "target_record_id": "rec-123"}
+        )
+
+        assert "Tasks:" in result
+        assert "Follow up call" in result
+        assert "TODO" in result
+
+    def test_list_tasks_on_record_empty(self, patch_twenty_client):
+        """twenty_list_tasks_on_record should handle no tasks."""
+        patch_twenty_client.get.return_value = {"data": {"taskTargets": []}}
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_list_tasks_on_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_list_tasks_on_record.invoke(
+            {"target_type": "company", "target_record_id": "rec-456"}
+        )
+
+        assert "No tasks found" in result
 
     def test_search_records_success(self, patch_twenty_client):
         """twenty_search_records should return formatted results."""

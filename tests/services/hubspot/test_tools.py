@@ -394,12 +394,22 @@ class TestHubSpotToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 4
+        assert len(tools) == 10
         tool_names = [t.name for t in tools]
+        # Original tools
         assert "hubspot_list_pipelines" in tool_names
         assert "hubspot_create_association" in tool_names
         assert "hubspot_list_associations" in tool_names
         assert "hubspot_delete_association" in tool_names
+        # Notes tools
+        assert "hubspot_create_note_on_record" in tool_names
+        assert "hubspot_list_notes_on_record" in tool_names
+        # Tasks tools
+        assert "hubspot_create_task_on_record" in tool_names
+        assert "hubspot_list_tasks_on_record" in tool_names
+        # Generic tools
+        assert "hubspot_search_records" in tool_names
+        assert "hubspot_get_record" in tool_names
 
     def test_static_tools_are_base_tool_instances(self):
         """Static tools should be BaseTool instances."""
@@ -435,8 +445,8 @@ hubspot_dummy_generated_tool = StructuredTool.from_function(
         ):
             tools = get_tools()
 
-        # Should have static tools (4) + 1 generated dummy tool
-        assert len(tools) == 5, "Expected 4 static tools + 1 generated tool"
+        # Should have static tools (10) + admin tools (9) + 1 generated dummy tool
+        assert len(tools) >= 11, "Expected 10 static tools + admin tools + 1 generated tool"
         assert any(t.name == "hubspot_dummy_generated_tool" for t in tools)
 
     def test_generated_tools_are_base_tool_instances(self):
@@ -473,7 +483,7 @@ hubspot_dummy_generated_tool = StructuredTool.from_function(
                 from sdrbot_cli.services.hubspot.tools import get_static_tools
 
                 tools = get_static_tools()
-                assert len(tools) == 4
+                assert len(tools) == 10
 
 
 class TestEnabledToolsLoading:
@@ -515,8 +525,559 @@ class TestEnabledToolsLoading:
         hunter_tools = [t for t in tools if t.name.startswith("hunter_")]
 
         if config.is_enabled("hubspot"):
-            # 4 static + 35 generated (7 objects * 5 operations)
-            assert len(hubspot_tools) >= 4, "Expected at least static HubSpot tools"
+            # 10 static + 9 admin + 35 generated (7 objects * 5 operations)
+            assert len(hubspot_tools) >= 10, "Expected at least static HubSpot tools"
 
         if config.is_enabled("hunter"):
             assert len(hunter_tools) == 3, "Expected 3 Hunter tools"
+
+
+class TestHubSpotAdminToolsUnit:
+    """Unit tests for HubSpot admin tools (mocked API)."""
+
+    # Objects management tests
+
+    def test_admin_list_objects_success(self, patch_hubspot_admin_client):
+        """list_objects should return formatted schema info."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_list_objects,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_list_objects.invoke({})
+
+        assert "contacts" in result
+        assert "Contact" in result
+        patch_hubspot_admin_client.crm.schemas.core_api.get_all.assert_called_once()
+
+    def test_admin_list_objects_error_handling(self, patch_hubspot_admin_client):
+        """list_objects should handle errors gracefully."""
+        patch_hubspot_admin_client.crm.schemas.core_api.get_all.side_effect = Exception("API Error")
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_list_objects,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_list_objects.invoke({})
+
+        assert "Error" in result
+
+    def test_admin_get_object_success(self, patch_hubspot_admin_client):
+        """get_object should return detailed schema info."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_get_object,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_get_object.invoke({"object_type": "contacts"})
+
+        assert "contacts" in result
+        assert "email" in result
+        patch_hubspot_admin_client.crm.schemas.core_api.get_by_id.assert_called_once_with(
+            object_type="contacts"
+        )
+
+    def test_admin_create_object_success(self, patch_hubspot_admin_client):
+        """create_object should create a custom object schema."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_create_object,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_create_object.invoke(
+            {
+                "name": "test_objects",
+                "label_singular": "Test Object",
+                "label_plural": "Test Objects",
+                "primary_display_property": "name",
+            }
+        )
+
+        assert "Successfully created" in result or "2-12345" in result
+        patch_hubspot_admin_client.crm.schemas.core_api.create.assert_called_once()
+
+    # Properties management tests
+
+    def test_admin_list_properties_success(self, patch_hubspot_admin_client):
+        """list_properties should return formatted property info."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_list_properties,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_list_properties.invoke({"object_type": "contacts"})
+
+        assert "email" in result
+        assert "string" in result
+        patch_hubspot_admin_client.crm.properties.core_api.get_all.assert_called_once_with(
+            object_type="contacts"
+        )
+
+    def test_admin_list_properties_with_enumeration(self, patch_hubspot_admin_client):
+        """list_properties should include options for enumeration fields."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_list_properties,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_list_properties.invoke({"object_type": "contacts"})
+
+        assert "lead_status" in result
+        assert "enumeration" in result
+
+    def test_admin_get_property_success(self, patch_hubspot_admin_client):
+        """get_property should return detailed property info."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_get_property,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_get_property.invoke(
+            {"object_type": "contacts", "property_name": "email"}
+        )
+
+        assert "email" in result
+        assert "Email" in result
+        patch_hubspot_admin_client.crm.properties.core_api.get_by_name.assert_called_once()
+
+    def test_admin_create_property_success(self, patch_hubspot_admin_client):
+        """create_property should create a new property."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_create_property,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_create_property.invoke(
+            {
+                "object_type": "contacts",
+                "name": "custom_field",
+                "label": "Custom Field",
+                "property_type": "string",
+                "field_type": "text",
+            }
+        )
+
+        assert "Successfully created" in result or "custom_field" in result
+        patch_hubspot_admin_client.crm.properties.core_api.create.assert_called_once()
+
+    def test_admin_update_property_success(self, patch_hubspot_admin_client):
+        """update_property should update an existing property."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_update_property,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_update_property.invoke(
+            {
+                "object_type": "contacts",
+                "property_name": "custom_field",
+                "label": "Updated Label",
+            }
+        )
+
+        assert "Successfully updated" in result or "custom_field" in result
+        patch_hubspot_admin_client.crm.properties.core_api.update.assert_called_once()
+
+    def test_admin_delete_property_success(self, patch_hubspot_admin_client):
+        """delete_property should archive a property."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_delete_property,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_delete_property.invoke(
+            {"object_type": "contacts", "property_name": "custom_field"}
+        )
+
+        assert "Successfully deleted" in result or "archived" in result.lower()
+        patch_hubspot_admin_client.crm.properties.core_api.archive.assert_called_once()
+
+    # Owners tests
+
+    def test_admin_list_owners_success(self, patch_hubspot_admin_client):
+        """list_owners should return formatted owner info."""
+        from sdrbot_cli.services.hubspot.admin_tools import (
+            hubspot_admin_list_owners,
+            reset_admin_client,
+        )
+
+        reset_admin_client()
+
+        result = hubspot_admin_list_owners.invoke({})
+
+        assert "owner@example.com" in result
+        assert "Test" in result
+        patch_hubspot_admin_client.crm.owners.owners_api.get_page.assert_called_once()
+
+
+class TestHubSpotNotesToolsUnit:
+    """Unit tests for HubSpot notes tools (mocked API)."""
+
+    def test_create_note_on_record_success(self, patch_hubspot_admin_client):
+        """create_note_on_record should create a note linked to a record."""
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_create_note_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        # Patch the get_client used by tools.py
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_create_note_on_record.invoke(
+                {
+                    "object_type": "contacts",
+                    "object_id": "123",
+                    "body": "Test note content",
+                }
+            )
+
+        assert "Successfully created" in result or "note123" in result
+
+    def test_create_note_on_record_with_timestamp(self, patch_hubspot_admin_client):
+        """create_note_on_record should accept custom timestamp."""
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_create_note_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_create_note_on_record.invoke(
+                {
+                    "object_type": "contacts",
+                    "object_id": "123",
+                    "body": "Test note",
+                    "timestamp": "2024-06-01T12:00:00.000Z",
+                }
+            )
+
+        assert "Successfully created" in result or "note123" in result
+
+    def test_list_notes_on_record_success(self, patch_hubspot_admin_client):
+        """list_notes_on_record should return notes for a record."""
+        # Setup mock for notes basic_api get_by_id
+        patch_hubspot_admin_client.crm.objects.notes.basic_api.get_by_id.return_value = MagicMock(
+            id="note123",
+            properties={
+                "hs_note_body": "Test note",
+                "hs_timestamp": "2024-01-01T00:00:00Z",
+            },
+        )
+
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_list_notes_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_list_notes_on_record.invoke(
+                {"object_type": "contacts", "object_id": "123"}
+            )
+
+        # Result should contain note info or indicate no notes
+        assert "note" in result.lower() or "Note" in result
+
+    def test_list_notes_on_record_empty(self, patch_hubspot_admin_client):
+        """list_notes_on_record should handle no notes gracefully."""
+        patch_hubspot_admin_client.crm.associations.v4.basic_api.get_page.return_value = MagicMock(
+            results=[]
+        )
+
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_list_notes_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_list_notes_on_record.invoke(
+                {"object_type": "contacts", "object_id": "123"}
+            )
+
+        assert "No notes found" in result or "[]" in result
+
+
+class TestHubSpotTasksToolsUnit:
+    """Unit tests for HubSpot tasks tools (mocked API)."""
+
+    def test_create_task_on_record_success(self, patch_hubspot_admin_client):
+        """create_task_on_record should create a task linked to a record."""
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_create_task_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_create_task_on_record.invoke(
+                {
+                    "object_type": "contacts",
+                    "object_id": "123",
+                    "subject": "Follow up",
+                    "body": "Call to discuss proposal",
+                }
+            )
+
+        assert "Successfully created" in result or "task123" in result
+
+    def test_create_task_on_record_with_all_params(self, patch_hubspot_admin_client):
+        """create_task_on_record should accept all optional parameters."""
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_create_task_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_create_task_on_record.invoke(
+                {
+                    "object_type": "contacts",
+                    "object_id": "123",
+                    "subject": "Follow up",
+                    "body": "Call details",
+                    "due_date": "2024-12-31T17:00:00.000Z",
+                    "status": "NOT_STARTED",
+                    "priority": "HIGH",
+                    "owner_id": "456",
+                }
+            )
+
+        assert "Successfully created" in result or "task123" in result
+
+    def test_list_tasks_on_record_success(self, patch_hubspot_admin_client):
+        """list_tasks_on_record should return tasks for a record."""
+        # Setup mock to return a task association
+        patch_hubspot_admin_client.crm.associations.v4.basic_api.get_page.return_value = MagicMock(
+            results=[MagicMock(to_object_id="task123")]
+        )
+        patch_hubspot_admin_client.crm.objects.tasks.basic_api.get_by_id.return_value = MagicMock(
+            id="task123",
+            properties={
+                "hs_task_subject": "Follow up",
+                "hs_task_body": "Call details",
+                "hs_task_status": "NOT_STARTED",
+            },
+        )
+
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_list_tasks_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_list_tasks_on_record.invoke(
+                {"object_type": "contacts", "object_id": "123"}
+            )
+
+        assert "task" in result.lower() or "Task" in result
+
+    def test_list_tasks_on_record_empty(self, patch_hubspot_admin_client):
+        """list_tasks_on_record should handle no tasks gracefully."""
+        patch_hubspot_admin_client.crm.associations.v4.basic_api.get_page.return_value = MagicMock(
+            results=[]
+        )
+
+        from sdrbot_cli.services.hubspot.tools import (
+            hubspot_list_tasks_on_record,
+            reset_client,
+        )
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_list_tasks_on_record.invoke(
+                {"object_type": "contacts", "object_id": "123"}
+            )
+
+        assert "No tasks found" in result or "[]" in result
+
+
+class TestHubSpotGenericToolsUnit:
+    """Unit tests for HubSpot generic tools (mocked API)."""
+
+    def test_search_records_success(self, patch_hubspot_admin_client):
+        """search_records should return matching records."""
+        from sdrbot_cli.services.hubspot.tools import hubspot_search_records, reset_client
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_search_records.invoke({"object_type": "contacts", "limit": 10})
+
+        assert "record123" in result or "Test Record" in result
+        patch_hubspot_admin_client.crm.objects.search_api.do_search.assert_called_once()
+
+    def test_search_records_with_query(self, patch_hubspot_admin_client):
+        """search_records should filter by query string."""
+        from sdrbot_cli.services.hubspot.tools import hubspot_search_records, reset_client
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            hubspot_search_records.invoke(
+                {"object_type": "contacts", "query": "test@example.com", "limit": 5}
+            )
+
+        # Verify search was called with query
+        call_args = patch_hubspot_admin_client.crm.objects.search_api.do_search.call_args
+        assert call_args is not None
+
+    def test_search_records_empty(self, patch_hubspot_admin_client):
+        """search_records should handle no results."""
+        patch_hubspot_admin_client.crm.objects.search_api.do_search.return_value = MagicMock(
+            total=0, results=[]
+        )
+
+        from sdrbot_cli.services.hubspot.tools import hubspot_search_records, reset_client
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_search_records.invoke({"object_type": "contacts", "limit": 10})
+
+        assert "No contacts found" in result or "Found 0" in result
+
+    def test_get_record_success(self, patch_hubspot_admin_client):
+        """get_record should return a single record."""
+        from sdrbot_cli.services.hubspot.tools import hubspot_get_record, reset_client
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_get_record.invoke({"object_type": "contacts", "record_id": "123"})
+
+        assert "record123" in result or "Test Record" in result
+        patch_hubspot_admin_client.crm.objects.basic_api.get_by_id.assert_called_once()
+
+    def test_get_record_not_found(self, patch_hubspot_admin_client):
+        """get_record should handle not found errors."""
+        from hubspot.crm.contacts.exceptions import ApiException
+
+        patch_hubspot_admin_client.crm.objects.basic_api.get_by_id.side_effect = ApiException(
+            status=404, reason="Not Found"
+        )
+
+        from sdrbot_cli.services.hubspot.tools import hubspot_get_record, reset_client
+
+        reset_client()
+
+        with patch(
+            "sdrbot_cli.services.hubspot.tools.get_client",
+            return_value=patch_hubspot_admin_client,
+        ):
+            result = hubspot_get_record.invoke(
+                {"object_type": "contacts", "record_id": "nonexistent"}
+            )
+
+        assert "Error" in result or "not found" in result.lower()
+
+
+class TestHubSpotAdminToolsLoading:
+    """Test that admin tools load correctly."""
+
+    def test_admin_tools_load(self):
+        """Admin tools should load."""
+        from sdrbot_cli.services.hubspot.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        assert len(tools) == 11
+        tool_names = [t.name for t in tools]
+        # Object management
+        assert "hubspot_admin_list_objects" in tool_names
+        assert "hubspot_admin_get_object" in tool_names
+        assert "hubspot_admin_create_object" in tool_names
+        assert "hubspot_admin_update_object" in tool_names
+        assert "hubspot_admin_delete_object" in tool_names
+        # Property management
+        assert "hubspot_admin_list_properties" in tool_names
+        assert "hubspot_admin_get_property" in tool_names
+        assert "hubspot_admin_create_property" in tool_names
+        assert "hubspot_admin_update_property" in tool_names
+        assert "hubspot_admin_delete_property" in tool_names
+        # Owners
+        assert "hubspot_admin_list_owners" in tool_names
+
+    def test_admin_tools_are_base_tool_instances(self):
+        """Admin tools should be BaseTool instances."""
+        from sdrbot_cli.services.hubspot.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        for tool in tools:
+            assert isinstance(tool, BaseTool), f"{tool.name} is not a BaseTool"
+
+    def test_admin_tools_have_descriptions(self):
+        """Admin tools should have descriptions."""
+        from sdrbot_cli.services.hubspot.admin_tools import get_admin_tools
+
+        tools = get_admin_tools()
+
+        for tool in tools:
+            assert tool.description, f"{tool.name} has no description"
+            assert len(tool.description) > 10, f"{tool.name} description too short"

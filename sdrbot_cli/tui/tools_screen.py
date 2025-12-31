@@ -34,6 +34,7 @@ def get_grouped_tools() -> dict[str, dict[str, list[tuple[str, str]]]]:
     builtin_tools = [
         ("http_request", "Make HTTP requests to external APIs"),
         ("fetch_url", "Fetch and parse web page content"),
+        ("sync_crm_schema", "Sync CRM schema and regenerate tools"),
         ("read_file", "Read contents of a file"),
         ("write_file", "Write content to a file"),
         ("edit_file", "Edit a file by replacing text"),

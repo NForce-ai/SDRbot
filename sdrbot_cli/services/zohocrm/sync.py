@@ -12,7 +12,8 @@ from sdrbot_cli.auth.zohocrm import get_zoho_client
 from sdrbot_cli.config import settings
 from sdrbot_cli.services.registry import compute_schema_hash
 
-# Standard Zoho CRM modules that are commonly used
+# Standard Zoho CRM modules - used as fallback if API discovery fails
+# The sync process now dynamically discovers all accessible modules from the API
 STANDARD_MODULES = [
     "Leads",
     "Contacts",
@@ -104,7 +105,11 @@ def sync_schema() -> dict[str, Any]:
 
 
 def _discover_modules(client) -> list[dict]:
-    """Discover all available Zoho CRM modules.
+    """Discover all available Zoho CRM modules dynamically.
+
+    This function queries the Zoho CRM API to discover all accessible modules,
+    including standard modules, custom modules, and any organization-specific
+    modules that have been enabled.
 
     Args:
         client: Zoho CRM client instance.
@@ -119,20 +124,22 @@ def _discover_modules(client) -> list[dict]:
         all_modules = response.get("modules", [])
 
         for module in all_modules:
-            # Skip modules that aren't API-supported or accessible
+            # Skip modules that aren't API-supported
             if not module.get("api_supported", False):
                 continue
 
-            # Include if creatable, editable, or viewable
+            # Skip modules that aren't accessible (need at least one of create/edit/view)
             if not (module.get("creatable") or module.get("editable") or module.get("viewable")):
                 continue
 
-            # Include standard modules and custom modules
             api_name = module.get("api_name", "")
-            is_standard = api_name in STANDARD_MODULES
-            is_custom = module.get("generated_type") == "custom"
+            generated_type = module.get("generated_type", "")
 
-            if is_standard or is_custom:
+            # Include all accessible modules:
+            # - "default" = standard Zoho modules (Leads, Contacts, etc.)
+            # - "custom" = user-created custom modules
+            # - Other types may exist for special modules
+            if generated_type in ("default", "custom") or api_name in STANDARD_MODULES:
                 modules.append(
                     {
                         "api_name": api_name,
@@ -140,11 +147,12 @@ def _discover_modules(client) -> list[dict]:
                         "plural_label": module.get("plural_label", api_name),
                         "creatable": module.get("creatable", False),
                         "editable": module.get("editable", False),
+                        "generated_type": generated_type,
                     }
                 )
 
     except Exception:
-        # If modules API fails, use standard modules only
+        # If modules API fails, fall back to standard modules only
         for api_name in STANDARD_MODULES:
             modules.append(
                 {
@@ -153,6 +161,7 @@ def _discover_modules(client) -> list[dict]:
                     "plural_label": api_name,
                     "creatable": True,
                     "editable": True,
+                    "generated_type": "default",
                 }
             )
 

@@ -1,26 +1,14 @@
 """Middleware for loading and exposing agent skills to the system prompt.
 
 This middleware implements Anthropic's "Agent Skills" pattern with progressive disclosure:
-1. Parse YAML frontmatter from SKILL.md files at session start
+1. Parse YAML frontmatter from skill .md files at session start
 2. Inject skills metadata (name + description) into system prompt
-3. Agent reads full SKILL.md content when relevant to a task
+3. Agent reads full skill content when relevant to a task
 
-Skills directory structure (per-agent + project):
-User-level: ~/.deepagents/{AGENT_NAME}/skills/
-Project-level: {PROJECT_ROOT}/.deepagents/skills/
-
-Example structure:
-~/.deepagents/{AGENT_NAME}/skills/
-├── web-research/
-│   ├── SKILL.md        # Required: YAML frontmatter + instructions
-│   └── helper.py       # Optional: supporting files
-├── code-review/
-│   ├── SKILL.md
-│   └── checklist.md
-
-.deepagents/skills/
-├── project-specific/
-│   └── SKILL.md        # Project-specific skills
+Skills are loaded from three sources (later overrides earlier):
+- Built-in: Shipped with SDRbot (sdrbot_cli/skills/builtin/)
+- Agent: Per-agent skills (./agents/{agent}/skills/)
+- User: Project-wide custom skills (./skills/)
 """
 
 from collections.abc import Awaitable, Callable
@@ -105,17 +93,16 @@ class SkillsMiddleware(AgentMiddleware):
     This middleware implements Anthropic's agent skills pattern:
     - Loads skills metadata (name, description) from YAML frontmatter at session start
     - Injects skills list into system prompt for discoverability
-    - Agent reads full SKILL.md content when a skill is relevant (progressive disclosure)
+    - Agent reads full skill content when relevant (progressive disclosure)
 
-    Supports both user-level and project-level skills:
-    - User skills: ~/.deepagents/{AGENT_NAME}/skills/
-    - Project skills: {PROJECT_ROOT}/.deepagents/skills/
-    - Project skills override user skills with the same name
+    Skills are loaded from three sources (later overrides earlier):
+    - Built-in: Shipped with SDRbot
+    - Agent: Per-agent skills (./agents/{agent}/skills/)
+    - User: Project-wide custom skills (./skills/)
 
     Args:
-        skills_dir: Path to the user-level skills directory (per-agent).
-        assistant_id: The agent identifier for path references in prompts.
-        project_skills_dir: Optional path to project-level skills directory.
+        skills_dir: Path to the user skills directory (./skills/).
+        assistant_id: The agent identifier.
     """
 
     state_schema = SkillsState
@@ -125,59 +112,56 @@ class SkillsMiddleware(AgentMiddleware):
         *,
         skills_dir: str | Path,
         assistant_id: str,
-        project_skills_dir: str | Path | None = None,
     ) -> None:
         """Initialize the skills middleware.
 
         Args:
-            skills_dir: Path to the user-level skills directory.
+            skills_dir: Path to the user skills directory.
             assistant_id: The agent identifier.
-            project_skills_dir: Optional path to the project-level skills directory.
         """
         self.skills_dir = Path(skills_dir).expanduser()
         self.assistant_id = assistant_id
-        self.project_skills_dir = (
-            Path(project_skills_dir).expanduser() if project_skills_dir else None
-        )
-        # Store display paths for prompts
-        self.user_skills_display = f"~/.deepagents/{assistant_id}/skills"
         self.system_prompt_template = SKILLS_SYSTEM_PROMPT
 
     def _format_skills_locations(self) -> str:
         """Format skills locations for display in system prompt."""
-        locations = [f"**User Skills**: `{self.user_skills_display}`"]
-        if self.project_skills_dir:
-            locations.append(
-                f"**Project Skills**: `{self.project_skills_dir}` (overrides user skills)"
-            )
-        return "\n".join(locations)
+        return """Skills are loaded from:
+- **Built-in**: Shipped with SDRbot
+- **Agent**: `./agents/{agent}/skills/`
+- **User**: `./skills/` (overrides built-in)"""
 
     def _format_skills_list(self, skills: list[SkillMetadata]) -> str:
         """Format skills metadata for display in system prompt."""
         if not skills:
-            locations = [f"{self.user_skills_display}/"]
-            if self.project_skills_dir:
-                locations.append(f"{self.project_skills_dir}/")
-            return f"(No skills available yet. You can create skills in {' or '.join(locations)})"
+            return "(No skills available. Create skills in ./skills/ or ./agents/{agent}/skills/)"
 
         # Group skills by source
+        builtin_skills = [s for s in skills if s["source"] == "builtin"]
+        agent_skills = [s for s in skills if s["source"] == "agent"]
         user_skills = [s for s in skills if s["source"] == "user"]
-        project_skills = [s for s in skills if s["source"] == "project"]
 
         lines = []
+
+        # Show built-in skills
+        if builtin_skills:
+            lines.append("**Built-in Skills:**")
+            for skill in builtin_skills:
+                lines.append(f"- **{skill['name']}**: {skill['description']}")
+                lines.append(f"  → Read `{skill['path']}` for full instructions")
+            lines.append("")
+
+        # Show agent skills
+        if agent_skills:
+            lines.append("**Agent Skills:**")
+            for skill in agent_skills:
+                lines.append(f"- **{skill['name']}**: {skill['description']}")
+                lines.append(f"  → Read `{skill['path']}` for full instructions")
+            lines.append("")
 
         # Show user skills
         if user_skills:
             lines.append("**User Skills:**")
             for skill in user_skills:
-                lines.append(f"- **{skill['name']}**: {skill['description']}")
-                lines.append(f"  → Read `{skill['path']}` for full instructions")
-            lines.append("")
-
-        # Show project skills
-        if project_skills:
-            lines.append("**Project Skills:**")
-            for skill in project_skills:
                 lines.append(f"- **{skill['name']}**: {skill['description']}")
                 lines.append(f"  → Read `{skill['path']}` for full instructions")
 
@@ -186,8 +170,8 @@ class SkillsMiddleware(AgentMiddleware):
     def before_agent(self, state: SkillsState, runtime: Runtime) -> SkillsStateUpdate | None:
         """Load skills metadata before agent execution.
 
-        This runs once at session start to discover available skills from both
-        user-level and project-level directories.
+        This runs once at session start to discover available skills from
+        built-in, agent, and user directories.
 
         Args:
             state: Current agent state.
@@ -196,11 +180,12 @@ class SkillsMiddleware(AgentMiddleware):
         Returns:
             Updated state with skills_metadata populated.
         """
-        # We re-load skills on every new interaction with the agent to capture
-        # any changes in the skills directories.
+        from sdrbot_cli.config import settings
+
+        # Re-load skills on every interaction to capture changes
         skills = list_skills(
             user_skills_dir=self.skills_dir,
-            project_skills_dir=self.project_skills_dir,
+            agent_skills_dir=settings.get_agent_skills_dir(self.assistant_id),
         )
         return SkillsStateUpdate(skills_metadata=skills)
 

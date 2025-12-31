@@ -10,7 +10,7 @@ from textual.widgets import Button, ListItem, ListView, Static
 from sdrbot_cli.config import load_model_config
 from sdrbot_cli.mcp.client import MCP_AVAILABLE
 from sdrbot_cli.mcp.config import load_mcp_config
-from sdrbot_cli.services.registry import load_config
+from sdrbot_cli.services.registry import is_privileged_mode, load_config
 from sdrbot_cli.setup.services import SERVICE_CATEGORIES
 from sdrbot_cli.setup.tracing import TRACING_SERVICES
 
@@ -76,6 +76,13 @@ def get_tracing_status() -> tuple[str, str]:
     return ("• None enabled", "status-missing")
 
 
+def get_privileged_status() -> tuple[str, str]:
+    """Get status string and CSS class for privileged mode."""
+    if is_privileged_mode():
+        return ("✓ Enabled", "status-active")
+    return ("• Disabled", "status-missing")
+
+
 class SetupWizardScreen(Screen[bool | None]):
     """Main setup wizard screen with navigation to all setup sections."""
 
@@ -91,7 +98,7 @@ class SetupWizardScreen(Screen[bool | None]):
     }
 
     #setup-list {
-        max-height: 10;
+        max-height: 12;
     }
 
     #setup-error {
@@ -143,12 +150,14 @@ class SetupWizardScreen(Screen[bool | None]):
         services_status = get_services_status()
         mcp_status = get_mcp_status()
         tracing_status = get_tracing_status()
+        privileged_status = get_privileged_status()
 
         menu_items = [
             ("models", "Models", model_status),
             ("services", "Services", services_status),
             ("mcp", "MCP Servers", mcp_status),
             ("tracing", "Tracing", tracing_status),
+            ("privileged", "Privileged Mode", privileged_status),
         ]
 
         for item_id, label, (status_text, status_class) in menu_items:
@@ -185,6 +194,13 @@ class SetupWizardScreen(Screen[bool | None]):
             from sdrbot_cli.tui.tracing_screens import TracingSetupScreen
 
             self.app.push_screen(TracingSetupScreen(), self._on_section_complete)
+
+        elif item_id == "privileged":
+            # Toggle directly - no submenu needed
+            from sdrbot_cli.services.registry import set_privileged_mode
+
+            set_privileged_mode(not is_privileged_mode())
+            self._refresh_menu()
 
     def _on_section_complete(self, result: bool | None = None) -> None:
         """Called when a section screen is dismissed."""
