@@ -361,14 +361,15 @@ sdrbot
 |----------|-------------|
 | `Enter` | Submit message |
 | `Ctrl+J` | New line in input |
-| `Ctrl+T` | Toggle auto-approve mode |
+| `Ctrl+A` | Toggle auto-approve mode |
+| `Ctrl+S` | Open setup menu |
 | `Ctrl+C` | Interrupt agent |
 
 **Note:** For copy/paste, use `Cmd+C`/`Cmd+V` on macOS or `Ctrl+Shift+C`/`Ctrl+Shift+V` on Windows/Linux.
 
 ### Auto-approve Mode
 
-When enabled, tools run without confirmation prompts. Toggle with `Ctrl+T` or start with `--auto-approve`:
+When enabled, tools run without confirmation prompts. Toggle with `Ctrl+A` or start with `--auto-approve`:
 
 ```bash
 sdrbot --auto-approve

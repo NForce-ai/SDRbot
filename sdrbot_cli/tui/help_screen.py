@@ -81,14 +81,16 @@ class HelpScreen(ModalScreen[None]):
                     yield Static("  ⌃+J          New line in input", classes="help-item")
                     yield Static("  ⌘+C          Copy", classes="help-item")
                     yield Static("  ⌘+V          Paste", classes="help-item")
-                    yield Static("  ⌃+T          Toggle auto-approve", classes="help-item")
+                    yield Static("  ⌃+A          Toggle auto-approve", classes="help-item")
+                    yield Static("  ⌃+S          Open setup menu", classes="help-item")
                     yield Static("  ⌃+C          Interrupt agent", classes="help-item")
                 else:
                     yield Static("  Enter         Submit message", classes="help-item")
                     yield Static("  Ctrl+J        New line in input", classes="help-item")
                     yield Static("  Ctrl+Shift+C  Copy", classes="help-item")
                     yield Static("  Ctrl+Shift+V  Paste", classes="help-item")
-                    yield Static("  Ctrl+T        Toggle auto-approve", classes="help-item")
+                    yield Static("  Ctrl+A        Toggle auto-approve", classes="help-item")
+                    yield Static("  Ctrl+S        Open setup menu", classes="help-item")
                     yield Static("  Ctrl+C        Interrupt agent", classes="help-item")
                 yield Static("")
 
@@ -99,7 +101,7 @@ class HelpScreen(ModalScreen[None]):
                     classes="help-item",
                 )
                 yield Static(
-                    "  Toggle with Ctrl+T or start with --auto-approve",
+                    "  Toggle with Ctrl+A or start with --auto-approve",
                     classes="help-item",
                 )
 

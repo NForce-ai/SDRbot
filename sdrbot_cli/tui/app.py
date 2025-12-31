@@ -364,8 +364,9 @@ class SDRBotTUI(App[None]):
     BINDINGS = [
         ("ctrl+q", "quit", "Quit"),
         ("ctrl+g", "show_help", "Help"),
+        ("ctrl+s", "show_setup", "Setup"),
         ("ctrl+j", "newline", "New line"),
-        ("ctrl+t", "toggle_auto_approve", "Toggle Auto-approve"),
+        Binding("ctrl+a", "toggle_auto_approve", "Auto-approve", priority=True),
         Binding("ctrl+c", "interrupt_agent", "Interrupt", priority=True),
     ]
 
@@ -425,6 +426,12 @@ class SDRBotTUI(App[None]):
         self.query_one("#agent_info", AgentInfo).set_auto_approve(self.session_state.auto_approve)
         status = "ON" if self.session_state.auto_approve else "OFF"
         self.notify(f"Auto-approve: {status}", severity="information")
+
+    def action_show_setup(self) -> None:
+        """Show the setup wizard screen."""
+        from sdrbot_cli.tui.setup_wizard_screen import SetupWizardScreen
+
+        self.push_screen(SetupWizardScreen())
 
     def _update_image_attachment_bar(self) -> None:
         """Update the image attachment bar with current image count."""
