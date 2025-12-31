@@ -15,7 +15,7 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.zohocrm import get_zoho_client
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Shared client instance for admin operations
 _admin_client = None
@@ -61,7 +61,7 @@ def reset_admin_client() -> None:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_list_modules() -> str:
     """List all modules (objects) in Zoho CRM.
 
@@ -105,7 +105,7 @@ def zohocrm_admin_list_modules() -> str:
         return f"Error listing modules: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_get_module(module_api_name: str) -> str:
     """Get detailed information about a specific module.
 
@@ -158,7 +158,7 @@ def zohocrm_admin_get_module(module_api_name: str) -> str:
         return f"Error getting module: {str(e)}"
 
 
-@privileged_tool(schema_modifying="zohocrm")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="zohocrm")
 def zohocrm_admin_create_module(
     singular_label: str,
     plural_label: str,
@@ -239,7 +239,7 @@ def zohocrm_admin_create_module(
         return f"Error creating module: {error_str}"
 
 
-@privileged_tool(schema_modifying="zohocrm")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="zohocrm")
 def zohocrm_admin_update_module(
     module_id_or_api_name: str,
     singular_label: str | None = None,
@@ -311,7 +311,7 @@ def zohocrm_admin_update_module(
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_list_fields(module_api_name: str, include_system: bool = False) -> str:
     """List all fields for a module.
 
@@ -373,7 +373,7 @@ def zohocrm_admin_list_fields(module_api_name: str, include_system: bool = False
         return f"Error listing fields: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_get_field(module_api_name: str, field_api_name: str) -> str:
     """Get detailed information about a specific field.
 
@@ -439,7 +439,7 @@ def zohocrm_admin_get_field(module_api_name: str, field_api_name: str) -> str:
         return f"Error getting field: {str(e)}"
 
 
-@privileged_tool(schema_modifying="zohocrm")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="zohocrm")
 def zohocrm_admin_create_field(
     module_api_name: str,
     field_label: str,
@@ -536,7 +536,7 @@ def zohocrm_admin_create_field(
         return f"Error creating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="zohocrm")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="zohocrm")
 def zohocrm_admin_update_field(
     module_api_name: str,
     field_id: str,
@@ -617,7 +617,7 @@ def zohocrm_admin_update_field(
         return f"Error updating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="zohocrm")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="zohocrm")
 def zohocrm_admin_delete_field(module_api_name: str, field_id: str) -> str:
     """Delete a custom field from a module.
 
@@ -675,7 +675,7 @@ def zohocrm_admin_delete_field(module_api_name: str, field_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_list_users(type_filter: str = "AllUsers", include_inactive: bool = False) -> str:
     """List users in the Zoho CRM organization with detailed info.
 
@@ -731,7 +731,7 @@ def zohocrm_admin_list_users(type_filter: str = "AllUsers", include_inactive: bo
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def zohocrm_admin_list_profiles() -> str:
     """List all profiles in Zoho CRM.
 

@@ -311,13 +311,17 @@ No CRM services are enabled. Use `/services enable <name>` to enable a service.
 
 
 def _get_privileged_mode_prompt() -> str:
-    """Generate prompt section for privileged mode status."""
-    from sdrbot_cli.services.registry import is_privileged_mode
+    """Generate prompt section for tool scope status."""
+    from sdrbot_cli.services.registry import get_tool_scope_setting
+    from sdrbot_cli.tools import SCOPE_PRIVILEGED
 
-    if is_privileged_mode():
-        return "\n### Privileged Mode: Enabled\n"
+    scope = get_tool_scope_setting()
+    scope_display = scope.capitalize()
+
+    if scope == SCOPE_PRIVILEGED:
+        return f"\n### Tool Scope: {scope_display} (admin tools available)\n"
     else:
-        return "\n### Privileged Mode: Disabled\n"
+        return f"\n### Tool Scope: {scope_display}\n"
 
 
 def _format_write_file_description(

@@ -362,12 +362,13 @@ class SDRBotTUI(App[None]):
         return variables
 
     BINDINGS = [
-        ("ctrl+q", "quit", "Quit"),
-        ("ctrl+g", "show_help", "Help"),
-        ("ctrl+s", "show_setup", "Setup"),
-        ("ctrl+j", "newline", "New line"),
+        Binding("ctrl+q", "quit", "Quit"),
+        Binding("ctrl+g", "show_help", "Help"),
+        Binding("ctrl+s", "show_setup", "Setup"),
+        Binding("ctrl+j", "newline", "New line", show=False),
         Binding("ctrl+a", "toggle_auto_approve", "Auto-approve", priority=True),
         Binding("ctrl+c", "interrupt_agent", "Interrupt", priority=True),
+        Binding("ctrl+t", "cycle_tool_scope", "Tool Scope"),
     ]
 
     # Add paste binding for Windows/Linux (Ctrl+Shift+V)
@@ -384,6 +385,8 @@ class SDRBotTUI(App[None]):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
+        from sdrbot_cli.services.registry import get_tool_scope_setting
+
         yield Header()
         with Horizontal(id="status_bar"):
             # Get sandbox type if set
@@ -394,6 +397,7 @@ class SDRBotTUI(App[None]):
                 agent_name="default" if self.assistant_id in (None, "agent") else self.assistant_id,
                 auto_approve=self.session_state.auto_approve,
                 sandbox_type=sandbox_type,
+                tool_scope=get_tool_scope_setting(),
                 id="agent_info",
             )
             yield StatusDisplay(id="status_display")
@@ -432,6 +436,18 @@ class SDRBotTUI(App[None]):
         from sdrbot_cli.tui.setup_wizard_screen import SetupWizardScreen
 
         self.push_screen(SetupWizardScreen())
+
+    def action_cycle_tool_scope(self) -> None:
+        """Cycle through tool scopes: Standard -> Extended -> Privileged."""
+        from sdrbot_cli.services.registry import cycle_tool_scope
+
+        new_scope = cycle_tool_scope()
+        self.query_one("#agent_info", AgentInfo).update_tool_scope(new_scope)
+        self.notify(f"Tool scope: {new_scope.capitalize()}", severity="information")
+
+        # Reload agent to apply new tool scope
+        if self.agent_worker:
+            self.run_worker(self.agent_worker._reload_agent_async(), exclusive=True)
 
     def _update_image_attachment_bar(self) -> None:
         """Update the image attachment bar with current image count."""
@@ -876,6 +892,10 @@ class SDRBotTUI(App[None]):
         from sdrbot_cli.tui.tools_screen import ToolsScreen
 
         self.push_screen(ToolsScreen())
+
+    def on_agent_info_tool_scope_clicked(self, message: AgentInfo.ToolScopeClicked) -> None:
+        """Handle click on tool scope - cycle through scopes."""
+        self.action_cycle_tool_scope()
 
     def on_status_display_model_clicked(self, message: StatusDisplay.ModelClicked) -> None:
         """Handle click on model - show models screen."""

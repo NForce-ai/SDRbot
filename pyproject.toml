@@ -1,6 +1,6 @@
 [project]
 name = "sdrbot"
-version = "0.1.0a3"
+version = "0.2.0a1"
 description = "AI SDR Agent for RevOps"
 readme = "README.md"
 requires-python = ">=3.11"

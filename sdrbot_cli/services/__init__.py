@@ -310,17 +310,20 @@ def sync_enabled_services_if_needed(verbose: bool = True) -> None:
 def get_enabled_tools() -> list[BaseTool]:
     """Get all tools from enabled services.
 
-    Filters out privileged tools when privileged mode is disabled.
+    Filters tools based on current scope setting:
+    - Standard: only standard tools
+    - Extended: standard + extended tools
+    - Privileged: all tools
 
     Returns:
         List of LangChain tools from all enabled services.
     """
-    from sdrbot_cli.services.registry import is_privileged_mode, load_config
-    from sdrbot_cli.tools import is_privileged_tool
+    from sdrbot_cli.services.registry import get_tool_scope_setting, load_config
+    from sdrbot_cli.tools import is_tool_allowed
 
     config = load_config()
     tools = []
-    privileged_mode = is_privileged_mode()
+    current_scope = get_tool_scope_setting()
 
     for service_name in SERVICES:
         if not config.is_enabled(service_name):
@@ -337,9 +340,8 @@ def get_enabled_tools() -> list[BaseTool]:
             )
             if hasattr(service_module, "get_tools"):
                 service_tools = service_module.get_tools()
-                # Filter out privileged tools if privileged mode is off
-                if not privileged_mode:
-                    service_tools = [t for t in service_tools if not is_privileged_tool(t)]
+                # Filter tools based on current scope
+                service_tools = [t for t in service_tools if is_tool_allowed(t, current_scope)]
                 tools.extend(service_tools)
         except ImportError as e:
             # Log warning but continue

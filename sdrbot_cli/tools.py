@@ -8,7 +8,13 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as langchain_tool
 from markdownify import markdownify
 
-PRIVILEGED_METADATA_KEY = "privileged"
+# Tool scope levels (hierarchy: standard < extended < privileged)
+SCOPE_STANDARD = "standard"
+SCOPE_EXTENDED = "extended"
+SCOPE_PRIVILEGED = "privileged"
+
+# Metadata keys
+SCOPE_METADATA_KEY = "scope"
 SCHEMA_MODIFYING_KEY = "schema_modifying"
 SERVICE_KEY = "service_name"
 
@@ -17,37 +23,42 @@ SERVICE_KEY = "service_name"
 _SCHEMA_MODIFYING_REGISTRY: dict[str, str] = {}
 
 
-def privileged_tool(
+def scoped_tool(
     func: Callable | None = None,
     *,
+    scope: str = SCOPE_PRIVILEGED,
     schema_modifying: str | None = None,
 ) -> BaseTool | Callable[[Callable], BaseTool]:
-    """Decorator to create a privileged tool.
+    """Decorator to create a scoped tool.
 
-    Privileged tools are only available when privileged mode is enabled.
-    They include schema/metadata management and code execution capabilities.
+    Scoped tools are filtered based on the current tool scope setting.
+    Scope hierarchy: standard < extended < privileged
 
     Args:
         func: The function to wrap (when used without parentheses).
+        scope: Tool scope level - "extended" or "privileged".
+            Standard tools don't need this decorator.
         schema_modifying: Service name if this tool modifies schema
             (e.g., "twenty"). When set, triggers automatic schema
             resync and agent reload after successful execution.
 
     Usage:
-        @privileged_tool
-        def my_read_only_admin_tool(arg: str) -> str:
-            '''Tool docstring.'''
+        @scoped_tool(scope="extended")
+        def my_extended_tool(arg: str) -> str:
+            '''Tool available in extended+ scope.'''
             return "result"
 
-        @privileged_tool(schema_modifying="twenty")
+        @scoped_tool(scope="privileged")
+        def my_admin_tool(arg: str) -> str:
+            '''Tool only available in privileged scope.'''
+            return "result"
+
+        @scoped_tool(scope="privileged", schema_modifying="twenty")
         def my_schema_changing_tool(arg: str) -> str:
             '''This tool modifies CRM schema.'''
             return "result"
 
-    The resulting tool will have metadata["privileged"] = True,
-    which is checked during tool loading to filter out privileged tools
-    when privileged mode is disabled.
-
+    The resulting tool will have metadata["scope"] set to the scope level.
     Tools with schema_modifying set will also have:
     - metadata["schema_modifying"] = True
     - metadata["service_name"] = <service>
@@ -58,10 +69,10 @@ def privileged_tool(
     def decorator(f: Callable) -> BaseTool:
         # Create the tool using langchain's @tool decorator
         lc_tool = langchain_tool(f)
-        # Mark it as privileged using the metadata field
+        # Set scope in metadata
         if lc_tool.metadata is None:
             lc_tool.metadata = {}
-        lc_tool.metadata[PRIVILEGED_METADATA_KEY] = True
+        lc_tool.metadata[SCOPE_METADATA_KEY] = scope
 
         # Add schema-modifying metadata if specified
         if schema_modifying:
@@ -72,11 +83,11 @@ def privileged_tool(
 
         return lc_tool
 
-    # Support both @privileged_tool and @privileged_tool(schema_modifying="x")
+    # Support both @scoped_tool and @scoped_tool(scope="x")
     if func is not None:
-        # Called without parentheses: @privileged_tool
+        # Called without parentheses: @scoped_tool
         return decorator(func)
-    # Called with parentheses: @privileged_tool(...) or @privileged_tool()
+    # Called with parentheses: @scoped_tool(...) or @scoped_tool()
     return decorator
 
 
@@ -90,18 +101,44 @@ def get_schema_modifying_tools() -> dict[str, str]:
     return _SCHEMA_MODIFYING_REGISTRY.copy()
 
 
-def is_privileged_tool(tool: BaseTool) -> bool:
-    """Check if a tool is marked as privileged.
+def get_tool_scope(tool: BaseTool) -> str:
+    """Get the scope level of a tool.
 
     Args:
         tool: A LangChain tool instance.
 
     Returns:
-        True if the tool is privileged, False otherwise.
+        The tool's scope: "standard", "extended", or "privileged".
+        Tools without explicit scope are considered "standard".
     """
     if tool.metadata is None:
-        return False
-    return tool.metadata.get(PRIVILEGED_METADATA_KEY, False)
+        return SCOPE_STANDARD
+    return tool.metadata.get(SCOPE_METADATA_KEY, SCOPE_STANDARD)
+
+
+def is_tool_allowed(tool: BaseTool, current_scope: str) -> bool:
+    """Check if a tool is allowed under the current scope setting.
+
+    Scope hierarchy: standard < extended < privileged
+    - Standard scope: only standard tools
+    - Extended scope: standard + extended tools
+    - Privileged scope: all tools
+
+    Args:
+        tool: A LangChain tool instance.
+        current_scope: Current scope setting ("standard", "extended", "privileged").
+
+    Returns:
+        True if the tool is allowed, False otherwise.
+    """
+    tool_scope = get_tool_scope(tool)
+
+    if current_scope == SCOPE_PRIVILEGED:
+        return True
+    if current_scope == SCOPE_EXTENDED:
+        return tool_scope in (SCOPE_STANDARD, SCOPE_EXTENDED)
+    # Standard scope - only standard tools
+    return tool_scope == SCOPE_STANDARD
 
 
 def http_request(

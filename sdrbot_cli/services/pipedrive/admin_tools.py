@@ -13,7 +13,7 @@ import json
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.pipedrive import PipedriveClient, get_pipedrive_client
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Shared client instance for admin operations
 _admin_client: PipedriveClient | None = None
@@ -72,7 +72,7 @@ Field types available in Pipedrive:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_list_objects() -> str:
     """List all object types in Pipedrive.
 
@@ -91,7 +91,7 @@ def pipedrive_admin_list_objects() -> str:
     return f"Found {len(results)} object types:\n" + json.dumps(results, indent=2)
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_list_fields(object_type: str) -> str:
     """List all fields for an object type in Pipedrive.
 
@@ -134,7 +134,7 @@ def pipedrive_admin_list_fields(object_type: str) -> str:
         return f"Error listing {object_type} fields: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_get_field(object_type: str, field_id: int) -> str:
     """Get details of a specific field.
 
@@ -159,7 +159,7 @@ def pipedrive_admin_get_field(object_type: str, field_id: int) -> str:
         return f"Error getting field: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_create_field(
     object_type: str,
     name: str,
@@ -209,7 +209,7 @@ def pipedrive_admin_create_field(
         return f"Error creating field: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_update_field(
     object_type: str,
     field_id: int,
@@ -255,7 +255,7 @@ def pipedrive_admin_update_field(
         return f"Error updating field: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def pipedrive_admin_delete_field(object_type: str, field_id: int) -> str:
     """Delete a custom field.
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.salesforce import get_client
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Shared client instance for admin operations
 _admin_client = None
@@ -60,7 +60,7 @@ def reset_admin_client() -> None:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def salesforce_admin_list_objects(include_all: bool = False) -> str:
     """List all available object types in Salesforce.
 
@@ -127,7 +127,7 @@ def salesforce_admin_list_objects(include_all: bool = False) -> str:
         return f"Error listing objects: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def salesforce_admin_get_object(object_name: str) -> str:
     """Get details of a specific object type including its fields.
 
@@ -182,7 +182,7 @@ def salesforce_admin_get_object(object_name: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def salesforce_admin_list_fields(object_name: str, include_system: bool = False) -> str:
     """List all fields for an object type.
 
@@ -251,7 +251,7 @@ def salesforce_admin_list_fields(object_name: str, include_system: bool = False)
         return f"Error listing fields: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def salesforce_admin_get_field(object_name: str, field_name: str) -> str:
     """Get details of a specific field.
 
@@ -316,7 +316,7 @@ def salesforce_admin_get_field(object_name: str, field_name: str) -> str:
         return f"Error getting field: {str(e)}"
 
 
-@privileged_tool(schema_modifying="salesforce")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="salesforce")
 def salesforce_admin_create_field(
     object_name: str,
     field_name: str,
@@ -437,7 +437,7 @@ def salesforce_admin_create_field(
         return f"Error creating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="salesforce")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="salesforce")
 def salesforce_admin_update_field(
     object_name: str,
     field_name: str,
@@ -523,7 +523,7 @@ def salesforce_admin_update_field(
         return f"Error updating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="salesforce")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="salesforce")
 def salesforce_admin_delete_field(object_name: str, field_name: str) -> str:
     """Delete a custom field.
 
@@ -577,7 +577,7 @@ def salesforce_admin_delete_field(object_name: str, field_name: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def salesforce_admin_list_users(active_only: bool = True) -> str:
     """List all users in Salesforce.
 
