@@ -16,18 +16,13 @@ class TestTwentyToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 10
+        assert len(tools) == 6
         tool_names = [t.name for t in tools]
-        # Note tools
-        assert "twenty_create_note_on_record" in tool_names
+        # Note/Task linking tools (CRUD is generated, linking is static)
+        assert "twenty_link_note_to_record" in tool_names
         assert "twenty_list_notes_on_record" in tool_names
-        assert "twenty_update_note" in tool_names
-        assert "twenty_delete_note" in tool_names
-        # Task tools
-        assert "twenty_create_task_on_record" in tool_names
+        assert "twenty_link_task_to_record" in tool_names
         assert "twenty_list_tasks_on_record" in tool_names
-        assert "twenty_update_task" in tool_names
-        assert "twenty_delete_task" in tool_names
         # Search/get tools
         assert "twenty_search_records" in tool_names
         assert "twenty_get_record" in tool_names
@@ -58,10 +53,10 @@ class TestTwentyToolLoading:
         tool_names = [t.name for t in tools]
 
         # Static tools should always be present
-        assert "twenty_create_note_on_record" in tool_names
+        assert "twenty_link_note_to_record" in tool_names
         assert "twenty_list_notes_on_record" in tool_names
-        assert "twenty_update_note" in tool_names
-        assert "twenty_delete_note" in tool_names
+        assert "twenty_link_task_to_record" in tool_names
+        assert "twenty_list_tasks_on_record" in tool_names
         assert "twenty_search_records" in tool_names
         assert "twenty_get_record" in tool_names
 
@@ -90,69 +85,60 @@ class TestTwentyToolsUnit:
 
         tools_module._twenty_client = original_client
 
-    def test_create_note_on_record_success(self, patch_twenty_client):
-        """twenty_create_note_on_record should return success message."""
-        # First call creates the note, second creates the noteTarget
-        patch_twenty_client.post.side_effect = [
-            {"data": {"createNote": {"id": "note-123", "title": "Test Note"}}},
-            {"data": {"noteTarget": {"id": "target-456"}}},
-        ]
+    def test_link_note_to_record_success(self, patch_twenty_client):
+        """twenty_link_note_to_record should return success message."""
+        patch_twenty_client.post.return_value = {"data": {"noteTarget": {"id": "target-456"}}}
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_create_note_on_record
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
 
         tools_module._twenty_client = None
 
-        result = twenty_create_note_on_record.invoke(
+        result = twenty_link_note_to_record.invoke(
             {
+                "note_id": "note-123",
                 "target_type": "person",
                 "target_record_id": "rec-123",
-                "title": "Test Note",
-                "body_markdown": "Test content",
             }
         )
 
-        assert "Successfully created note" in result
+        assert "Successfully linked note" in result
         assert "note-123" in result
         assert "person" in result
+        patch_twenty_client.post.assert_called_once()
 
-        # Verify both API calls were made
-        assert patch_twenty_client.post.call_count == 2
-
-    def test_create_note_on_record_invalid_target(self, patch_twenty_client):
-        """twenty_create_note_on_record should reject invalid target types."""
+    def test_link_note_to_record_invalid_target(self, patch_twenty_client):
+        """twenty_link_note_to_record should reject invalid target types."""
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_create_note_on_record
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
 
         tools_module._twenty_client = None
 
-        result = twenty_create_note_on_record.invoke(
+        result = twenty_link_note_to_record.invoke(
             {
+                "note_id": "note-123",
                 "target_type": "invalid_type",
                 "target_record_id": "rec-123",
-                "title": "Test",
-                "body_markdown": "Content",
             }
         )
 
         assert "Error" in result
         assert "Invalid target_type" in result
 
-    def test_create_note_on_record_error(self, patch_twenty_client):
-        """twenty_create_note_on_record should handle API errors."""
+    def test_link_note_to_record_error(self, patch_twenty_client):
+        """twenty_link_note_to_record should handle API errors."""
         patch_twenty_client.post.side_effect = Exception("API Error: Invalid record")
 
         import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_create_note_on_record
+        from sdrbot_cli.services.twenty.tools import twenty_link_note_to_record
 
         tools_module._twenty_client = None
 
-        result = twenty_create_note_on_record.invoke(
+        result = twenty_link_note_to_record.invoke(
             {
+                "note_id": "note-123",
                 "target_type": "person",
                 "target_record_id": "invalid-id",
-                "title": "Test",
-                "body_markdown": "Content",
             }
         )
 
@@ -230,6 +216,90 @@ class TestTwentyToolsUnit:
 
         assert "Error" in result
         assert "Connection timeout" in result
+
+    def test_link_task_to_record_success(self, patch_twenty_client):
+        """twenty_link_task_to_record should return success message."""
+        patch_twenty_client.post.return_value = {"data": {"taskTarget": {"id": "target-789"}}}
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_link_task_to_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_link_task_to_record.invoke(
+            {
+                "task_id": "task-123",
+                "target_type": "company",
+                "target_record_id": "rec-456",
+            }
+        )
+
+        assert "Successfully linked task" in result
+        assert "task-123" in result
+        assert "company" in result
+        patch_twenty_client.post.assert_called_once()
+
+    def test_link_task_to_record_invalid_target(self, patch_twenty_client):
+        """twenty_link_task_to_record should reject invalid target types."""
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_link_task_to_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_link_task_to_record.invoke(
+            {
+                "task_id": "task-123",
+                "target_type": "invalid_type",
+                "target_record_id": "rec-123",
+            }
+        )
+
+        assert "Error" in result
+        assert "Invalid target_type" in result
+
+    def test_list_tasks_on_record_success(self, patch_twenty_client):
+        """twenty_list_tasks_on_record should return formatted tasks."""
+        patch_twenty_client.get.side_effect = [
+            {"data": {"taskTargets": [{"taskId": "task-1"}]}},
+            {
+                "data": {
+                    "task": {
+                        "id": "task-1",
+                        "title": "Follow up call",
+                        "status": "TODO",
+                        "createdAt": "2024-01-15T10:30:00Z",
+                    }
+                }
+            },
+        ]
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_list_tasks_on_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_list_tasks_on_record.invoke(
+            {"target_type": "person", "target_record_id": "rec-123"}
+        )
+
+        assert "Tasks:" in result
+        assert "Follow up call" in result
+        assert "TODO" in result
+
+    def test_list_tasks_on_record_empty(self, patch_twenty_client):
+        """twenty_list_tasks_on_record should handle no tasks."""
+        patch_twenty_client.get.return_value = {"data": {"taskTargets": []}}
+
+        import sdrbot_cli.services.twenty.tools as tools_module
+        from sdrbot_cli.services.twenty.tools import twenty_list_tasks_on_record
+
+        tools_module._twenty_client = None
+
+        result = twenty_list_tasks_on_record.invoke(
+            {"target_type": "company", "target_record_id": "rec-456"}
+        )
+
+        assert "No tasks found" in result
 
     def test_search_records_success(self, patch_twenty_client):
         """twenty_search_records should return formatted results."""
@@ -324,92 +394,6 @@ class TestTwentyToolsUnit:
 
         assert "Error" in result
         assert "404" in result
-
-    def test_update_note_success(self, patch_twenty_client):
-        """twenty_update_note should return success message."""
-        patch_twenty_client.patch.return_value = {"data": {"note": {"id": "note-123"}}}
-
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_update_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_update_note.invoke(
-            {"note_id": "note-123", "title": "Updated Title", "body_markdown": "Updated content"}
-        )
-
-        assert "Successfully updated note" in result
-        assert "note-123" in result
-        patch_twenty_client.patch.assert_called_once()
-
-    def test_update_note_partial(self, patch_twenty_client):
-        """twenty_update_note should allow partial updates."""
-        patch_twenty_client.patch.return_value = {"data": {"note": {"id": "note-123"}}}
-
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_update_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_update_note.invoke({"note_id": "note-123", "title": "New Title Only"})
-
-        assert "Successfully updated note" in result
-        patch_twenty_client.patch.assert_called_once()
-
-    def test_update_note_no_fields(self, patch_twenty_client):
-        """twenty_update_note should reject empty updates."""
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_update_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_update_note.invoke({"note_id": "note-123"})
-
-        assert "Error" in result
-        assert "No fields provided" in result
-
-    def test_update_note_error(self, patch_twenty_client):
-        """twenty_update_note should handle API errors."""
-        patch_twenty_client.patch.side_effect = Exception("Note not found")
-
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_update_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_update_note.invoke({"note_id": "invalid-id", "title": "Test"})
-
-        assert "Error" in result
-        assert "Note not found" in result
-
-    def test_delete_note_success(self, patch_twenty_client):
-        """twenty_delete_note should return success message."""
-        patch_twenty_client.delete.return_value = {}
-
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_delete_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_delete_note.invoke({"note_id": "note-123"})
-
-        assert "Successfully deleted note" in result
-        assert "note-123" in result
-        patch_twenty_client.delete.assert_called_once()
-
-    def test_delete_note_error(self, patch_twenty_client):
-        """twenty_delete_note should handle API errors."""
-        patch_twenty_client.delete.side_effect = Exception("Note not found")
-
-        import sdrbot_cli.services.twenty.tools as tools_module
-        from sdrbot_cli.services.twenty.tools import twenty_delete_note
-
-        tools_module._twenty_client = None
-
-        result = twenty_delete_note.invoke({"note_id": "invalid-id"})
-
-        assert "Error" in result
-        assert "Note not found" in result
 
 
 @pytest.mark.integration
