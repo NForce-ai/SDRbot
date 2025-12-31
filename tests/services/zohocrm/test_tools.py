@@ -442,13 +442,16 @@ class TestZohoCRMAdminToolLoading:
             assert tool.description, f"{tool.name} has no description"
 
     def test_admin_tools_are_privileged(self):
-        """Admin tools should be marked as privileged."""
+        """Admin tools should be marked as privileged scope."""
         from sdrbot_cli.services.zohocrm.admin_tools import get_admin_tools
+        from sdrbot_cli.tools import SCOPE_PRIVILEGED
 
         tools = get_admin_tools()
 
         for tool in tools:
-            assert tool.metadata.get("privileged"), f"{tool.name} is not marked privileged"
+            assert tool.metadata.get("scope") == SCOPE_PRIVILEGED, (
+                f"{tool.name} is not marked privileged"
+            )
 
     def test_schema_modifying_tools_are_marked(self):
         """Schema-modifying tools should be marked."""

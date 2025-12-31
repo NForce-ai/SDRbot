@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from sdrbot_cli.services import SYNCABLE_SERVICES
+from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_PRIVILEGED, SCOPE_STANDARD
 
 
 class ServiceState:
@@ -330,30 +331,51 @@ def compute_schema_hash(schema: dict[str, Any]) -> str:
 
 
 # =============================================================================
-# Privileged Mode (Runtime/Session State - Not Persisted)
+# Tool Scope (Runtime/Session State - Not Persisted)
 # =============================================================================
 
-_privileged_mode: bool = False
+_tool_scope: str = SCOPE_STANDARD
+
+# Cycle order for UI toggle
+_SCOPE_CYCLE = [SCOPE_STANDARD, SCOPE_EXTENDED, SCOPE_PRIVILEGED]
 
 
-def is_privileged_mode() -> bool:
-    """Check if privileged mode is enabled for this session.
+def get_tool_scope_setting() -> str:
+    """Get the current tool scope setting for this session.
 
-    Privileged mode enables loading of privileged tools (e.g., admin/metadata
-    tools for schema management). This is a session-only setting that resets
-    when the application restarts.
+    Tool scope controls which tools are available:
+    - "standard": Core CRM tools only (default)
+    - "extended": Standard + custom objects and advanced tools
+    - "privileged": All tools including admin/schema management
 
     Returns:
-        True if privileged mode is enabled.
+        Current scope: "standard", "extended", or "privileged".
     """
-    return _privileged_mode
+    return _tool_scope
 
 
-def set_privileged_mode(enabled: bool) -> None:
-    """Enable or disable privileged mode for this session.
+def set_tool_scope(scope: str) -> None:
+    """Set the tool scope for this session.
 
     Args:
-        enabled: Whether to enable privileged mode.
+        scope: One of "standard", "extended", or "privileged".
     """
-    global _privileged_mode
-    _privileged_mode = enabled
+    global _tool_scope
+    if scope not in _SCOPE_CYCLE:
+        raise ValueError(f"Invalid scope: {scope}. Must be one of {_SCOPE_CYCLE}")
+    _tool_scope = scope
+
+
+def cycle_tool_scope() -> str:
+    """Cycle to the next tool scope level.
+
+    Cycles: standard -> extended -> privileged -> standard
+
+    Returns:
+        The new scope after cycling.
+    """
+    global _tool_scope
+    current_idx = _SCOPE_CYCLE.index(_tool_scope)
+    next_idx = (current_idx + 1) % len(_SCOPE_CYCLE)
+    _tool_scope = _SCOPE_CYCLE[next_idx]
+    return _tool_scope

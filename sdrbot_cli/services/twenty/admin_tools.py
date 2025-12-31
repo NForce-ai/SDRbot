@@ -18,7 +18,7 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.twenty import TwentyClient
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Twenty SELECT field validation rules (from source code)
 # packages/twenty-server/src/.../validate-enum-flat-field-metadata.util.ts
@@ -166,7 +166,7 @@ def reset_admin_client() -> None:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_objects(limit: int = 50) -> str:
     """List all objects (standard and custom) in Twenty.
 
@@ -207,7 +207,7 @@ def twenty_admin_list_objects(limit: int = 50) -> str:
         return f"Error listing objects: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_get_object(object_id: str) -> str:
     """Get details of a specific object by ID.
 
@@ -231,7 +231,7 @@ def twenty_admin_get_object(object_id: str) -> str:
         return f"Error getting object: {str(e)}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_create_object(
     name_singular: str,
     name_plural: str,
@@ -280,7 +280,7 @@ def twenty_admin_create_object(
         return f"Error creating object: {str(e)}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_update_object(
     object_id: str,
     is_active: bool | None = None,
@@ -325,7 +325,7 @@ def twenty_admin_update_object(
         return f"Error updating object: {str(e)}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_delete_object(object_id: str) -> str:
     """Delete a custom object type.
 
@@ -351,7 +351,7 @@ def twenty_admin_delete_object(object_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> str:
     """List fields, optionally filtered by object.
 
@@ -402,7 +402,7 @@ def twenty_admin_list_fields(object_id: str | None = None, limit: int = 100) -> 
         return f"Error listing fields: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_get_field(field_id: str) -> str:
     """Get details of a specific field.
 
@@ -426,7 +426,7 @@ def twenty_admin_get_field(field_id: str) -> str:
         return f"Error getting field: {str(e)}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_create_field(
     object_id: str,
     name: str,
@@ -546,7 +546,7 @@ def twenty_admin_create_field(
         return f"Error creating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_update_field(
     field_id: str,
     label: str | None = None,
@@ -626,7 +626,7 @@ def twenty_admin_update_field(
         return f"Error updating field: {error_str}"
 
 
-@privileged_tool(schema_modifying="twenty")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="twenty")
 def twenty_admin_delete_field(field_id: str) -> str:
     """Delete a custom field.
 
@@ -670,7 +670,7 @@ def twenty_admin_delete_field(field_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_views(object_id: str | None = None, limit: int = 50) -> str:
     """List views, optionally filtered by object.
 
@@ -710,7 +710,7 @@ def twenty_admin_list_views(object_id: str | None = None, limit: int = 50) -> st
         return f"Error listing views: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_get_view(view_id: str) -> str:
     """Get details of a specific view.
 
@@ -734,7 +734,7 @@ def twenty_admin_get_view(view_id: str) -> str:
         return f"Error getting view: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_create_view(
     object_id: str,
     name: str,
@@ -779,7 +779,7 @@ def twenty_admin_create_view(
         return f"Error creating view: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_update_view(
     view_id: str,
     name: str | None = None,
@@ -820,7 +820,7 @@ def twenty_admin_update_view(
         return f"Error updating view: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_delete_view(view_id: str) -> str:
     """Delete a view.
 
@@ -844,7 +844,7 @@ def twenty_admin_delete_view(view_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_view_fields(view_id: str, limit: int = 50) -> str:
     """List fields configured for a view.
 
@@ -880,7 +880,7 @@ def twenty_admin_list_view_fields(view_id: str, limit: int = 50) -> str:
         return f"Error listing view fields: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_create_view_field(
     view_id: str,
     field_metadata_id: str,
@@ -922,7 +922,7 @@ def twenty_admin_create_view_field(
         return f"Error creating view field: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_update_view_field(
     view_field_id: str,
     is_visible: bool | None = None,
@@ -959,7 +959,7 @@ def twenty_admin_update_view_field(
         return f"Error updating view field: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_delete_view_field(view_field_id: str) -> str:
     """Remove a field from a view.
 
@@ -983,7 +983,7 @@ def twenty_admin_delete_view_field(view_field_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_view_filters(view_id: str, limit: int = 50) -> str:
     """List filters configured for a view.
 
@@ -1007,7 +1007,7 @@ def twenty_admin_list_view_filters(view_id: str, limit: int = 50) -> str:
         return f"Error listing view filters: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_create_view_filter(
     view_id: str,
     field_metadata_id: str,
@@ -1045,7 +1045,7 @@ def twenty_admin_create_view_filter(
         return f"Error creating view filter: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_update_view_filter(
     view_filter_id: str,
     operand: str | None = None,
@@ -1078,7 +1078,7 @@ def twenty_admin_update_view_filter(
         return f"Error updating view filter: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_delete_view_filter(view_filter_id: str) -> str:
     """Remove a filter from a view.
 
@@ -1102,7 +1102,7 @@ def twenty_admin_delete_view_filter(view_filter_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_view_sorts(view_id: str, limit: int = 50) -> str:
     """List sort configurations for a view.
 
@@ -1126,7 +1126,7 @@ def twenty_admin_list_view_sorts(view_id: str, limit: int = 50) -> str:
         return f"Error listing view sorts: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_create_view_sort(
     view_id: str,
     field_metadata_id: str,
@@ -1161,7 +1161,7 @@ def twenty_admin_create_view_sort(
         return f"Error creating view sort: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_update_view_sort(
     view_sort_id: str,
     direction: str | None = None,
@@ -1187,7 +1187,7 @@ def twenty_admin_update_view_sort(
         return f"Error updating view sort: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_delete_view_sort(view_sort_id: str) -> str:
     """Remove a sort from a view.
 
@@ -1211,7 +1211,7 @@ def twenty_admin_delete_view_sort(view_sort_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_view_groups(view_id: str, limit: int = 50) -> str:
     """List group configurations for a view.
 
@@ -1235,7 +1235,7 @@ def twenty_admin_list_view_groups(view_id: str, limit: int = 50) -> str:
         return f"Error listing view groups: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_create_view_group(
     view_id: str,
     field_metadata_id: str,
@@ -1272,7 +1272,7 @@ def twenty_admin_create_view_group(
         return f"Error creating view group: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_update_view_group(
     view_group_id: str,
     is_visible: bool | None = None,
@@ -1305,7 +1305,7 @@ def twenty_admin_update_view_group(
         return f"Error updating view group: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_delete_view_group(view_group_id: str) -> str:
     """Remove a grouping from a view.
 
@@ -1329,7 +1329,7 @@ def twenty_admin_delete_view_group(view_group_id: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def twenty_admin_list_workspace_members(limit: int = 50) -> str:
     """List all workspace members (users) in Twenty.
 

@@ -363,9 +363,22 @@ sdrbot
 | `Ctrl+J` | New line in input |
 | `Ctrl+A` | Toggle auto-approve mode |
 | `Ctrl+S` | Open setup menu |
+| `Ctrl+T` | Cycle tool scope |
 | `Ctrl+C` | Interrupt agent |
 
 **Note:** For copy/paste, use `Cmd+C`/`Cmd+V` on macOS or `Ctrl+Shift+C`/`Ctrl+Shift+V` on Windows/Linux.
+
+### Tool Scope
+
+Controls which tools are available to the agent:
+
+| Scope | Description |
+|-------|-------------|
+| **Standard** | Core CRM tools only (contacts, companies, deals, opportunities) |
+| **Extended** | Standard + custom objects and advanced tools |
+| **Privileged** | All tools including admin/schema management |
+
+Cycle through scopes with `Ctrl+T`. The current scope is shown in the header next to the tool count.
 
 ### Auto-approve Mode
 

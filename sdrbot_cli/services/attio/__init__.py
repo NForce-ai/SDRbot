@@ -1,8 +1,26 @@
 """Attio service - CRM integration tools."""
 
+import re
+
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.config import settings
+from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_METADATA_KEY
+
+# Standard objects - tools for these remain in "standard" scope
+# All other objects are "extended" scope
+STANDARD_OBJECTS = {"people", "companies"}
+
+
+def _extract_object_from_tool_name(tool_name: str) -> str | None:
+    """Extract object name from a generated tool name.
+
+    Examples:
+        attio_create_people -> people
+        attio_update_companies -> companies
+    """
+    match = re.match(r"attio_(?:create|update|search|get|delete)_(.+)", tool_name)
+    return match.group(1) if match else None
 
 
 def get_tools() -> list[BaseTool]:
@@ -13,7 +31,7 @@ def get_tools() -> list[BaseTool]:
     """
     tools = []
 
-    # Static tools (always available when service is enabled)
+    # Static tools (always available when service is enabled - standard scope)
     from sdrbot_cli.services.attio.tools import get_static_tools
 
     tools.extend(get_static_tools())
@@ -26,14 +44,20 @@ def get_tools() -> list[BaseTool]:
             namespace = {"__name__": "attio_generated", "__file__": str(generated_path)}
             exec(generated_path.read_text(), namespace)
 
-            # Extract tools from namespace
+            # Extract tools from namespace and set scope based on object
             for name, obj in namespace.items():
                 if name.startswith("attio_") and isinstance(obj, BaseTool):
+                    # Set scope based on object type
+                    obj_name = _extract_object_from_tool_name(name)
+                    if obj_name and obj_name not in STANDARD_OBJECTS:
+                        if obj.metadata is None:
+                            obj.metadata = {}
+                        obj.metadata[SCOPE_METADATA_KEY] = SCOPE_EXTENDED
                     tools.append(obj)
         except Exception:
             pass  # Failed to load generated tools - only static tools available
 
-    # Admin tools (privileged mode only)
+    # Admin tools (privileged - filtered by scope setting)
     from sdrbot_cli.services.attio.admin_tools import get_admin_tools
 
     tools.extend(get_admin_tools())

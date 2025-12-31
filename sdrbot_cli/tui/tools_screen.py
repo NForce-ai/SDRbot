@@ -14,13 +14,16 @@ SETUP_CSS_PATH = Path(__file__).parent / "setup_common.tcss"
 def get_grouped_tools() -> dict[str, dict[str, list[tuple[str, str]]]]:
     """Get all tools grouped by category and source.
 
+    Only includes tools allowed under the current tool scope setting.
+
     Returns:
         Dict with keys "builtin", "services", "mcp", each mapping
         source name to list of (tool_name, description) tuples.
     """
     from sdrbot_cli.mcp.manager import get_mcp_manager
     from sdrbot_cli.services import SERVICES, TRACING_SERVICES
-    from sdrbot_cli.services.registry import load_config
+    from sdrbot_cli.services.registry import get_tool_scope_setting, load_config
+    from sdrbot_cli.tools import is_tool_allowed
 
     result = {
         "builtin": {},
@@ -29,24 +32,37 @@ def get_grouped_tools() -> dict[str, dict[str, list[tuple[str, str]]]]:
     }
 
     config = load_config()
+    current_scope = get_tool_scope_setting()
 
-    # Built-in tools
-    builtin_tools = [
-        ("http_request", "Make HTTP requests to external APIs"),
-        ("fetch_url", "Fetch and parse web page content"),
-        ("sync_crm_schema", "Sync CRM schema and regenerate tools"),
-        ("read_file", "Read contents of a file"),
-        ("write_file", "Write content to a file"),
+    # Deepagents built-in tools (provided by the agent framework)
+    deepagents_tools = [
         ("edit_file", "Edit a file by replacing text"),
-        ("ls", "List directory contents"),
+        ("execute", "Execute shell commands"),
         ("glob", "Find files matching a pattern"),
         ("grep", "Search for text in files"),
-        ("shell", "Execute shell commands"),
+        ("ls", "List directory contents"),
+        ("read_file", "Read contents of a file"),
+        ("task", "Delegate work to a subagent"),
+        ("write_file", "Write content to a file"),
+        ("write_todos", "Manage task list"),
     ]
+    result["builtin"]["Deepagents"] = deepagents_tools
 
-    # Sort alphabetically
-    builtin_tools.sort(key=lambda x: x[0])
-    result["builtin"]["Core"] = builtin_tools
+    # SDRbot core tools
+    sdrbot_tools = [
+        ("fetch_url", "Fetch and parse web page content"),
+        ("http_request", "Make HTTP requests to external APIs"),
+        ("sync_crm_schema", "Sync CRM schema and regenerate tools"),
+    ]
+    result["builtin"]["SDRbot"] = sdrbot_tools
+
+    # Memory tools
+    memory_tools = [
+        ("append_memory", "Append content to long-term memory"),
+        ("read_memory", "Read long-term memory file"),
+        ("write_memory", "Write to long-term memory file"),
+    ]
+    result["builtin"]["Memory"] = memory_tools
 
     # Service tools
     for service_name in SERVICES:
@@ -66,6 +82,9 @@ def get_grouped_tools() -> dict[str, dict[str, list[tuple[str, str]]]]:
                 if service_tools:
                     tool_list = []
                     for tool in service_tools:
+                        # Filter by current scope
+                        if not is_tool_allowed(tool, current_scope):
+                            continue
                         desc = tool.description or "No description"
                         # Truncate long descriptions
                         if len(desc) > 60:
@@ -73,7 +92,8 @@ def get_grouped_tools() -> dict[str, dict[str, list[tuple[str, str]]]]:
                         tool_list.append((tool.name, desc))
                     # Sort alphabetically
                     tool_list.sort(key=lambda x: x[0])
-                    result["services"][service_name.title()] = tool_list
+                    if tool_list:  # Only add if there are tools after filtering
+                        result["services"][service_name.title()] = tool_list
         except ImportError:
             pass
 
@@ -99,6 +119,11 @@ class ToolsScreen(ModalScreen[None]):
     """Modal screen displaying all loaded tools."""
 
     CSS_PATH = [SETUP_CSS_PATH]
+
+    def __init__(self, initial_tab: str = "tab-builtin", *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._initial_tab = initial_tab
+        self._current_tab = initial_tab
 
     CSS = """
     ToolsScreen {
@@ -165,6 +190,7 @@ class ToolsScreen(ModalScreen[None]):
     BINDINGS = [
         ("escape", "close", "Close"),
         ("q", "close", "Close"),
+        ("ctrl+t", "cycle_scope", "Cycle Scope"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -185,7 +211,11 @@ class ToolsScreen(ModalScreen[None]):
 
             # Built-in content
             with VerticalScroll(classes="tools-scroll content-pane active", id="pane-builtin"):
-                for _source_name, tools in sorted(self._groups["builtin"].items()):
+                first_group = True
+                for source_name, tools in sorted(self._groups["builtin"].items()):
+                    title_class = "tools-group-title-first" if first_group else "tools-group-title"
+                    yield Static(f"{source_name} ({len(tools)})", classes=title_class)
+                    first_group = False
                     for tool_name, description in tools:
                         with Horizontal(classes="tool-line"):
                             yield Static(f"{tool_name}: ", classes="tool-name")
@@ -225,14 +255,21 @@ class ToolsScreen(ModalScreen[None]):
                 else:
                     yield Static("No MCP servers connected.", classes="tool-line")
 
-            yield Static(
-                "←→ Switch tabs • ↑↓ Scroll • Esc Close", id="tools-hint", classes="setup-hint"
-            )
+            yield Static("^t Tool Scope • Esc Close", id="tools-hint", classes="setup-hint")
             with Container(classes="setup-buttons"):
                 yield Button("Close", variant="default", id="btn-close", classes="setup-btn")
 
+    def on_mount(self) -> None:
+        """Activate the initial tab on mount."""
+        if self._initial_tab != "tab-builtin":
+            tabs = self.query_one("#tools-tabs", Tabs)
+            tabs.active = self._initial_tab
+
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
         """Handle tab switching."""
+        # Track current tab
+        self._current_tab = event.tab.id
+
         # Hide all panes
         for pane in self.query(".content-pane"):
             pane.remove_class("active")
@@ -254,3 +291,32 @@ class ToolsScreen(ModalScreen[None]):
     def action_close(self) -> None:
         """Close the tools screen."""
         self.dismiss(None)
+
+    def action_cycle_scope(self) -> None:
+        """Cycle tool scope and refresh the tools list."""
+        from sdrbot_cli.services.registry import cycle_tool_scope
+
+        from .widgets import AgentInfo
+
+        new_scope = cycle_tool_scope()
+
+        # Update the app's AgentInfo widget
+        try:
+            self.app.query_one("#agent_info", AgentInfo).update_tool_scope(new_scope)
+        except Exception:
+            pass  # Widget may not exist in some contexts
+
+        self.notify(f"Tool scope: {new_scope.capitalize()}")
+
+        # Dismiss and re-push to refresh the tools list, restoring the current tab
+        current_tab = self._current_tab
+
+        def reopen_screen(_: None) -> None:
+            self.app.push_screen(ToolsScreen(initial_tab=current_tab))
+
+        self.dismiss(None)
+        self.app.call_after_refresh(reopen_screen, None)
+
+        # Trigger agent reload in the app
+        if hasattr(self.app, "agent_worker") and self.app.agent_worker:
+            self.app.run_worker(self.app.agent_worker._reload_agent_async(), exclusive=True)

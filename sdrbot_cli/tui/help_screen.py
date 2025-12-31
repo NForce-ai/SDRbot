@@ -83,6 +83,7 @@ class HelpScreen(ModalScreen[None]):
                     yield Static("  ⌘+V          Paste", classes="help-item")
                     yield Static("  ⌃+A          Toggle auto-approve", classes="help-item")
                     yield Static("  ⌃+S          Open setup menu", classes="help-item")
+                    yield Static("  ⌃+T          Cycle tool scope", classes="help-item")
                     yield Static("  ⌃+C          Interrupt agent", classes="help-item")
                 else:
                     yield Static("  Enter         Submit message", classes="help-item")
@@ -91,7 +92,28 @@ class HelpScreen(ModalScreen[None]):
                     yield Static("  Ctrl+Shift+V  Paste", classes="help-item")
                     yield Static("  Ctrl+A        Toggle auto-approve", classes="help-item")
                     yield Static("  Ctrl+S        Open setup menu", classes="help-item")
+                    yield Static("  Ctrl+T        Cycle tool scope", classes="help-item")
                     yield Static("  Ctrl+C        Interrupt agent", classes="help-item")
+                yield Static("")
+
+                # Tool Scope section
+                yield Static("Tool Scope", classes="help-section-title")
+                yield Static(
+                    "  Standard: Core CRM tools (contacts, companies, deals)",
+                    classes="help-item",
+                )
+                yield Static(
+                    "  Extended: Standard + custom objects and advanced tools",
+                    classes="help-item",
+                )
+                yield Static(
+                    "  Privileged: All tools including admin/schema management",
+                    classes="help-item",
+                )
+                yield Static(
+                    "  Cycle with Ctrl+T. Current scope shown in header.",
+                    classes="help-item",
+                )
                 yield Static("")
 
                 # Auto-approve section

@@ -10,9 +10,10 @@ from textual.widgets import Button, ListItem, ListView, Static
 from sdrbot_cli.config import load_model_config
 from sdrbot_cli.mcp.client import MCP_AVAILABLE
 from sdrbot_cli.mcp.config import load_mcp_config
-from sdrbot_cli.services.registry import is_privileged_mode, load_config
+from sdrbot_cli.services.registry import cycle_tool_scope, get_tool_scope_setting, load_config
 from sdrbot_cli.setup.services import SERVICE_CATEGORIES
 from sdrbot_cli.setup.tracing import TRACING_SERVICES
+from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_PRIVILEGED
 
 # Path to shared CSS
 SETUP_CSS_PATH = Path(__file__).parent / "setup_common.tcss"
@@ -76,11 +77,14 @@ def get_tracing_status() -> tuple[str, str]:
     return ("• None enabled", "status-missing")
 
 
-def get_privileged_status() -> tuple[str, str]:
-    """Get status string and CSS class for privileged mode."""
-    if is_privileged_mode():
-        return ("✓ Enabled", "status-active")
-    return ("• Disabled", "status-missing")
+def get_tool_scope_status() -> tuple[str, str]:
+    """Get status string and CSS class for tool scope."""
+    scope = get_tool_scope_setting()
+    if scope == SCOPE_PRIVILEGED:
+        return ("✓ Privileged", "status-active")
+    elif scope == SCOPE_EXTENDED:
+        return ("• Extended", "status-configured")
+    return ("• Standard", "status-missing")
 
 
 class SetupWizardScreen(Screen[bool | None]):
@@ -150,14 +154,14 @@ class SetupWizardScreen(Screen[bool | None]):
         services_status = get_services_status()
         mcp_status = get_mcp_status()
         tracing_status = get_tracing_status()
-        privileged_status = get_privileged_status()
+        tool_scope_status = get_tool_scope_status()
 
         menu_items = [
             ("models", "Models", model_status),
             ("services", "Services", services_status),
             ("mcp", "MCP Servers", mcp_status),
             ("tracing", "Tracing", tracing_status),
-            ("privileged", "Privileged Mode", privileged_status),
+            ("tool_scope", "Tool Scope", tool_scope_status),
         ]
 
         for item_id, label, (status_text, status_class) in menu_items:
@@ -195,12 +199,11 @@ class SetupWizardScreen(Screen[bool | None]):
 
             self.app.push_screen(TracingSetupScreen(), self._on_section_complete)
 
-        elif item_id == "privileged":
-            # Toggle directly - no submenu needed
-            from sdrbot_cli.services.registry import set_privileged_mode
-
-            set_privileged_mode(not is_privileged_mode())
+        elif item_id == "tool_scope":
+            # Cycle through scopes: standard -> extended -> privileged
+            new_scope = cycle_tool_scope()
             self._refresh_menu()
+            self.notify(f"Tool scope: {new_scope.capitalize()}")
 
     def _on_section_complete(self, result: bool | None = None) -> None:
         """Called when a section screen is dismissed."""

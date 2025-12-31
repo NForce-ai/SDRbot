@@ -18,7 +18,7 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.attio import AttioClient
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Shared client instance for admin operations
 _admin_client = None
@@ -60,7 +60,7 @@ def reset_admin_client() -> None:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def attio_admin_list_objects() -> str:
     """List all object types in Attio.
 
@@ -95,7 +95,7 @@ def attio_admin_list_objects() -> str:
         return f"Error listing objects: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def attio_admin_get_object(object_slug: str) -> str:
     """Get details of a specific object type including its attributes.
 
@@ -147,7 +147,7 @@ def attio_admin_get_object(object_slug: str) -> str:
         return f"Error getting object: {str(e)}"
 
 
-@privileged_tool(schema_modifying="attio")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="attio")
 def attio_admin_create_object(
     api_slug: str,
     singular_noun: str,
@@ -193,7 +193,7 @@ def attio_admin_create_object(
         return f"Error creating object: {error_str}"
 
 
-@privileged_tool(schema_modifying="attio")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="attio")
 def attio_admin_update_object(
     object_slug: str,
     api_slug: str | None = None,
@@ -244,7 +244,7 @@ def attio_admin_update_object(
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def attio_admin_list_attributes(object_slug: str, include_archived: bool = False) -> str:
     """List all attributes for an object type.
 
@@ -306,7 +306,7 @@ def attio_admin_list_attributes(object_slug: str, include_archived: bool = False
         return f"Error listing attributes: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def attio_admin_get_attribute(object_slug: str, attribute_slug: str) -> str:
     """Get details of a specific attribute.
 
@@ -359,7 +359,7 @@ def attio_admin_get_attribute(object_slug: str, attribute_slug: str) -> str:
         return f"Error getting attribute: {str(e)}"
 
 
-@privileged_tool(schema_modifying="attio")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="attio")
 def attio_admin_create_attribute(
     object_slug: str,
     api_slug: str,
@@ -455,7 +455,7 @@ def attio_admin_create_attribute(
         return f"Error creating attribute: {error_str}"
 
 
-@privileged_tool(schema_modifying="attio")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="attio")
 def attio_admin_update_attribute(
     object_slug: str,
     attribute_slug: str,
@@ -532,7 +532,7 @@ def attio_admin_update_attribute(
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def attio_admin_list_members() -> str:
     """List all workspace members (users) in Attio.
 

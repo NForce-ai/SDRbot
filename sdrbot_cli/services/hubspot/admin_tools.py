@@ -16,7 +16,7 @@ from pathlib import Path
 from langchain_core.tools import BaseTool
 
 from sdrbot_cli.auth.hubspot import get_client
-from sdrbot_cli.tools import privileged_tool
+from sdrbot_cli.tools import SCOPE_PRIVILEGED, scoped_tool
 
 # Shared client instance for admin operations
 _admin_client = None
@@ -60,7 +60,7 @@ def reset_admin_client() -> None:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def hubspot_admin_list_objects() -> str:
     """List all object schemas (standard and custom) in HubSpot.
 
@@ -97,7 +97,7 @@ def hubspot_admin_list_objects() -> str:
         return f"Error listing objects: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def hubspot_admin_get_object(object_type: str) -> str:
     """Get details of a specific object schema.
 
@@ -133,7 +133,7 @@ def hubspot_admin_get_object(object_type: str) -> str:
         return f"Error getting object schema: {str(e)}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_create_object(
     name: str,
     label_singular: str,
@@ -195,7 +195,7 @@ def hubspot_admin_create_object(
         return f"Error creating object: {error_str}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_update_object(
     object_type: str,
     label_singular: str | None = None,
@@ -250,7 +250,7 @@ def hubspot_admin_update_object(
         return f"Error updating object: {error_str}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_delete_object(object_type: str) -> str:
     """Delete a custom object schema.
 
@@ -291,7 +291,7 @@ def hubspot_admin_delete_object(object_type: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def hubspot_admin_list_properties(object_type: str, include_hidden: bool = False) -> str:
     """List all properties for an object type.
 
@@ -346,7 +346,7 @@ def hubspot_admin_list_properties(object_type: str, include_hidden: bool = False
         return f"Error listing properties: {str(e)}"
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def hubspot_admin_get_property(object_type: str, property_name: str) -> str:
     """Get details of a specific property.
 
@@ -389,7 +389,7 @@ def hubspot_admin_get_property(object_type: str, property_name: str) -> str:
         return f"Error getting property: {str(e)}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_create_property(
     object_type: str,
     name: str,
@@ -483,7 +483,7 @@ def hubspot_admin_create_property(
         return f"Error creating property: {error_str}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_update_property(
     object_type: str,
     property_name: str,
@@ -568,7 +568,7 @@ def hubspot_admin_update_property(
         return f"Error updating property: {error_str}"
 
 
-@privileged_tool(schema_modifying="hubspot")
+@scoped_tool(scope=SCOPE_PRIVILEGED, schema_modifying="hubspot")
 def hubspot_admin_delete_property(object_type: str, property_name: str) -> str:
     """Delete a custom property.
 
@@ -604,7 +604,7 @@ def hubspot_admin_delete_property(object_type: str, property_name: str) -> str:
 # =============================================================================
 
 
-@privileged_tool
+@scoped_tool(scope=SCOPE_PRIVILEGED)
 def hubspot_admin_list_owners(include_archived: bool = False) -> str:
     """List all owners (users) in HubSpot.
 

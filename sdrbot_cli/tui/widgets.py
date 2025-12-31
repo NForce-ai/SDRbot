@@ -1,5 +1,7 @@
 """Custom Textual widgets for SDRbot."""
 
+from collections import defaultdict
+
 import pyperclip
 from rich.text import Text
 from textual.events import Click
@@ -7,9 +9,64 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import RichLog, Static
+from textual.widgets._footer import Footer, FooterKey
 
 from sdrbot_cli.ui import format_token_count
 from sdrbot_cli.version import __version__
+
+# Desired order for footer bindings (by action name)
+FOOTER_BINDING_ORDER = [
+    "quit",
+    "show_help",
+    "show_setup",
+    "cycle_tool_scope",
+    "toggle_auto_approve",
+    "interrupt_agent",
+    "paste",
+    "newline",
+]
+
+
+class OrderedFooter(Footer):
+    """Footer that displays bindings in a predefined order."""
+
+    def compose(self):
+        """Compose footer with bindings in FOOTER_BINDING_ORDER."""
+        if not self._bindings_ready:
+            return
+
+        active_bindings = self.screen.active_bindings
+        bindings = [
+            (binding, enabled, tooltip)
+            for (_, binding, enabled, tooltip) in active_bindings.values()
+            if binding.show
+        ]
+
+        # Group by action
+        action_to_bindings: defaultdict[str, list[tuple]] = defaultdict(list)
+        for binding, enabled, tooltip in bindings:
+            action_to_bindings[binding.action].append((binding, enabled, tooltip))
+
+        # Sort actions by our predefined order
+        def sort_key(action: str) -> int:
+            try:
+                return FOOTER_BINDING_ORDER.index(action)
+            except ValueError:
+                return len(FOOTER_BINDING_ORDER)  # Unknown actions go last
+
+        sorted_actions = sorted(action_to_bindings.keys(), key=sort_key)
+
+        for action in sorted_actions:
+            multi_bindings = action_to_bindings[action]
+            binding, enabled, tooltip = multi_bindings[0]
+            yield FooterKey(
+                binding.key,
+                self.app.get_key_display(binding),
+                binding.description,
+                binding.action,
+                disabled=not enabled,
+                tooltip=tooltip,
+            ).data_bind(compact=Footer.compact)
 
 
 class CopyableRichLog(RichLog):
@@ -122,11 +179,12 @@ class ThinkingIndicator(Widget):
 
 
 class AgentInfo(Static):
-    """Widget to display agent name, skill count, tool count, auto-approve status, and sandbox."""
+    """Widget to display agent name, skill count, tool count, scope, auto-approve, and sandbox."""
 
     agent_name = reactive("default")
     skill_count = reactive(0)
     tool_count = reactive(0)
+    tool_scope = reactive("standard")
     auto_approve = reactive(False)
     sandbox_type = reactive("")
 
@@ -145,11 +203,17 @@ class AgentInfo(Static):
 
         pass
 
+    class ToolScopeClicked(Message):
+        """Message emitted when tool scope is clicked."""
+
+        pass
+
     def __init__(
         self,
         agent_name: str = "default",
         auto_approve: bool = False,
         sandbox_type: str = "",
+        tool_scope: str = "standard",
         *args,
         **kwargs,
     ) -> None:
@@ -157,15 +221,20 @@ class AgentInfo(Static):
         self.agent_name = agent_name
         self.auto_approve = auto_approve
         self.sandbox_type = sandbox_type
+        self.tool_scope = tool_scope
         self.styles.height = 1
 
     def render(self) -> Text:
         """Render the agent info."""
+        # Format scope for display (capitalize first letter)
+        scope_display = self.tool_scope.capitalize()
+
         # Use @click markup for clickable elements (color set via CSS link-color)
         parts = [
             f"[dim]Agent:[/] [@click=click_agent]{self.agent_name}[/]",
             f"[dim]Skills:[/] [@click=click_skills]{self.skill_count}[/]",
             f"[dim]Tools:[/] [@click=click_tools]{self.tool_count}[/]",
+            f"[dim]Scope:[/] [@click=click_scope][yellow]{scope_display}[/yellow][/]",
         ]
 
         # Add sandbox indicator (only if enabled)
@@ -191,6 +260,10 @@ class AgentInfo(Static):
         """Action triggered when tools count is clicked."""
         self.post_message(self.ToolCountClicked())
 
+    def action_click_scope(self) -> None:
+        """Action triggered when tool scope is clicked."""
+        self.post_message(self.ToolScopeClicked())
+
     def update_skill_count(self, count: int) -> None:
         """Update the skill count."""
         self.skill_count = count
@@ -198,6 +271,10 @@ class AgentInfo(Static):
     def update_tool_count(self, count: int) -> None:
         """Update the tool count."""
         self.tool_count = count
+
+    def update_tool_scope(self, scope: str) -> None:
+        """Update the tool scope display."""
+        self.tool_scope = scope
 
     def set_auto_approve(self, enabled: bool) -> None:
         """Update the auto-approve status."""
@@ -376,7 +453,5 @@ class AppFooter(Widget):
     """
 
     def compose(self):
-        from textual.widgets import Footer
-
-        yield Footer(show_command_palette=False)
+        yield OrderedFooter(show_command_palette=False)
         yield VersionIndicator(id="version_indicator")
