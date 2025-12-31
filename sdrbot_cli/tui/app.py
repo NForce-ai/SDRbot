@@ -247,8 +247,14 @@ class ChatInput(TextArea):
                     event.stop()
                     return
 
-        # History navigation (only when suggestions not visible)
-        if event.key == "up" and self._history:
+        # History navigation with up/down arrows
+        # Only cycle when cursor is at boundary (first line for up, last line for down)
+        # This allows normal cursor movement within multiline messages (draft or historical)
+        cursor_row = self.cursor_location[0]
+        last_row = self.document.line_count - 1
+
+        # Up arrow on first line: cycle back in history
+        if event.key == "up" and self._history and cursor_row == 0:
             # Save draft if starting to navigate
             if self._history_index == -1:
                 self._draft = self.text
@@ -256,27 +262,33 @@ class ChatInput(TextArea):
             if self._history_index < len(self._history) - 1:
                 self._history_index += 1
                 self.text = self._history[-(self._history_index + 1)]
-                self.action_cursor_line_end()
-            event.prevent_default()
-            event.stop()
-            return
-        elif event.key == "down" and self._history_index >= 0:
-            if self._history_index > 0:
-                # Move forward in history
-                self._history_index -= 1
-                self.text = self._history[-(self._history_index + 1)]
-                self.action_cursor_line_end()
-            else:
-                # Return to draft
-                self._history_index = -1
-                self.text = self._draft
-                self.action_cursor_line_end()
+                # Place cursor at end (as if coming from below)
+                new_last_row = self.document.line_count - 1
+                self.cursor_location = (new_last_row, len(self.document[new_last_row]))
             event.prevent_default()
             event.stop()
             return
 
-        # Reset history navigation on any other key
-        if self._history_index != -1:
+        # Down arrow on last line: cycle forward in history (only when in history mode)
+        if event.key == "down" and self._history_index >= 0 and cursor_row == last_row:
+            if self._history_index > 0:
+                # Move forward in history
+                self._history_index -= 1
+                self.text = self._history[-(self._history_index + 1)]
+                # Place cursor at beginning (as if coming from above)
+                self.cursor_location = (0, 0)
+            else:
+                # Return to draft
+                self._history_index = -1
+                self.text = self._draft
+                # Place cursor at beginning of draft
+                self.cursor_location = (0, 0)
+            event.prevent_default()
+            event.stop()
+            return
+
+        # Reset history navigation on any key except up/down (those are for navigation)
+        if self._history_index != -1 and event.key not in ("up", "down"):
             self._history_index = -1
             self._draft = ""
 
