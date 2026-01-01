@@ -59,7 +59,8 @@ By using this software, you acknowledge that:
 | **MongoDB** | Connection URI | — | CRUD Operations, Collection Management |
 | **Tavily** | API Key | — | Web Search, News Retrieval |
 | **Gmail** | OAuth 2.0 | — | Read, Send, Draft, Labels, Threads |
-| **Outlook** | OAuth 2.0 | — | Read, Send, Draft, Folders, Conversations |
+| **Outlook** | OAuth 2.0 | — | Read, Send, Draft, Schedule, Folders, Conversations |
+| **Generic Email** | IMAP/SMTP | — | Read, Send, Draft, Search, Folders (Yahoo, AOL, ProtonMail, etc.) |
 
 ---
 
@@ -147,6 +148,7 @@ nano .env
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
 - **Gmail:** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` (OAuth - see [Gmail Setup](#gmail-oauth-setup))
 - **Outlook:** `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET` (OAuth - see [Outlook Setup](#outlook-oauth-setup))
+- **Generic Email:** `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (see [Generic Email Setup](#generic-email-imapsmtp-setup))
 
 ---
 
@@ -435,6 +437,69 @@ When you first use an email tool (Gmail or Outlook):
 3. Token is stored securely in your system keyring
 4. Future requests use the stored token (auto-refreshes)
 
+For Generic Email (IMAP/SMTP), no browser flow is needed - credentials are used directly from your configuration.
+
+### Generic Email (IMAP/SMTP) Setup
+
+For email providers that don't have OAuth integrations (Yahoo, AOL, ProtonMail, iCloud, etc.), SDRbot supports direct IMAP/SMTP connections.
+
+#### Provider Presets
+
+The setup wizard includes presets for common providers:
+
+| Provider | IMAP Host | SMTP Host | Notes |
+|----------|-----------|-----------|-------|
+| **Yahoo Mail** | imap.mail.yahoo.com:993 | smtp.mail.yahoo.com:465 | Requires App Password |
+| **AOL Mail** | imap.aol.com:993 | smtp.aol.com:465 | Requires App Password |
+| **iCloud** | imap.mail.me.com:993 | smtp.mail.me.com:587 | Requires App Password |
+| **ProtonMail** | 127.0.0.1:1143 | 127.0.0.1:1025 | Requires ProtonMail Bridge |
+| **Fastmail** | imap.fastmail.com:993 | smtp.fastmail.com:465 | Supports App Passwords |
+| **Zoho Mail** | imap.zoho.com:993 | smtp.zoho.com:465 | Enable IMAP in settings |
+
+#### Setting Up App Passwords
+
+Most providers require "App Passwords" instead of your regular password:
+
+**Yahoo/AOL:**
+1. Go to Account Security settings
+2. Enable 2-Step Verification (required)
+3. Scroll to "App Passwords" and generate one for "Other App"
+4. Use this password in SDRbot
+
+**iCloud:**
+1. Go to [appleid.apple.com](https://appleid.apple.com)
+2. Sign in and go to Security → App-Specific Passwords
+3. Generate a password for "SDRbot"
+4. Use this password in SDRbot
+
+**ProtonMail:**
+1. Install and run [ProtonMail Bridge](https://proton.me/mail/bridge)
+2. Sign in to Bridge with your ProtonMail account
+3. Get the IMAP/SMTP credentials from Bridge settings
+4. Use localhost:1143 (IMAP) and localhost:1025 (SMTP)
+
+#### Custom Configuration
+
+For other providers or self-hosted email servers, use these environment variables:
+
+```bash
+# IMAP (Incoming mail)
+IMAP_HOST=imap.example.com
+IMAP_PORT=993
+IMAP_USER=your@email.com
+IMAP_PASSWORD=your-app-password
+IMAP_SSL=true
+
+# SMTP (Outgoing mail)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USER=your@email.com
+SMTP_PASSWORD=your-app-password
+SMTP_SSL=true
+```
+
+**Note:** For ports 993 (IMAP) and 465 (SMTP), use SSL=true. For port 587 (SMTP), use SSL=false (STARTTLS is automatic).
+
 ---
 
 ## 🎮 Usage
@@ -505,6 +570,7 @@ sdrbot --auto-approve
 - **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 - **Gmail:** Launches browser OAuth flow on first use. Tokens are saved securely in your system keyring with automatic refresh.
 - **Outlook:** Launches browser OAuth flow via Microsoft. Tokens are saved securely in your system keyring with automatic refresh.
+- **Generic Email:** Uses IMAP/SMTP credentials directly from config. No browser flow needed.
 
 ### Example Prompts
 

@@ -21,6 +21,7 @@ SERVICES = [
     "lusha",
     "gmail",
     "outlook",
+    "generic_email",
     "tavily",
     "postgres",
     "mysql",

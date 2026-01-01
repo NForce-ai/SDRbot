@@ -1355,6 +1355,246 @@ class TwentyScreen(ModalScreen[bool]):
 
 
 # ============================================================================
+# Generic Email (IMAP/SMTP) configuration screen
+# ============================================================================
+
+
+class GenericEmailScreen(ModalScreen[bool]):
+    """Configuration screen for Generic Email (IMAP/SMTP)."""
+
+    CSS_PATH = [SETUP_CSS_PATH]
+
+    CSS = """
+    GenericEmailScreen {
+        align: center middle;
+    }
+
+    #generic-email-dialog {
+        width: 80;
+        height: auto;
+    }
+
+    #generic-email-dialog Horizontal {
+        height: auto;
+    }
+
+    #generic-email-dialog .setup-buttons {
+        margin-top: 1;
+    }
+
+    #generic-email-dialog .setup-buttons Button {
+        margin-right: 2;
+    }
+
+    #preset-list {
+        height: 9;
+        border: solid $primary-background-darken-2;
+    }
+
+    #error-message {
+        text-align: center;
+        color: $error;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        from sdrbot_cli.auth.generic_email import PROVIDER_PRESETS
+
+        self.presets = PROVIDER_PRESETS
+        self.selected_preset: str | None = None
+
+    def on_mount(self) -> None:
+        """Load existing values from environment."""
+        import os
+
+        imap_host = os.getenv("IMAP_HOST", "")
+        imap_port = os.getenv("IMAP_PORT", "")
+        smtp_host = os.getenv("SMTP_HOST", "")
+        smtp_port = os.getenv("SMTP_PORT", "")
+        email_user = os.getenv("IMAP_USER", "") or os.getenv("SMTP_USER", "")
+        email_pass = os.getenv("IMAP_PASSWORD", "") or os.getenv("SMTP_PASSWORD", "")
+
+        if imap_host:
+            self.query_one("#imap-host", Input).value = imap_host
+        if imap_port:
+            self.query_one("#imap-port", Input).value = imap_port
+        if smtp_host:
+            self.query_one("#smtp-host", Input).value = smtp_host
+        if smtp_port:
+            self.query_one("#smtp-port", Input).value = smtp_port
+        if email_user:
+            self.query_one("#email-user", Input).value = email_user
+        if email_pass:
+            self.query_one("#email-pass", Input).value = email_pass
+
+    def compose(self) -> ComposeResult:
+        with Container(id="generic-email-dialog", classes="setup-dialog-wide"):
+            yield Static("Generic Email (IMAP/SMTP) Configuration", classes="setup-title")
+
+            # Preset selector
+            with Vertical(classes="setup-field"):
+                yield Label("Provider Preset:", classes="setup-field-label")
+                with ListView(id="preset-list", initial_index=0):
+                    yield ListItem(Label("Custom"), id="preset-custom")
+                    for key, info in self.presets.items():
+                        yield ListItem(Label(f"{info['name']}"), id=f"preset-{key}")
+
+            # IMAP Settings
+            with Horizontal():
+                with Vertical(classes="setup-field"):
+                    yield Label("IMAP Host:", classes="setup-field-label")
+                    yield Input(
+                        placeholder="imap.example.com", id="imap-host", classes="setup-field-input"
+                    )
+                with Vertical(classes="setup-field"):
+                    yield Label("IMAP Port:", classes="setup-field-label")
+                    yield Input(
+                        placeholder="993", value="993", id="imap-port", classes="setup-field-input"
+                    )
+
+            # SMTP Settings
+            with Horizontal():
+                with Vertical(classes="setup-field"):
+                    yield Label("SMTP Host:", classes="setup-field-label")
+                    yield Input(
+                        placeholder="smtp.example.com", id="smtp-host", classes="setup-field-input"
+                    )
+                with Vertical(classes="setup-field"):
+                    yield Label("SMTP Port:", classes="setup-field-label")
+                    yield Input(
+                        placeholder="465", value="465", id="smtp-port", classes="setup-field-input"
+                    )
+
+            # Credentials
+            with Vertical(classes="setup-field"):
+                yield Label("Email/Username:", classes="setup-field-label")
+                yield Input(
+                    placeholder="user@example.com", id="email-user", classes="setup-field-input"
+                )
+
+            with Vertical(classes="setup-field"):
+                yield Label("Password (or App Password):", classes="setup-field-label")
+                yield Input(
+                    placeholder="Enter password...",
+                    password=True,
+                    id="email-pass",
+                    classes="setup-field-input",
+                )
+
+            yield Static("", id="error-message", classes="error-text")
+
+            with Horizontal(classes="setup-buttons"):
+                yield Button("Save & Test", variant="primary", id="btn-save")
+                yield Button("Cancel", variant="default", id="btn-cancel")
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Handle preset selection."""
+        item_id = event.item.id or ""
+        if item_id.startswith("preset-"):
+            preset_key = item_id.replace("preset-", "")
+            self.selected_preset = preset_key
+
+            if preset_key == "custom":
+                # Clear values for custom entry
+                self.query_one("#imap-host", Input).value = ""
+                self.query_one("#imap-port", Input).value = ""
+                self.query_one("#smtp-host", Input).value = ""
+                self.query_one("#smtp-port", Input).value = ""
+            elif preset_key in self.presets:
+                preset = self.presets[preset_key]
+                self.query_one("#imap-host", Input).value = preset["imap_host"]
+                self.query_one("#imap-port", Input).value = str(preset["imap_port"])
+                self.query_one("#smtp-host", Input).value = preset["smtp_host"]
+                self.query_one("#smtp-port", Input).value = str(preset["smtp_port"])
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "btn-save":
+            self._save_config()
+        elif event.button.id == "btn-cancel":
+            self.dismiss(False)
+
+    def _save_config(self) -> None:
+        """Save email configuration."""
+        imap_host = self.query_one("#imap-host", Input).value.strip()
+        imap_port = self.query_one("#imap-port", Input).value.strip()
+        smtp_host = self.query_one("#smtp-host", Input).value.strip()
+        smtp_port = self.query_one("#smtp-port", Input).value.strip()
+        email_user = self.query_one("#email-user", Input).value.strip()
+        email_pass = self.query_one("#email-pass", Input).value.strip()
+        error_label = self.query_one("#error-message", Static)
+
+        if not imap_host:
+            error_label.update("IMAP host is required")
+            return
+        if not smtp_host:
+            error_label.update("SMTP host is required")
+            return
+        if not email_user:
+            error_label.update("Email/username is required")
+            return
+        if not email_pass:
+            error_label.update("Password is required")
+            return
+
+        error_label.update("")
+
+        # Determine SSL based on port (common defaults)
+        imap_ssl = imap_port in ("993", "143")  # 993 uses SSL, 143 might use STARTTLS
+        smtp_ssl = smtp_port in ("465", "587", "25")
+
+        env_vars = {
+            "IMAP_HOST": imap_host,
+            "IMAP_PORT": imap_port,
+            "IMAP_USER": email_user,
+            "IMAP_PASSWORD": email_pass,
+            "IMAP_SSL": "true" if imap_ssl else "false",
+            "SMTP_HOST": smtp_host,
+            "SMTP_PORT": smtp_port,
+            "SMTP_USER": email_user,
+            "SMTP_PASSWORD": email_pass,
+            "SMTP_SSL": "true" if smtp_ssl else "false",
+        }
+
+        save_env_vars(env_vars)
+        reload_env_and_settings()
+
+        # Test connection sequentially - IMAP first, then SMTP
+        try:
+            import sdrbot_cli.auth.generic_email as email_auth
+
+            importlib.reload(email_auth)
+
+            # Test IMAP first
+            imap_ok, imap_msg = email_auth.test_imap()
+            if not imap_ok:
+                error_label.update(f"IMAP failed: {imap_msg}")
+                return
+
+            # IMAP passed, now test SMTP
+            smtp_ok, smtp_msg = email_auth.test_smtp()
+            if not smtp_ok:
+                error_label.update(f"SMTP failed: {smtp_msg}")
+                return
+
+            # Both passed
+            enable_service("generic_email", sync=False, verbose=False)
+            self.dismiss(True)
+        except Exception as e:
+            error_label.update(f"Test failed: {e}")
+
+    def action_cancel(self) -> None:
+        """Cancel and close."""
+        self.dismiss(False)
+
+
+# ============================================================================
 # Factory function to get appropriate config screen for a service
 # ============================================================================
 
@@ -1466,5 +1706,7 @@ def get_service_config_screen(service_code: str, service_label: str) -> ModalScr
             "OUTLOOK_CLIENT_SECRET",
             "sdrbot_cli.auth.outlook",
         )
+    elif service_code == "generic_email":
+        return GenericEmailScreen()
 
     return None
