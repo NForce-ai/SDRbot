@@ -58,6 +58,7 @@ By using this software, you acknowledge that:
 | **MySQL** | Connection String | — | SQL Queries, Table Management |
 | **MongoDB** | Connection URI | — | CRUD Operations, Collection Management |
 | **Tavily** | API Key | — | Web Search, News Retrieval |
+| **Gmail** | OAuth 2.0 | — | Read, Send, Draft, Labels, Threads |
 
 ---
 
@@ -143,6 +144,7 @@ nano .env
 - **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
 - **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
+- **Gmail:** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` (OAuth - see [Gmail Setup](#gmail-oauth-setup))
 
 ---
 
@@ -329,6 +331,85 @@ Use this if you need refresh tokens or plan to distribute SDRbot to others.
 
 ---
 
+## 📧 Email Services
+
+SDRbot supports email services for reading, sending, and managing emails directly from the agent.
+
+### Gmail OAuth Setup
+
+Gmail requires OAuth 2.0 authentication via Google Cloud Console.
+
+#### For Personal Use (@gmail.com)
+
+1. **Create a Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Click **Select a project** → **New Project**
+   - Name it (e.g., `SDRbot Gmail`) → **Create**
+
+2. **Enable Gmail API**
+   - Go to **APIs & Services** → **Library**
+   - Search for "Gmail API"
+   - Click **Gmail API** → **Enable**
+
+3. **Configure OAuth Consent Screen**
+   - Go to **APIs & Services** → **OAuth consent screen**
+   - Select **External** → **Create**
+   - Fill in required fields:
+     - **App name:** `SDRbot`
+     - **User support email:** Your email
+     - **Developer contact:** Your email
+   - Click **Save and Continue**
+   - **Scopes:** Click **Add or Remove Scopes**, add:
+     - `https://mail.google.com/` (Full Gmail access)
+   - **Save and Continue**
+   - **Test users:** Click **Add Users** → Add your Gmail address
+   - **Save and Continue** → **Back to Dashboard**
+
+4. **Create OAuth Credentials**
+   - Go to **APIs & Services** → **Credentials**
+   - Click **Create Credentials** → **OAuth client ID**
+   - Application type: **Desktop app**
+   - Name: `SDRbot Desktop`
+   - Click **Create**
+   - Copy the **Client ID** → This is your `GMAIL_CLIENT_ID`
+   - Copy the **Client Secret** → This is your `GMAIL_CLIENT_SECRET`
+
+#### For Google Workspace (Organization)
+
+If you have a Google Workspace account, you can use **Internal** instead of **External** for the OAuth consent screen:
+
+1. Follow the same steps above, but select **Internal** at step 3
+2. No need to add test users - all users in your organization can authenticate
+3. No Google verification required
+
+**Note:** The app stays in "Testing" mode for personal use, which is fine - only test users you added can authenticate. Publishing requires Google verification (unnecessary for personal/internal use).
+
+### Gmail Tools
+
+Once configured, SDRbot provides these Gmail tools:
+
+| Tool | Description |
+|------|-------------|
+| `gmail_search_emails` | Search with Gmail query syntax (from:, subject:, is:unread, etc.) |
+| `gmail_read_email` | Read full email content by message ID |
+| `gmail_send_email` | Send emails with CC/BCC support |
+| `gmail_reply_to_email` | Reply to emails (supports reply-all) |
+| `gmail_create_draft` | Create drafts without sending |
+| `gmail_list_labels` | List all labels/folders |
+| `gmail_modify_labels` | Add/remove labels (star, archive, mark read) |
+| `gmail_trash_email` | Move emails to trash |
+| `gmail_get_thread` | Get all messages in a conversation |
+
+### Authentication Flow
+
+When you first use a Gmail tool:
+1. SDRbot opens your browser to Google's OAuth consent page
+2. Sign in and grant permissions
+3. Token is stored securely in your system keyring
+4. Future requests use the stored token (auto-refreshes)
+
+---
+
 ## 🎮 Usage
 
 Start the agent:
@@ -395,6 +476,7 @@ sdrbot --auto-approve
 - **Pipedrive:** Uses API Token directly, or launches browser OAuth flow if using Client ID/Secret. Tokens are saved securely with automatic refresh.
 - **Twenty:** Uses API Key directly. Supports both cloud (api.twenty.com) and self-hosted instances.
 - **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
+- **Gmail:** Launches browser OAuth flow on first use. Tokens are saved securely in your system keyring with automatic refresh.
 
 ### Example Prompts
 

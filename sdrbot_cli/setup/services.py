@@ -40,6 +40,12 @@ SERVICE_CATEGORIES = {
             ("mongodb", "MongoDB"),
         ],
     },
+    "email": {
+        "label": "Email Services",
+        "services": [
+            ("gmail", "Gmail"),
+        ],
+    },
 }
 
 
@@ -88,6 +94,8 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("MYSQL_HOST"))
     elif service_name == "mongodb":
         configured = bool(os.getenv("MONGODB_URI"))
+    elif service_name == "gmail":
+        configured = bool(os.getenv("GMAIL_CLIENT_ID") and os.getenv("GMAIL_CLIENT_SECRET"))
 
     # Check enabled state from registry
     try:
@@ -602,6 +610,51 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
             env_vars["MONGODB_DB"] = mongo_db
         if mongo_tls == "true":
             env_vars["MONGODB_TLS"] = "true"
+
+    elif service_name == "gmail":
+        console.print(f"[{COLORS['primary']}]--- Gmail Configuration ---[/{COLORS['primary']}]")
+        console.print(
+            f"[{COLORS['dim']}]Create OAuth credentials at console.cloud.google.com[/{COLORS['dim']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]Enable Gmail API and create a Desktop app OAuth client[/{COLORS['dim']}]"
+        )
+        gmail_client_id = await get_or_prompt(
+            "GMAIL_CLIENT_ID", "Gmail Client ID", required=True, force=force
+        )
+        gmail_client_secret = await get_or_prompt(
+            "GMAIL_CLIENT_SECRET",
+            "Gmail Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+
+        if gmail_client_id:
+            env_vars["GMAIL_CLIENT_ID"] = gmail_client_id
+        if gmail_client_secret:
+            env_vars["GMAIL_CLIENT_SECRET"] = gmail_client_secret
+
+        if gmail_client_id and gmail_client_secret:
+            save_env_vars(env_vars)
+            reload_env_and_settings()
+
+            try:
+                import sdrbot_cli.auth.gmail as gmail_auth
+
+                importlib.reload(gmail_auth)
+                gmail_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Gmail authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Gmail authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Gmail.[/{COLORS['dim']}]"
+                )
+
+            enable_service("gmail", sync=False, verbose=True)
+            return True
 
     else:
         console.print(f"[red]Unknown service: {service_name}[/red]")

@@ -277,6 +277,10 @@ class Settings:
     # Apollo Config
     apollo_api_key: str | None
 
+    # Gmail Config
+    gmail_client_id: str | None
+    gmail_client_secret: str | None
+
     # PostgreSQL Config
     postgres_host: str | None
     postgres_port: str | None
@@ -376,6 +380,8 @@ class Settings:
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
         apollo_api_key = os.environ.get("APOLLO_API_KEY")
+        gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
+        gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
 
         # Postgres
         postgres_host = os.environ.get("POSTGRES_HOST")
@@ -433,6 +439,8 @@ class Settings:
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
             apollo_api_key=apollo_api_key,
+            gmail_client_id=gmail_client_id,
+            gmail_client_secret=gmail_client_secret,
             postgres_host=postgres_host,
             postgres_port=postgres_port,
             postgres_user=postgres_user,
@@ -489,6 +497,8 @@ class Settings:
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
         self.apollo_api_key = new_settings.apollo_api_key
+        self.gmail_client_id = new_settings.gmail_client_id
+        self.gmail_client_secret = new_settings.gmail_client_secret
         self.postgres_host = new_settings.postgres_host
         self.postgres_port = new_settings.postgres_port
         self.postgres_user = new_settings.postgres_user
@@ -597,6 +607,11 @@ class Settings:
         return self.apollo_api_key is not None
 
     @property
+    def has_gmail(self) -> bool:
+        """Check if Gmail OAuth credentials are configured."""
+        return self.gmail_client_id is not None and self.gmail_client_secret is not None
+
+    @property
     def has_postgres(self) -> bool:
         """Check if PostgreSQL credentials are configured."""
         return self.postgres_host is not None and self.postgres_db is not None
@@ -645,6 +660,7 @@ class Settings:
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
             "apollo": self.has_apollo,
+            "gmail": self.has_gmail,
             "postgres": self.has_postgres,
             "mysql": self.has_mysql,
             "mongodb": self.has_mongodb,

@@ -1449,4 +1449,14 @@ def get_service_config_screen(service_code: str, service_label: str) -> ModalScr
     elif service_code == "mongodb":
         return MongoDbScreen()
 
+    # Email services
+    elif service_code == "gmail":
+        return OAuthCredentialsScreen(
+            service_code,
+            service_label,
+            "GMAIL_CLIENT_ID",
+            "GMAIL_CLIENT_SECRET",
+            "sdrbot_cli.auth.gmail",
+        )
+
     return None

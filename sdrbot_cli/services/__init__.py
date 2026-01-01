@@ -19,6 +19,7 @@ SERVICES = [
     "apollo",
     "hunter",
     "lusha",
+    "gmail",
     "tavily",
     "postgres",
     "mysql",
