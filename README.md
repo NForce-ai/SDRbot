@@ -59,6 +59,7 @@ By using this software, you acknowledge that:
 | **MongoDB** | Connection URI | — | CRUD Operations, Collection Management |
 | **Tavily** | API Key | — | Web Search, News Retrieval |
 | **Gmail** | OAuth 2.0 | — | Read, Send, Draft, Labels, Threads |
+| **Outlook** | OAuth 2.0 | — | Read, Send, Draft, Folders, Conversations |
 
 ---
 
@@ -145,6 +146,7 @@ nano .env
 - **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
 - **Gmail:** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` (OAuth - see [Gmail Setup](#gmail-oauth-setup))
+- **Outlook:** `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET` (OAuth - see [Outlook Setup](#outlook-oauth-setup))
 
 ---
 
@@ -384,26 +386,51 @@ If you have a Google Workspace account, you can use **Internal** instead of **Ex
 
 **Note:** The app stays in "Testing" mode for personal use, which is fine - only test users you added can authenticate. Publishing requires Google verification (unnecessary for personal/internal use).
 
-### Gmail Tools
+### Outlook OAuth Setup
 
-Once configured, SDRbot provides these Gmail tools:
+Outlook requires OAuth 2.0 authentication via Microsoft Azure Portal (Entra ID).
 
-| Tool | Description |
-|------|-------------|
-| `gmail_search_emails` | Search with Gmail query syntax (from:, subject:, is:unread, etc.) |
-| `gmail_read_email` | Read full email content by message ID |
-| `gmail_send_email` | Send emails with CC/BCC support |
-| `gmail_reply_to_email` | Reply to emails (supports reply-all) |
-| `gmail_create_draft` | Create drafts without sending |
-| `gmail_list_labels` | List all labels/folders |
-| `gmail_modify_labels` | Add/remove labels (star, archive, mark read) |
-| `gmail_trash_email` | Move emails to trash |
-| `gmail_get_thread` | Get all messages in a conversation |
+#### For Personal/Work Accounts
 
-### Authentication Flow
+1. **Go to Azure Portal**
+   - Navigate to [Azure Portal](https://portal.azure.com/)
+   - Sign in with your Microsoft account
 
-When you first use a Gmail tool:
-1. SDRbot opens your browser to Google's OAuth consent page
+2. **Register an Application**
+   - Go to **Microsoft Entra ID** (formerly Azure AD) → **App registrations**
+   - Click **New registration**
+   - Fill in:
+     - **Name:** `SDRbot`
+     - **Supported account types:** Select based on your needs:
+       - "Accounts in any organizational directory and personal Microsoft accounts" (most flexible)
+       - "Accounts in this organizational directory only" (single tenant)
+     - **Redirect URI:** Select "Web" and enter `http://localhost:8080/callback/outlook`
+   - Click **Register**
+
+3. **Configure API Permissions**
+   - Go to **API permissions** → **Add a permission**
+   - Select **Microsoft Graph** → **Delegated permissions**
+   - Add these permissions:
+     - `Mail.ReadWrite` - Read and write mail
+     - `Mail.Send` - Send mail
+     - `User.Read` - Read user profile (required)
+     - `offline_access` - Maintain access (for refresh tokens)
+   - Click **Add permissions**
+   - If admin consent is required, click **Grant admin consent** (or ask your admin)
+
+4. **Create Client Secret**
+   - Go to **Certificates & secrets** → **Client secrets**
+   - Click **New client secret**
+   - Add a description and select expiry
+   - Copy the **Value** immediately → This is your `OUTLOOK_CLIENT_SECRET`
+   - Go to **Overview** and copy the **Application (client) ID** → This is your `OUTLOOK_CLIENT_ID`
+
+**Note:** Client secrets expire. Set a calendar reminder to rotate them before expiry.)
+
+### Email Authentication Flow
+
+When you first use an email tool (Gmail or Outlook):
+1. SDRbot opens your browser to the provider's OAuth consent page
 2. Sign in and grant permissions
 3. Token is stored securely in your system keyring
 4. Future requests use the stored token (auto-refreshes)
@@ -477,6 +504,7 @@ sdrbot --auto-approve
 - **Twenty:** Uses API Key directly. Supports both cloud (api.twenty.com) and self-hosted instances.
 - **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
 - **Gmail:** Launches browser OAuth flow on first use. Tokens are saved securely in your system keyring with automatic refresh.
+- **Outlook:** Launches browser OAuth flow via Microsoft. Tokens are saved securely in your system keyring with automatic refresh.
 
 ### Example Prompts
 

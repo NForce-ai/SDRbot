@@ -1458,5 +1458,13 @@ def get_service_config_screen(service_code: str, service_label: str) -> ModalScr
             "GMAIL_CLIENT_SECRET",
             "sdrbot_cli.auth.gmail",
         )
+    elif service_code == "outlook":
+        return OAuthCredentialsScreen(
+            service_code,
+            service_label,
+            "OUTLOOK_CLIENT_ID",
+            "OUTLOOK_CLIENT_SECRET",
+            "sdrbot_cli.auth.outlook",
+        )
 
     return None

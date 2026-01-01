@@ -44,6 +44,7 @@ SERVICE_CATEGORIES = {
         "label": "Email Services",
         "services": [
             ("gmail", "Gmail"),
+            ("outlook", "Outlook"),
         ],
     },
 }
@@ -96,6 +97,8 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("MONGODB_URI"))
     elif service_name == "gmail":
         configured = bool(os.getenv("GMAIL_CLIENT_ID") and os.getenv("GMAIL_CLIENT_SECRET"))
+    elif service_name == "outlook":
+        configured = bool(os.getenv("OUTLOOK_CLIENT_ID") and os.getenv("OUTLOOK_CLIENT_SECRET"))
 
     # Check enabled state from registry
     try:
@@ -654,6 +657,49 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
                 )
 
             enable_service("gmail", sync=False, verbose=True)
+            return True
+
+    elif service_name == "outlook":
+        console.print(f"[{COLORS['primary']}]--- Outlook Configuration ---[/{COLORS['primary']}]")
+        console.print(
+            f"[{COLORS['dim']}]Create an app registration at portal.azure.com[/{COLORS['dim']}]"
+        )
+        console.print(f"[{COLORS['dim']}]Add Microsoft Graph Mail permissions[/{COLORS['dim']}]")
+        outlook_client_id = await get_or_prompt(
+            "OUTLOOK_CLIENT_ID", "Outlook Client ID (Application ID)", required=True, force=force
+        )
+        outlook_client_secret = await get_or_prompt(
+            "OUTLOOK_CLIENT_SECRET",
+            "Outlook Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+
+        if outlook_client_id:
+            env_vars["OUTLOOK_CLIENT_ID"] = outlook_client_id
+        if outlook_client_secret:
+            env_vars["OUTLOOK_CLIENT_SECRET"] = outlook_client_secret
+
+        if outlook_client_id and outlook_client_secret:
+            save_env_vars(env_vars)
+            reload_env_and_settings()
+
+            try:
+                import sdrbot_cli.auth.outlook as outlook_auth
+
+                importlib.reload(outlook_auth)
+                outlook_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Outlook authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Outlook authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Outlook.[/{COLORS['dim']}]"
+                )
+
+            enable_service("outlook", sync=False, verbose=True)
             return True
 
     else:

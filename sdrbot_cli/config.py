@@ -281,6 +281,10 @@ class Settings:
     gmail_client_id: str | None
     gmail_client_secret: str | None
 
+    # Outlook Config
+    outlook_client_id: str | None
+    outlook_client_secret: str | None
+
     # PostgreSQL Config
     postgres_host: str | None
     postgres_port: str | None
@@ -382,6 +386,8 @@ class Settings:
         apollo_api_key = os.environ.get("APOLLO_API_KEY")
         gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
         gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
+        outlook_client_id = os.environ.get("OUTLOOK_CLIENT_ID")
+        outlook_client_secret = os.environ.get("OUTLOOK_CLIENT_SECRET")
 
         # Postgres
         postgres_host = os.environ.get("POSTGRES_HOST")
@@ -441,6 +447,8 @@ class Settings:
             apollo_api_key=apollo_api_key,
             gmail_client_id=gmail_client_id,
             gmail_client_secret=gmail_client_secret,
+            outlook_client_id=outlook_client_id,
+            outlook_client_secret=outlook_client_secret,
             postgres_host=postgres_host,
             postgres_port=postgres_port,
             postgres_user=postgres_user,
@@ -499,6 +507,8 @@ class Settings:
         self.apollo_api_key = new_settings.apollo_api_key
         self.gmail_client_id = new_settings.gmail_client_id
         self.gmail_client_secret = new_settings.gmail_client_secret
+        self.outlook_client_id = new_settings.outlook_client_id
+        self.outlook_client_secret = new_settings.outlook_client_secret
         self.postgres_host = new_settings.postgres_host
         self.postgres_port = new_settings.postgres_port
         self.postgres_user = new_settings.postgres_user
@@ -612,6 +622,11 @@ class Settings:
         return self.gmail_client_id is not None and self.gmail_client_secret is not None
 
     @property
+    def has_outlook(self) -> bool:
+        """Check if Outlook OAuth credentials are configured."""
+        return self.outlook_client_id is not None and self.outlook_client_secret is not None
+
+    @property
     def has_postgres(self) -> bool:
         """Check if PostgreSQL credentials are configured."""
         return self.postgres_host is not None and self.postgres_db is not None
@@ -661,6 +676,7 @@ class Settings:
             "hunter": self.has_hunter,
             "apollo": self.has_apollo,
             "gmail": self.has_gmail,
+            "outlook": self.has_outlook,
             "postgres": self.has_postgres,
             "mysql": self.has_mysql,
             "mongodb": self.has_mongodb,
