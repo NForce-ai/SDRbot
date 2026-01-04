@@ -366,7 +366,7 @@ class SDRBotTUI(App[None]):
         Binding("ctrl+g", "show_help", "Help"),
         Binding("ctrl+s", "show_setup", "Setup"),
         Binding("ctrl+j", "newline", "New line", show=False),
-        Binding("ctrl+a", "toggle_auto_approve", "Auto-approve", priority=True),
+        Binding("ctrl+a", "toggle_auto_approve", "Auto-Approve", priority=True),
         Binding("ctrl+c", "interrupt_agent", "Interrupt", priority=True),
         Binding("ctrl+t", "cycle_tool_scope", "Tool Scope"),
     ]
