@@ -445,9 +445,8 @@ class SDRBotTUI(App[None]):
         self.query_one("#agent_info", AgentInfo).update_tool_scope(new_scope)
         self.notify(f"Tool scope: {new_scope.capitalize()}", severity="information")
 
-        # Reload agent to apply new tool scope
-        if self.agent_worker:
-            self.run_worker(self.agent_worker._reload_agent_async(), exclusive=True)
+        # Reload agent silently to apply new tool scope
+        self.run_worker(self._reload_existing_agent(), exclusive=True)
 
     def _update_image_attachment_bar(self) -> None:
         """Update the image attachment bar with current image count."""
