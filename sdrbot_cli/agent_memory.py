@@ -77,11 +77,11 @@ DEFAULT_MEMORY_SNIPPET = """<agent_memory>
 
 
 class AgentMemoryMiddleware(AgentMiddleware):
-    """Middleware for loading agent-specific long-term memory.
+    """Middleware for loading agent-specific prompt and long-term memory.
 
-    This middleware loads the agent's long-term memory from memory.md
-    and injects it into the system prompt. Memory is stored in the agent's
-    folder at ./agents/{agent}/memory.md
+    This middleware loads the agent's prompt from prompt.md and memory from
+    memory.md, injecting both into the system prompt. Files are stored in the
+    agent's folder at ./agents/{agent}/
     """
 
     state_schema = AgentMemoryState
@@ -103,65 +103,78 @@ class AgentMemoryMiddleware(AgentMiddleware):
         """
         self.settings = settings
         self.assistant_id = assistant_id
+        self.prompt_path = settings.get_agent_prompt_path(assistant_id)
         self.memory_path = settings.get_agent_memory_path(assistant_id)
         self.system_prompt_template = system_prompt_template or DEFAULT_MEMORY_SNIPPET
 
+        # Load prompt once at middleware init (fresh on each agent reload)
+        self._prompt: str | None = None
+        if self.prompt_path.exists():
+            with contextlib.suppress(OSError, UnicodeDecodeError):
+                self._prompt = self.prompt_path.read_text()
+
     def before_agent(
         self,
-        state: AgentMemoryState,
-        runtime: Runtime,
+        state: AgentMemoryState,  # noqa: ARG002
+        runtime: Runtime,  # noqa: ARG002
     ) -> AgentMemoryStateUpdate:
         """Load agent memory from file before agent execution.
 
-        Dynamically checks for file existence on every call to catch user updates.
+        Memory is re-read from disk on every call to pick up memory tool writes.
+        Prompt is loaded once in __init__ and refreshed on agent reload.
 
         Args:
-            state: Current agent state.
-            runtime: Runtime context.
+            state: Current agent state (unused).
+            runtime: Runtime context (unused).
 
         Returns:
-            Updated state with memory populated.
+            Updated state with memory populated from disk.
         """
         result: AgentMemoryStateUpdate = {}
 
-        # Load memory from ./agents/{agent}/memory.md
-        if "memory" not in state:
-            if self.memory_path.exists():
-                with contextlib.suppress(OSError, UnicodeDecodeError):
-                    result["memory"] = self.memory_path.read_text()
+        # Re-read memory from disk each call to pick up memory tool writes
+        if self.memory_path.exists():
+            with contextlib.suppress(OSError, UnicodeDecodeError):
+                result["memory"] = self.memory_path.read_text()
 
         return result
 
     def _build_system_prompt(self, request: ModelRequest) -> str:
-        """Build the complete system prompt with memory section.
+        """Build the complete system prompt with prompt and memory sections.
 
         Args:
             request: The model request containing state and base system prompt.
 
         Returns:
-            Complete system prompt with memory section injected.
+            Complete system prompt with prompt and memory sections injected.
         """
-        # Extract memory from state
+        # Get prompt from instance var (loaded once at init)
+        # Get memory from state (re-read each call via before_agent)
         state = cast("AgentMemoryState", request.state)
         memory = state.get("memory")
         base_system_prompt = request.system_prompt
 
-        # Format memory section
+        # Build system prompt in order: prompt -> memory -> base -> memory docs
+        parts = []
+
+        # 1. Agent prompt (instructions from prompt.md, loaded at init)
+        if self._prompt:
+            parts.append(f"<agent_prompt>\n{self._prompt}\n</agent_prompt>")
+
+        # 2. Agent memory (learned facts from memory.md)
         memory_section = self.system_prompt_template.format(
             memory=memory if memory else "(No memory.md file yet)",
         )
+        parts.append(memory_section)
 
-        system_prompt = memory_section
-
+        # 3. Base system prompt (environment, skills, services)
         if base_system_prompt:
-            system_prompt += "\n\n" + base_system_prompt
+            parts.append(base_system_prompt)
 
-        # Add memory documentation
-        system_prompt += "\n\n" + LONGTERM_MEMORY_SYSTEM_PROMPT.format(
-            memory_path=str(self.memory_path),
-        )
+        # 4. Memory documentation (how to use memory tools)
+        parts.append(LONGTERM_MEMORY_SYSTEM_PROMPT.format(memory_path=str(self.memory_path)))
 
-        return system_prompt
+        return "\n\n".join(parts)
 
     def wrap_model_call(
         self,

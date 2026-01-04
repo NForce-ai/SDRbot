@@ -280,8 +280,18 @@ def twenty_search_records(
 
         # Add search filter if query provided
         # Twenty uses query-string filter format: field[op]:value
+        # For composite fields (like FULL_NAME on people), use dot notation
         if query:
-            params["filter"] = f'or(name[ilike]:"%{query}%",email[ilike]:"%{query}%")'
+            if object_type == "people":
+                # People have composite name field (FULL_NAME) with sub-fields
+                params["filter"] = (
+                    f'or(name.firstName[ilike]:"%{query}%",'
+                    f'name.lastName[ilike]:"%{query}%",'
+                    f'emails.primaryEmail[ilike]:"%{query}%")'
+                )
+            else:
+                # Companies and other objects have simple name field
+                params["filter"] = f'or(name[ilike]:"%{query}%",domainName[ilike]:"%{query}%")'
 
         response = client.get(f"/{object_type}", params=params)
         records = response.get("data", {}).get(object_type, [])

@@ -707,7 +707,9 @@ def _generate_update_tool(obj_type: str, singular: str, fields: list[dict]) -> l
     custom_fields = [f for f in fields if not f.get("is_standard", True)]
 
     # Build function signature - ID is required, all others optional
-    params = [f"    {singular}_id: int,"]
+    # Leads use UUID strings, other objects use integer IDs
+    id_type = "str" if obj_type == "leads" else "int"
+    params = [f"    {singular}_id: {id_type},"]
     for f in fields:
         py_type = _field_to_python_type(f)
         param_name = f.get("param_name", f["key"])
@@ -870,6 +872,8 @@ def _generate_search_tool(
 def _generate_get_tool(obj_type: str, singular: str, output_fields: list[dict]) -> list[str]:
     """Generate a get-by-ID tool for an object type."""
     func_name = f"pipedrive_get_{singular}"
+    # Leads use UUID strings, other objects use integer IDs
+    id_type = "str" if obj_type == "leads" else "int"
 
     # Build returns docstring with field info
     doc_lines = [f'    """Get a {singular} by ID from Pipedrive.']
@@ -907,7 +911,7 @@ def _generate_get_tool(obj_type: str, singular: str, output_fields: list[dict]) 
 
     return [
         "@tool",
-        f"def {func_name}({singular}_id: int) -> str:",
+        f"def {func_name}({singular}_id: {id_type}) -> str:",
         *doc_lines,
         *body,
     ]
@@ -916,6 +920,8 @@ def _generate_get_tool(obj_type: str, singular: str, output_fields: list[dict]) 
 def _generate_delete_tool(obj_type: str, singular: str) -> list[str]:
     """Generate a delete tool for an object type."""
     func_name = f"pipedrive_delete_{singular}"
+    # Leads use UUID strings, other objects use integer IDs
+    id_type = "str" if obj_type == "leads" else "int"
 
     doc_lines = [f'    """Delete a {singular} from Pipedrive.']
     doc_lines.append("")
@@ -937,7 +943,7 @@ def _generate_delete_tool(obj_type: str, singular: str) -> list[str]:
 
     return [
         "@tool",
-        f"def {func_name}({singular}_id: int) -> str:",
+        f"def {func_name}({singular}_id: {id_type}) -> str:",
         *doc_lines,
         *body,
     ]
