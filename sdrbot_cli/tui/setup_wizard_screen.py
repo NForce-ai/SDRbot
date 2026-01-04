@@ -204,6 +204,15 @@ class SetupWizardScreen(Screen[bool | None]):
             new_scope = cycle_tool_scope()
             self._refresh_menu()
             self.notify(f"Tool scope: {new_scope.capitalize()}")
+            # Update the app's AgentInfo widget
+            try:
+                from sdrbot_cli.tui.widgets import AgentInfo
+
+                self.app.query_one("#agent_info", AgentInfo).update_tool_scope(new_scope)
+            except Exception:
+                pass  # Widget may not exist in some contexts
+            # Reload agent silently to apply new tool scope
+            self.app.run_worker(self.app._reload_existing_agent(), exclusive=True)
 
     def _on_section_complete(self, result: bool | None = None) -> None:
         """Called when a section screen is dismissed."""
