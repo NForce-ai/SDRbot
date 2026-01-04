@@ -50,6 +50,26 @@ Ask the user:
 4. **Record owner**: Which user should own the imported records?
 5. **Emails**: Migrate email history? (Default: NO)
 
+### Pipeline Handling (if migrating deals/opportunities)
+
+If the source CRM has **multiple pipelines**, propose options to the user:
+
+**Option A: Map to Target Pipelines (1:1)**
+- Best when target CRM supports multiple pipelines
+- Create matching pipelines in target, map stages within each
+
+**Option B: Merge into Single Pipeline**
+- Combine all deals into one pipeline
+- Create a custom field (e.g., `source_pipeline`) to preserve origin
+- Map all stages to a unified set
+
+**Option C: Create Pipeline Tracking Fields**
+- Best when target CRM has limited/no pipeline support
+- Create custom fields: `pipeline_name` and `pipeline_stage`
+- Store source pipeline info as field values
+
+Present these options with context about target CRM capabilities. Let the user decide based on their workflow needs.
+
 ---
 
 ## Phase 3: Write Migration Plan
@@ -100,7 +120,26 @@ Create `files/<source>_to_<target>_migration_plan.md`:
 | value | amount | Direct |
 | stage | stage | Map values |
 
-## Stage Mappings
+## Pipeline Strategy
+
+| Item | Value |
+|------|-------|
+| Source Pipelines | [List: Sales, Enterprise, etc.] |
+| Target Pipelines | [List or "Single pipeline"] |
+| Strategy | [Option A/B/C from clarifications] |
+
+### Pipeline Mappings (if Option A)
+
+| Source Pipeline | Target Pipeline |
+|-----------------|-----------------|
+| Sales | Sales |
+| Enterprise | Enterprise Deals |
+
+### Stage Mappings
+
+For each pipeline (or unified if merging):
+
+**[Pipeline Name]**
 
 | Source Stage | Target Stage |
 |--------------|--------------|
@@ -112,6 +151,8 @@ Create `files/<source>_to_<target>_migration_plan.md`:
 | Object | Field Name | Type | Options |
 |--------|------------|------|---------|
 | person | leadSource | SELECT | ... |
+| opportunity | source_pipeline | TEXT | (if Option B/C) |
+| opportunity | source_pipeline_stage | TEXT | (if Option C) |
 ```
 
 **Get user approval before proceeding.**
