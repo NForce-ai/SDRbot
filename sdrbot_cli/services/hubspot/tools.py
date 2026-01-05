@@ -542,6 +542,59 @@ def hubspot_get_record(object_type: str, record_id: str) -> str:
         return f"Error getting {object_type}: {str(e)}"
 
 
+HUBSPOT_OBJECTS = ["contacts", "companies", "deals", "tickets", "products"]
+
+
+@tool
+def hubspot_count_records(object_type: str | None = None) -> str:
+    """Count records for each object type in HubSpot.
+
+    Args:
+        object_type: Optional - count a specific object type only (e.g., "contacts").
+                     If not provided, counts standard CRM objects.
+
+    Returns:
+        Record counts for each object type.
+    """
+    hs = get_hs()
+
+    if object_type:
+        types_to_count = [object_type]
+    else:
+        types_to_count = HUBSPOT_OBJECTS
+
+    results = {}
+    for obj_name in types_to_count:
+        try:
+            response = hs.crm.objects.search_api.do_search(
+                object_type=obj_name,
+                public_object_search_request={"limit": 0, "properties": [], "filter_groups": []},
+            )
+            results[obj_name] = response.total
+        except Exception:
+            try:
+                response = hs.crm.objects.basic_api.get_page(
+                    object_type=obj_name, limit=1, properties=[]
+                )
+                results[obj_name] = (
+                    f"{len(response.results)}+" if response.paging else len(response.results)
+                )
+            except Exception as e2:
+                results[obj_name] = f"Error: {str(e2)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for obj_name, count in results.items():
+        lines.append(f"  {obj_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static HubSpot tools.
 
@@ -564,4 +617,5 @@ def get_static_tools() -> list[BaseTool]:
         # Generic
         hubspot_search_records,
         hubspot_get_record,
+        hubspot_count_records,
     ]

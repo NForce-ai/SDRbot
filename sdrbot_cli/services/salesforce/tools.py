@@ -368,6 +368,49 @@ def salesforce_get_record(object_type: str, record_id: str) -> str:
         return f"Error getting {object_type}: {str(e)}"
 
 
+SALESFORCE_OBJECTS = ["Lead", "Contact", "Account", "Opportunity", "Case", "Task"]
+
+
+@tool
+def salesforce_count_records(object_name: str | None = None) -> str:
+    """Count records for each object type in Salesforce.
+
+    Args:
+        object_name: Optional - count a specific object only (e.g., "Contact").
+                     If not provided, counts standard CRM objects.
+
+    Returns:
+        Record counts for each object type.
+    """
+    sf = get_sf()
+
+    if object_name:
+        types_to_count = [object_name]
+    else:
+        types_to_count = SALESFORCE_OBJECTS
+
+    results = {}
+    for obj_name in types_to_count:
+        try:
+            query = f"SELECT COUNT() FROM {obj_name}"
+            result = sf.query(query)
+            results[obj_name] = result.get("totalSize", 0)
+        except Exception as e:
+            results[obj_name] = f"Error: {str(e)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for obj_name, count in results.items():
+        lines.append(f"  {obj_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Salesforce tools.
 
@@ -387,4 +430,5 @@ def get_static_tools() -> list[BaseTool]:
         # Generic
         salesforce_search_records,
         salesforce_get_record,
+        salesforce_count_records,
     ]

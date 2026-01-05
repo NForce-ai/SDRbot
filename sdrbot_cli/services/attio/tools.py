@@ -126,6 +126,69 @@ def attio_get_record(object_slug: str, record_id: str) -> str:
         return f"Error getting record: {str(e)}"
 
 
+ATTIO_OBJECTS = ["people", "companies"]
+
+
+def _count_attio_records(client, object_slug: str, max_pages: int = 100) -> int:
+    """Count records by paginating through results."""
+    count = 0
+    page_token = None
+    limit = 500
+
+    for _ in range(max_pages):
+        payload = {"limit": limit}
+        if page_token:
+            payload["page_token"] = page_token
+
+        response = client.request("POST", f"/objects/{object_slug}/records/query", json=payload)
+        data = response.get("data", [])
+        count += len(data)
+
+        page_token = response.get("next_page_token")
+        if not page_token:
+            break
+
+    return count
+
+
+@tool
+def attio_count_records(object_slug: str | None = None) -> str:
+    """Count records for each object type in Attio.
+
+    Args:
+        object_slug: Optional - count a specific object only (e.g., "people").
+                     If not provided, counts standard objects.
+
+    Returns:
+        Record counts for each object type.
+    """
+    client = get_attio()
+
+    if object_slug:
+        types_to_count = [object_slug]
+    else:
+        types_to_count = ATTIO_OBJECTS
+
+    results = {}
+    for obj_name in types_to_count:
+        try:
+            results[obj_name] = _count_attio_records(client, obj_name)
+        except Exception as e:
+            results[obj_name] = f"Error: {str(e)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for obj_name, count in results.items():
+        lines.append(f"  {obj_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Attio tools.
 
@@ -136,4 +199,5 @@ def get_static_tools() -> list[BaseTool]:
         attio_create_note,
         attio_list_notes,
         attio_get_record,
+        attio_count_records,
     ]

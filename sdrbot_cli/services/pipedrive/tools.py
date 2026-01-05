@@ -356,6 +356,73 @@ def pipedrive_get_lead_labels() -> str:
         return f"Error getting lead labels: {str(e)}"
 
 
+PIPEDRIVE_OBJECTS = ["deals", "persons", "organizations", "products", "activities", "leads"]
+
+
+def _count_pipedrive_records(client, endpoint: str, max_pages: int = 100) -> int:
+    """Count records by paginating through results.
+
+    Pipedrive list endpoints don't return total_count, so we paginate.
+    Uses limit=500 (max) to minimize API calls.
+    """
+    count = 0
+    start = 0
+    limit = 500  # Pipedrive max limit
+
+    for _ in range(max_pages):
+        response = client.get(endpoint, params={"start": start, "limit": limit})
+        data = response.get("data") or []
+        count += len(data)
+
+        pagination = response.get("additional_data", {}).get("pagination", {})
+        if not pagination.get("more_items_in_collection"):
+            break
+        start = pagination.get("next_start", start + limit)
+
+    return count
+
+
+@tool
+def pipedrive_count_records(object_type: str | None = None) -> str:
+    """Count records for each object type in Pipedrive.
+
+    Args:
+        object_type: Optional - count a specific object type only.
+                     Valid types: deals, persons, organizations, products, activities, leads.
+                     If not provided, counts all object types.
+
+    Returns:
+        Record counts for each object type.
+    """
+    client = get_pipedrive()
+
+    if object_type:
+        if object_type not in PIPEDRIVE_OBJECTS:
+            return f"Error: Unknown object type '{object_type}'. Valid types: {', '.join(PIPEDRIVE_OBJECTS)}"
+        types_to_count = [object_type]
+    else:
+        types_to_count = PIPEDRIVE_OBJECTS
+
+    results = {}
+    for obj_name in types_to_count:
+        try:
+            results[obj_name] = _count_pipedrive_records(client, f"/{obj_name}")
+        except Exception as e:
+            results[obj_name] = f"Error: {str(e)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for obj_name, count in results.items():
+        lines.append(f"  {obj_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Pipedrive tools.
 
@@ -370,4 +437,5 @@ def get_static_tools() -> list[BaseTool]:
         pipedrive_list_users,
         pipedrive_get_deal_activities,
         pipedrive_get_lead_labels,
+        pipedrive_count_records,
     ]
