@@ -16,11 +16,12 @@ class TestSalesforceToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 8
+        assert len(tools) == 9
         tool_names = [t.name for t in tools]
         # Query tools
         assert "salesforce_soql_query" in tool_names
         assert "salesforce_sosl_search" in tool_names
+        assert "salesforce_count_records" in tool_names
         # Notes tools
         assert "salesforce_create_note_on_record" in tool_names
         assert "salesforce_list_notes_on_record" in tool_names

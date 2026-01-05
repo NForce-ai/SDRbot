@@ -16,12 +16,13 @@ class TestZohoCRMToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 6
+        assert len(tools) == 7
         tool_names = [t.name for t in tools]
         assert "zohocrm_coql_query" in tool_names
         assert "zohocrm_convert_lead" in tool_names
         assert "zohocrm_add_note" in tool_names
         assert "zohocrm_list_notes" in tool_names
+        assert "zohocrm_count_records" in tool_names
         assert "zohocrm_get_related_records" in tool_names
         assert "zohocrm_list_users" in tool_names
 

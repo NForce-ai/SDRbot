@@ -16,12 +16,13 @@ class TestPipedriveToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 7
+        assert len(tools) == 8
         tool_names = [t.name for t in tools]
         assert "pipedrive_search" in tool_names
         assert "pipedrive_add_note" in tool_names
         assert "pipedrive_list_notes" in tool_names
         assert "pipedrive_list_pipelines" in tool_names
+        assert "pipedrive_count_records" in tool_names
         assert "pipedrive_list_users" in tool_names
         assert "pipedrive_get_deal_activities" in tool_names
 

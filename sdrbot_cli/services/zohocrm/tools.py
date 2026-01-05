@@ -285,6 +285,48 @@ def zohocrm_list_users(limit: int = 50) -> str:
         return f"Error listing users: {str(e)}"
 
 
+ZOHO_MODULES = ["Leads", "Contacts", "Accounts", "Deals", "Tasks"]
+
+
+@tool
+def zohocrm_count_records(module_api_name: str | None = None) -> str:
+    """Count records for each module in Zoho CRM.
+
+    Args:
+        module_api_name: Optional - count a specific module only (e.g., "Leads").
+                         If not provided, counts standard CRM modules.
+
+    Returns:
+        Record counts for each module.
+    """
+    zoho = get_zoho()
+
+    if module_api_name:
+        types_to_count = [module_api_name]
+    else:
+        types_to_count = ZOHO_MODULES
+
+    results = {}
+    for module_name in types_to_count:
+        try:
+            response = zoho.get(f"/{module_name}/actions/count")
+            results[module_name] = response.get("count", 0)
+        except Exception as e:
+            results[module_name] = f"Error: {str(e)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for module_name, count in results.items():
+        lines.append(f"  {module_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Zoho CRM tools.
 
@@ -298,4 +340,5 @@ def get_static_tools() -> list[BaseTool]:
         zohocrm_list_notes,
         zohocrm_get_related_records,
         zohocrm_list_users,
+        zohocrm_count_records,
     ]

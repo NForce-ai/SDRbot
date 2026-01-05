@@ -16,12 +16,13 @@ class TestTwentyToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 6
+        assert len(tools) == 7
         tool_names = [t.name for t in tools]
         # Note/Task linking tools (CRUD is generated, linking is static)
         assert "twenty_link_note_to_record" in tool_names
         assert "twenty_list_notes_on_record" in tool_names
         assert "twenty_link_task_to_record" in tool_names
+        assert "twenty_count_records" in tool_names
         assert "twenty_list_tasks_on_record" in tool_names
         # Search/get tools
         assert "twenty_search_records" in tool_names

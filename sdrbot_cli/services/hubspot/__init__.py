@@ -9,7 +9,8 @@ from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_METADATA_KEY
 
 # Standard objects - tools for these remain in "standard" scope
 # All other objects are "extended" scope
-STANDARD_OBJECTS = {"contacts", "companies", "deals", "tickets"}
+# NOTE: Use singular form to match generated tool names (hubspot_create_contact, etc.)
+STANDARD_OBJECTS = {"contact", "company", "deal", "ticket"}
 
 
 def _extract_object_from_tool_name(tool_name: str) -> str | None:

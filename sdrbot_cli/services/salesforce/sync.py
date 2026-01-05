@@ -308,6 +308,9 @@ def _generate_create_tool(obj_name: str, fields: list[dict]) -> list[str]:
     """
     func_name = f"salesforce_create_{obj_name.lower().replace('__c', '')}"
 
+    # Sort fields: required first (Python requires this), then alphabetically
+    fields = sorted(fields, key=lambda f: (not f.get("required"), f["name"]))
+
     # Build parameter list
     params = []
     for f in fields:
