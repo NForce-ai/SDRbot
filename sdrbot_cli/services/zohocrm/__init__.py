@@ -8,8 +8,9 @@ from sdrbot_cli.config import settings
 from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_METADATA_KEY
 
 # Standard objects - tools for these remain in "standard" scope
-# All other objects are "extended" scope (case-insensitive comparison)
-STANDARD_OBJECTS = {"leads", "contacts", "accounts", "deals"}
+# All other objects are "extended" scope
+# NOTE: Use singular form to match generated tool names (zohocrm_create_lead, etc.)
+STANDARD_OBJECTS = {"lead", "contact", "account", "deal"}
 
 
 def _extract_object_from_tool_name(tool_name: str) -> str | None:
