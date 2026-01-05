@@ -37,6 +37,8 @@ SCOPES = [
     "ZohoCRM.settings.fields.ALL",
     "ZohoCRM.settings.modules.ALL",
     "ZohoCRM.users.READ",
+    "ZohoCRM.coql.READ",
+    "ZohoSearch.securesearch.READ",  # Required for /actions/count endpoint
 ]
 
 # Buffer time (in seconds) before token expiry to trigger proactive refresh

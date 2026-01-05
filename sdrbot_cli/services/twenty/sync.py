@@ -384,10 +384,11 @@ EXCLUDED_FIELDS = {
 
 # Field types that are system/internal and should be excluded
 EXCLUDED_FIELD_TYPES = {
-    "DATE_TIME",  # System timestamps (createdAt, updatedAt, deletedAt)
     "ACTOR",  # System actor fields (createdBy)
     "RELATION",  # Handled via associations, not direct fields
     # Note: UUID is NOT excluded - companyId, etc. are foreign keys we want to expose
+    # Note: DATE_TIME is NOT excluded - dueAt, closeDate etc are user-settable.
+    #       System timestamps (createdAt, updatedAt, deletedAt) are filtered by EXCLUDED_FIELDS.
 }
 
 # Complex field types that need special handling (exclude for now)

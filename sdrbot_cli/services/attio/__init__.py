@@ -9,17 +9,19 @@ from sdrbot_cli.tools import SCOPE_EXTENDED, SCOPE_METADATA_KEY
 
 # Standard objects - tools for these remain in "standard" scope
 # All other objects are "extended" scope
-STANDARD_OBJECTS = {"people", "companies"}
+# NOTE: Includes both singular (create/update/get/delete) and plural (query) forms
+STANDARD_OBJECTS = {"person", "company", "people", "companies"}
 
 
 def _extract_object_from_tool_name(tool_name: str) -> str | None:
     """Extract object name from a generated tool name.
 
     Examples:
-        attio_create_people -> people
-        attio_update_companies -> companies
+        attio_create_person -> person
+        attio_update_company -> company
+        attio_query_people -> people (search uses plural)
     """
-    match = re.match(r"attio_(?:create|update|search|get|delete)_(.+)", tool_name)
+    match = re.match(r"attio_(?:create|update|query|get|delete)_(.+)", tool_name)
     return match.group(1) if match else None
 
 

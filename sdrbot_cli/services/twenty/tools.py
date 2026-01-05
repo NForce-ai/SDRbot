@@ -349,6 +349,59 @@ def twenty_get_record(object_type: str, record_id: str) -> str:
         return f"Error getting record: {str(e)}"
 
 
+TWENTY_OBJECTS = ["companies", "people", "opportunities", "tasks", "notes"]
+
+
+@tool
+def twenty_count_records(object_type: str | None = None) -> str:
+    """Count records for each object type in Twenty.
+
+    Args:
+        object_type: Optional - count a specific object type only (plural form, e.g., "companies").
+                     If not provided, counts all main business objects.
+
+    Returns:
+        Record counts for each object type.
+    """
+    client = get_twenty()
+
+    if object_type:
+        types_to_count = [object_type]
+    else:
+        types_to_count = TWENTY_OBJECTS
+
+    results = {}
+    for obj_name in types_to_count:
+        try:
+            response = client.get(f"/{obj_name}", params={"limit": 1})
+            total_count = response.get("totalCount")
+
+            if total_count is None:
+                data = response.get("data", {})
+                if isinstance(data, dict):
+                    total_count = data.get("totalCount")
+
+            if total_count is not None:
+                results[obj_name] = total_count
+            else:
+                records = response.get(obj_name, []) or response.get("data", {}).get(obj_name, [])
+                results[obj_name] = len(records) if records else 0
+        except Exception as e:
+            results[obj_name] = f"Error: {str(e)}"
+
+    lines = ["Record counts:"]
+    total = 0
+    for obj_name, count in results.items():
+        lines.append(f"  {obj_name}: {count}")
+        if isinstance(count, int):
+            total += count
+    if len(results) > 1:
+        lines.append("  ---")
+        lines.append(f"  Total: {total}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Twenty tools.
 
@@ -364,4 +417,5 @@ def get_static_tools() -> list[BaseTool]:
         # Generic tools
         twenty_search_records,
         twenty_get_record,
+        twenty_count_records,
     ]

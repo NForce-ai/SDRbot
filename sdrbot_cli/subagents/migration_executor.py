@@ -564,15 +564,56 @@ After writing, update state to `phase=validate` and run the script.
 
 ---
 
-## Phase: VALIDATE
+## Running Scripts (MANDATORY)
 
-Run the current stage script (no flags = validation):
+**CRITICAL: ALL script executions MUST be run in background with logging.**
+
+Never run scripts directly in the foreground. Use absolute paths to avoid directory confusion.
+
+### Linux / macOS
 
 ```bash
-cd files/migration && python {index}_{stage}.py 2>&1
+# Start script in background with logging (use absolute path to working directory)
+nohup python /absolute/path/to/files/migration/{script}.py [args] > /absolute/path/to/files/migration/{logfile}.log 2>&1 &
+
+# Monitor the log (always use absolute path)
+tail -f /absolute/path/to/files/migration/{logfile}.log
+
+# Read full log when complete
+cat /absolute/path/to/files/migration/{logfile}.log
 ```
 
-Analyze output:
+### Windows (PowerShell)
+
+```powershell
+# Start script in background with logging
+Start-Process -NoNewWindow -FilePath "python" -ArgumentList "C:\absolute\path\to\files\migration\{script}.py", "[args]" -RedirectStandardOutput "C:\absolute\path\to\files\migration\{logfile}.log" -RedirectStandardError "C:\absolute\path\to\files\migration\{logfile}_err.log"
+
+# Monitor the log
+Get-Content -Path "C:\absolute\path\to\files\migration\{logfile}.log" -Wait -Tail 50
+
+# Read full log when complete
+Get-Content "C:\absolute\path\to\files\migration\{logfile}.log"
+```
+
+**IMPORTANT:** Replace `/absolute/path/to` or `C:\absolute\path\to` with your actual working directory path.
+
+This applies to:
+- Validation runs
+- Live migration runs
+- Reset operations
+- Any other script execution
+
+---
+
+## Phase: VALIDATE
+
+Run the current stage script in background with logging. Use the platform-specific commands from "Running Scripts" section above with:
+- Script: `{index}_{stage}.py`
+- Log file: `{stage}_validate.log`
+- Args: (none for validation)
+
+When complete, read the full log and analyze output:
 - **VALIDATION PASSED**: Update to `phase=ready`, return `READY_FOR_LIVE: <stage> - <count> records`
 - **VALIDATION FAILED**: Update to `phase=fixing`, fix script, re-run
 - **Need user decision**: Return `NEED_INPUT: <question>`
@@ -581,7 +622,7 @@ Analyze output:
 
 ## Phase: FIXING
 
-Read error, edit script, re-run validation.
+Read error from log, edit script, re-run validation using platform-specific commands from "Running Scripts" section.
 
 Track `validation_attempts`. After 3 failures:
 `ERROR: Stage <stage> failed after 3 attempts. Last error: <details>`
@@ -598,28 +639,70 @@ Wait for parent to re-invoke with approval.
 
 ## Phase: LIVE
 
-User approved. **Always run in background with logging:**
+User approved. Run in background with logging using platform-specific commands from "Running Scripts" section:
+- Script: `{index}_{stage}.py`
+- Log file: `{stage}_live.log`
+- Args: `--live`
 
-```bash
-cd files/migration && python {index}_{stage}.py --live > {stage}.log 2>&1
-```
+Return: `EXECUTING: <stage> - Running in background.`
 
-With `run_in_background: true` in your shell tool call.
+Monitor progress by tailing the log, then read the full log when complete.
 
-Return: `EXECUTING: <stage> - Running in background. Monitor: tail -f files/migration/{stage}.log`
-
-To check progress/completion:
-```bash
-tail -30 files/migration/{stage}.log
-```
-
-Look for "Results:" line to confirm completion. Read the log to get final counts.
+Look for "Results:" line to confirm completion. Extract final counts from the log.
 
 After completion, update state:
 - Increment `current_stage_index`
 - Save results to `stage_results`
 - If more stages: `phase=write_stage`, return `STAGE_COMPLETE: <stage> done. Proceeding to <next>.`
 - If last stage: `phase=done`, return `DONE: <full summary>`
+
+---
+
+## Tool Usage
+
+**Always prefer generated tools over direct API calls.** All scripts (migration, repair, fix) should use the tool pattern:
+
+```python
+from _shared import load_tools, invoke_tool
+
+_source = load_tools("<source>_tools.py")
+_target = load_tools("<target>_tools.py")
+
+# Use the tools
+source_get = _source.get("<source>_get_<entity>")
+target_update = _target.get("<target>_update_<entity>")
+```
+
+### If a field isn't in the generated tool
+
+1. **Check tool signature first** - grep the generated tools file to see available parameters
+2. **Use generic tools** - Most CRMs have `<crm>_update_record` or similar that accepts any field
+3. **Regenerate tools** - If the field exists in the API but not in tools, ask the user to regenerate via `/setup`
+4. **Direct API as last resort** - Only if tools genuinely can't support the operation
+
+### Preferred approach:
+
+```python
+# GOOD - uses generated tools
+_twenty = load_tools("twenty_tools.py")
+twenty_update_task = _twenty.get("twenty_update_task")
+invoke_tool(twenty_update_task, task_id=task_id, dueAt=due_at)
+
+# OR if field not in specific tool, use generic update
+twenty_update_record = _twenty.get("twenty_update_record")
+invoke_tool(twenty_update_record, object_type="task", record_id=task_id, dueAt=due_at)
+```
+
+### Direct API (only when tools aren't viable):
+
+```python
+# OK when no tool supports the operation
+from sdrbot_cli.auth.twenty import TwentyClient
+client = TwentyClient()
+client.patch(f"/tasks/{task_id}", json={"dueAt": due_at})
+```
+
+Using tools ensures consistent error handling, rate limiting, and authentication.
 
 ---
 

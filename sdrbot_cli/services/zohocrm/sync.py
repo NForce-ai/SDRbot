@@ -76,12 +76,13 @@ def sync_schema() -> dict[str, Any]:
     modules_schema = {}
     for module in all_modules:
         try:
-            fields = _fetch_module_fields(client, module["api_name"])
-            if fields:  # Only include modules we can access
+            field_data = _fetch_module_fields(client, module["api_name"])
+            if field_data["input"]:  # Only include modules we can access
                 modules_schema[module["api_name"]] = {
                     "singular_label": module.get("singular_label", module["api_name"]),
                     "plural_label": module.get("plural_label", module["api_name"]),
-                    "fields": fields,
+                    "fields": field_data["input"],
+                    "output_fields": field_data["output"],
                 }
         except Exception:
             # Skip modules we can't access (permissions, etc.)
@@ -168,7 +169,7 @@ def _discover_modules(client) -> list[dict]:
     return modules
 
 
-def _fetch_module_fields(client, module_name: str) -> list[dict[str, Any]]:
+def _fetch_module_fields(client, module_name: str) -> dict[str, list[dict[str, Any]]]:
     """Fetch fields for a specific module.
 
     Args:
@@ -176,21 +177,24 @@ def _fetch_module_fields(client, module_name: str) -> list[dict[str, Any]]:
         module_name: The module API name (e.g., "Leads").
 
     Returns:
-        List of field dictionaries with api_name, label, data_type, etc.
+        Dict with:
+        - 'input': Writable fields for create/update operations
+        - 'output': All fields returned by the API (including read-only)
     """
     response = client.get(f"/settings/fields?module={module_name}")
 
-    fields = []
+    input_fields = []
+    output_fields = []
+
     for f in response.get("fields", []):
         api_name = f.get("api_name", "")
 
-        # Skip excluded fields
-        if api_name in EXCLUDED_FIELDS or api_name.startswith("$"):
+        # Skip system/internal fields entirely
+        if api_name.startswith("$"):
             continue
 
-        # Skip read-only system fields
-        if f.get("read_only") and not f.get("custom_field"):
-            continue
+        is_excluded = api_name in EXCLUDED_FIELDS
+        is_readonly = f.get("read_only") and not f.get("custom_field")
 
         # Get picklist values
         pick_list_values = []
@@ -201,20 +205,25 @@ def _fetch_module_fields(client, module_name: str) -> list[dict[str, Any]]:
                 if p.get("display_value") or p.get("actual_value")
             ][:20]  # Limit to keep code manageable
 
-        fields.append(
-            {
-                "api_name": api_name,
-                "field_label": f.get("field_label", api_name),
-                "data_type": f.get("data_type", "text"),
-                "system_mandatory": f.get("system_mandatory", False),
-                "custom_field": f.get("custom_field", False),
-                "read_only": f.get("read_only", False),
-                "pick_list_values": pick_list_values,
-                "length": f.get("length"),
-            }
-        )
+        field_dict = {
+            "api_name": api_name,
+            "field_label": f.get("field_label", api_name),
+            "data_type": f.get("data_type", "text"),
+            "system_mandatory": f.get("system_mandatory", False),
+            "custom_field": f.get("custom_field", False),
+            "read_only": f.get("read_only", False),
+            "pick_list_values": pick_list_values,
+            "length": f.get("length"),
+        }
 
-    return fields
+        # Add to output fields (all fields returned by API)
+        output_fields.append(field_dict)
+
+        # Add to input fields only if writable and not excluded
+        if not is_excluded and not is_readonly:
+            input_fields.append(field_dict)
+
+    return {"input": input_fields, "output": output_fields}
 
 
 def _generate_tools_code(schema: dict[str, dict]) -> str:
@@ -259,6 +268,7 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
 
     for module_name, module_data in schema.items():
         fields = module_data.get("fields", [])
+        output_fields = module_data.get("output_fields", fields)
         singular = module_data.get("singular_label", module_name)
         plural = module_data.get("plural_label", module_name)
 
@@ -267,6 +277,7 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
 
         # Prioritize important fields
         writable_fields = _prioritize_fields(writable_fields, module_name)
+        output_fields = _prioritize_fields(output_fields, module_name)
 
         # Limit fields per tool
         create_fields = writable_fields[:MAX_FIELDS_PER_TOOL]
@@ -283,11 +294,11 @@ def _generate_tools_code(schema: dict[str, dict]) -> str:
         lines.append("")
 
         # Generate search tool
-        lines.extend(_generate_search_tool(module_name, plural, search_fields))
+        lines.extend(_generate_search_tool(module_name, plural, search_fields, output_fields))
         lines.append("")
 
         # Generate get tool
-        lines.extend(_generate_get_tool(module_name, singular))
+        lines.extend(_generate_get_tool(module_name, singular, output_fields))
         lines.append("")
 
         # Generate delete tool
@@ -559,13 +570,16 @@ def _generate_update_tool(module_name: str, singular: str, fields: list[dict]) -
     ]
 
 
-def _generate_search_tool(module_name: str, plural: str, fields: list[dict]) -> list[str]:
+def _generate_search_tool(
+    module_name: str, plural: str, fields: list[dict], output_fields: list[dict]
+) -> list[str]:
     """Generate a search tool for a module.
 
     Args:
         module_name: Module API name.
         plural: Plural label for the module.
         fields: List of searchable field dicts.
+        output_fields: List of fields returned in the response.
 
     Returns:
         List of code lines.
@@ -584,7 +598,7 @@ def _generate_search_tool(module_name: str, plural: str, fields: list[dict]) -> 
     # Field names for search
     field_names = [f["api_name"] for f in fields[:10]]
 
-    # Build docstring
+    # Build docstring with output field info
     doc_lines = [f'    """Search for {plural} in Zoho CRM.']
     doc_lines.append("")
     doc_lines.append("    You can search by COQL criteria string OR by specific field values.")
@@ -600,7 +614,14 @@ def _generate_search_tool(module_name: str, plural: str, fields: list[dict]) -> 
     doc_lines.append("        limit: Maximum results to return (default 10).")
     doc_lines.append("")
     doc_lines.append("    Returns:")
-    doc_lines.append(f"        JSON string with matching {plural}.")
+    doc_lines.append(f"        JSON array of {plural}. Each object contains:")
+    doc_lines.append("        - id: Record identifier (use for get/update/delete)")
+    # List top output fields (skip id since we already mentioned it)
+    for f in output_fields[:5]:
+        if f["api_name"] != "id":
+            doc_lines.append(f"        - {f['api_name']}: {f.get('field_label', f['api_name'])}")
+    if len(output_fields) > 6:
+        doc_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
     doc_lines.append('    """')
 
     body = [
@@ -653,18 +674,32 @@ def _generate_search_tool(module_name: str, plural: str, fields: list[dict]) -> 
     ]
 
 
-def _generate_get_tool(module_name: str, singular: str) -> list[str]:
+def _generate_get_tool(module_name: str, singular: str, output_fields: list[dict]) -> list[str]:
     """Generate a get-by-id tool for a module.
 
     Args:
         module_name: Module API name.
         singular: Singular label for the module.
+        output_fields: List of fields returned in the response.
 
     Returns:
         List of code lines.
     """
     func_name_part = _safe_func_name(module_name)
     func_name = f"zohocrm_get_{func_name_part}"
+
+    # Build returns docstring with field info
+    returns_lines = [
+        f"        JSON object with {singular} data containing:",
+        "        - id: Record identifier",
+    ]
+    for f in output_fields[:5]:
+        if f["api_name"] != "id":
+            returns_lines.append(
+                f"        - {f['api_name']}: {f.get('field_label', f['api_name'])}"
+            )
+    if len(output_fields) > 6:
+        returns_lines.append(f"        - ... and {len(output_fields) - 6} more fields")
 
     return [
         "@tool",
@@ -675,7 +710,7 @@ def _generate_get_tool(module_name: str, singular: str) -> list[str]:
         f"        {func_name_part}_id: The Zoho CRM ID of the {singular}.",
         "",
         "    Returns:",
-        f"        JSON string with the {singular} details.",
+        *returns_lines,
         '    """',
         "    zoho = _get_zoho()",
         "    try:",
