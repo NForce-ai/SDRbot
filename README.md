@@ -58,6 +58,9 @@ By using this software, you acknowledge that:
 | **MySQL** | Connection String | — | SQL Queries, Table Management |
 | **MongoDB** | Connection URI | — | CRUD Operations, Collection Management |
 | **Tavily** | API Key | — | Web Search, News Retrieval |
+| **Gmail** | OAuth 2.0 | — | Read, Send, Draft, Labels, Threads |
+| **Outlook** | OAuth 2.0 | — | Read, Send, Draft, Schedule, Folders, Conversations |
+| **Generic Email** | IMAP/SMTP | — | Read, Send, Draft, Search, Folders (Yahoo, AOL, ProtonMail, etc.) |
 
 ---
 
@@ -143,6 +146,9 @@ nano .env
 - **PostgreSQL:** `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_SSL_MODE` (optional: disable, require, verify-ca, verify-full)
 - **MySQL:** `MYSQL_HOST`, `MYSQL_DB`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_SSL` (optional: true/false)
 - **MongoDB:** `MONGODB_URI`, `MONGODB_DB`, `MONGODB_TLS` (optional: true/false)
+- **Gmail:** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` (OAuth - see [Gmail Setup](#gmail-oauth-setup))
+- **Outlook:** `OUTLOOK_CLIENT_ID`, `OUTLOOK_CLIENT_SECRET` (OAuth - see [Outlook Setup](#outlook-oauth-setup))
+- **Generic Email:** `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` (see [Generic Email Setup](#generic-email-imapsmtp-setup))
 
 ---
 
@@ -329,6 +335,173 @@ Use this if you need refresh tokens or plan to distribute SDRbot to others.
 
 ---
 
+## 📧 Email Services
+
+SDRbot supports email services for reading, sending, and managing emails directly from the agent.
+
+### Gmail OAuth Setup
+
+Gmail requires OAuth 2.0 authentication via Google Cloud Console.
+
+#### For Personal Use (@gmail.com)
+
+1. **Create a Google Cloud Project**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Click **Select a project** → **New Project**
+   - Name it (e.g., `SDRbot Gmail`) → **Create**
+
+2. **Enable Gmail API**
+   - Go to **APIs & Services** → **Library**
+   - Search for "Gmail API"
+   - Click **Gmail API** → **Enable**
+
+3. **Configure OAuth Consent Screen**
+   - Go to **APIs & Services** → **OAuth consent screen**
+   - Select **External** → **Create**
+   - Fill in required fields:
+     - **App name:** `SDRbot`
+     - **User support email:** Your email
+     - **Developer contact:** Your email
+   - Click **Save and Continue**
+   - **Scopes:** Click **Add or Remove Scopes**, add:
+     - `https://mail.google.com/` (Full Gmail access)
+   - **Save and Continue**
+   - **Test users:** Click **Add Users** → Add your Gmail address
+   - **Save and Continue** → **Back to Dashboard**
+
+4. **Create OAuth Credentials**
+   - Go to **APIs & Services** → **Credentials**
+   - Click **Create Credentials** → **OAuth client ID**
+   - Application type: **Desktop app**
+   - Name: `SDRbot Desktop`
+   - Click **Create**
+   - Copy the **Client ID** → This is your `GMAIL_CLIENT_ID`
+   - Copy the **Client Secret** → This is your `GMAIL_CLIENT_SECRET`
+
+#### For Google Workspace (Organization)
+
+If you have a Google Workspace account, you can use **Internal** instead of **External** for the OAuth consent screen:
+
+1. Follow the same steps above, but select **Internal** at step 3
+2. No need to add test users - all users in your organization can authenticate
+3. No Google verification required
+
+**Note:** The app stays in "Testing" mode for personal use, which is fine - only test users you added can authenticate. Publishing requires Google verification (unnecessary for personal/internal use).
+
+### Outlook OAuth Setup
+
+Outlook requires OAuth 2.0 authentication via Microsoft Azure Portal (Entra ID).
+
+#### For Personal/Work Accounts
+
+1. **Go to Azure Portal**
+   - Navigate to [Azure Portal](https://portal.azure.com/)
+   - Sign in with your Microsoft account
+
+2. **Register an Application**
+   - Go to **Microsoft Entra ID** (formerly Azure AD) → **App registrations**
+   - Click **New registration**
+   - Fill in:
+     - **Name:** `SDRbot`
+     - **Supported account types:** Select based on your needs:
+       - "Accounts in any organizational directory and personal Microsoft accounts" (most flexible)
+       - "Accounts in this organizational directory only" (single tenant)
+     - **Redirect URI:** Select "Web" and enter `http://localhost:8080/callback/outlook`
+   - Click **Register**
+
+3. **Configure API Permissions**
+   - Go to **API permissions** → **Add a permission**
+   - Select **Microsoft Graph** → **Delegated permissions**
+   - Add these permissions:
+     - `Mail.ReadWrite` - Read and write mail
+     - `Mail.Send` - Send mail
+     - `User.Read` - Read user profile (required)
+     - `offline_access` - Maintain access (for refresh tokens)
+   - Click **Add permissions**
+   - If admin consent is required, click **Grant admin consent** (or ask your admin)
+
+4. **Create Client Secret**
+   - Go to **Certificates & secrets** → **Client secrets**
+   - Click **New client secret**
+   - Add a description and select expiry
+   - Copy the **Value** immediately → This is your `OUTLOOK_CLIENT_SECRET`
+   - Go to **Overview** and copy the **Application (client) ID** → This is your `OUTLOOK_CLIENT_ID`
+
+**Note:** Client secrets expire. Set a calendar reminder to rotate them before expiry.)
+
+### Email Authentication Flow
+
+When you first use an email tool (Gmail or Outlook):
+1. SDRbot opens your browser to the provider's OAuth consent page
+2. Sign in and grant permissions
+3. Token is stored securely in your system keyring
+4. Future requests use the stored token (auto-refreshes)
+
+For Generic Email (IMAP/SMTP), no browser flow is needed - credentials are used directly from your configuration.
+
+### Generic Email (IMAP/SMTP) Setup
+
+For email providers that don't have OAuth integrations (Yahoo, AOL, ProtonMail, iCloud, etc.), SDRbot supports direct IMAP/SMTP connections.
+
+#### Provider Presets
+
+The setup wizard includes presets for common providers:
+
+| Provider | IMAP Host | SMTP Host | Notes |
+|----------|-----------|-----------|-------|
+| **Yahoo Mail** | imap.mail.yahoo.com:993 | smtp.mail.yahoo.com:465 | Requires App Password |
+| **AOL Mail** | imap.aol.com:993 | smtp.aol.com:465 | Requires App Password |
+| **iCloud** | imap.mail.me.com:993 | smtp.mail.me.com:587 | Requires App Password |
+| **ProtonMail** | 127.0.0.1:1143 | 127.0.0.1:1025 | Requires ProtonMail Bridge |
+| **Fastmail** | imap.fastmail.com:993 | smtp.fastmail.com:465 | Supports App Passwords |
+| **Zoho Mail** | imap.zoho.com:993 | smtp.zoho.com:465 | Enable IMAP in settings |
+
+#### Setting Up App Passwords
+
+Most providers require "App Passwords" instead of your regular password:
+
+**Yahoo/AOL:**
+1. Go to Account Security settings
+2. Enable 2-Step Verification (required)
+3. Scroll to "App Passwords" and generate one for "Other App"
+4. Use this password in SDRbot
+
+**iCloud:**
+1. Go to [appleid.apple.com](https://appleid.apple.com)
+2. Sign in and go to Security → App-Specific Passwords
+3. Generate a password for "SDRbot"
+4. Use this password in SDRbot
+
+**ProtonMail:**
+1. Install and run [ProtonMail Bridge](https://proton.me/mail/bridge)
+2. Sign in to Bridge with your ProtonMail account
+3. Get the IMAP/SMTP credentials from Bridge settings
+4. Use localhost:1143 (IMAP) and localhost:1025 (SMTP)
+
+#### Custom Configuration
+
+For other providers or self-hosted email servers, use these environment variables:
+
+```bash
+# IMAP (Incoming mail)
+IMAP_HOST=imap.example.com
+IMAP_PORT=993
+IMAP_USER=your@email.com
+IMAP_PASSWORD=your-app-password
+IMAP_SSL=true
+
+# SMTP (Outgoing mail)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USER=your@email.com
+SMTP_PASSWORD=your-app-password
+SMTP_SSL=true
+```
+
+**Note:** For ports 993 (IMAP) and 465 (SMTP), use SSL=true. For port 587 (SMTP), use SSL=false (STARTTLS is automatic).
+
+---
+
 ## 🎮 Usage
 
 Start the agent:
@@ -395,6 +568,9 @@ sdrbot --auto-approve
 - **Pipedrive:** Uses API Token directly, or launches browser OAuth flow if using Client ID/Secret. Tokens are saved securely with automatic refresh.
 - **Twenty:** Uses API Key directly. Supports both cloud (api.twenty.com) and self-hosted instances.
 - **Attio / Apollo / Lusha / Hunter:** Uses the API Keys defined in your `.env`.
+- **Gmail:** Launches browser OAuth flow on first use. Tokens are saved securely in your system keyring with automatic refresh.
+- **Outlook:** Launches browser OAuth flow via Microsoft. Tokens are saved securely in your system keyring with automatic refresh.
+- **Generic Email:** Uses IMAP/SMTP credentials directly from config. No browser flow needed.
 
 ### Example Prompts
 

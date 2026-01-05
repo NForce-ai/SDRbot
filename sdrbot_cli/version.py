@@ -5,4 +5,4 @@ try:
 except PackageNotFoundError:
     # If the package is not installed (e.g. running from source without install),
     # fallback to the version defined in pyproject.toml
-    __version__ = "0.2.0a1"
+    __version__ = "0.2.1a1"

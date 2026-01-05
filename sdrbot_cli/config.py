@@ -277,6 +277,26 @@ class Settings:
     # Apollo Config
     apollo_api_key: str | None
 
+    # Gmail Config
+    gmail_client_id: str | None
+    gmail_client_secret: str | None
+
+    # Outlook Config
+    outlook_client_id: str | None
+    outlook_client_secret: str | None
+
+    # Generic Email (IMAP/SMTP) Config
+    imap_host: str | None
+    imap_port: str | None
+    imap_user: str | None
+    imap_password: str | None
+    imap_ssl: bool
+    smtp_host: str | None
+    smtp_port: str | None
+    smtp_user: str | None
+    smtp_password: str | None
+    smtp_ssl: bool
+
     # PostgreSQL Config
     postgres_host: str | None
     postgres_port: str | None
@@ -376,6 +396,22 @@ class Settings:
         lusha_api_key = os.environ.get("LUSHA_API_KEY")
         hunter_api_key = os.environ.get("HUNTER_API_KEY")
         apollo_api_key = os.environ.get("APOLLO_API_KEY")
+        gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
+        gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
+        outlook_client_id = os.environ.get("OUTLOOK_CLIENT_ID")
+        outlook_client_secret = os.environ.get("OUTLOOK_CLIENT_SECRET")
+
+        # Generic Email (IMAP/SMTP)
+        imap_host = os.environ.get("IMAP_HOST")
+        imap_port = os.environ.get("IMAP_PORT")
+        imap_user = os.environ.get("IMAP_USER")
+        imap_password = os.environ.get("IMAP_PASSWORD")
+        imap_ssl = os.environ.get("IMAP_SSL", "true").lower() in ("true", "1", "yes")
+        smtp_host = os.environ.get("SMTP_HOST")
+        smtp_port = os.environ.get("SMTP_PORT")
+        smtp_user = os.environ.get("SMTP_USER")
+        smtp_password = os.environ.get("SMTP_PASSWORD")
+        smtp_ssl = os.environ.get("SMTP_SSL", "true").lower() in ("true", "1", "yes")
 
         # Postgres
         postgres_host = os.environ.get("POSTGRES_HOST")
@@ -433,6 +469,20 @@ class Settings:
             lusha_api_key=lusha_api_key,
             hunter_api_key=hunter_api_key,
             apollo_api_key=apollo_api_key,
+            gmail_client_id=gmail_client_id,
+            gmail_client_secret=gmail_client_secret,
+            outlook_client_id=outlook_client_id,
+            outlook_client_secret=outlook_client_secret,
+            imap_host=imap_host,
+            imap_port=imap_port,
+            imap_user=imap_user,
+            imap_password=imap_password,
+            imap_ssl=imap_ssl,
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=smtp_user,
+            smtp_password=smtp_password,
+            smtp_ssl=smtp_ssl,
             postgres_host=postgres_host,
             postgres_port=postgres_port,
             postgres_user=postgres_user,
@@ -489,6 +539,20 @@ class Settings:
         self.lusha_api_key = new_settings.lusha_api_key
         self.hunter_api_key = new_settings.hunter_api_key
         self.apollo_api_key = new_settings.apollo_api_key
+        self.gmail_client_id = new_settings.gmail_client_id
+        self.gmail_client_secret = new_settings.gmail_client_secret
+        self.outlook_client_id = new_settings.outlook_client_id
+        self.outlook_client_secret = new_settings.outlook_client_secret
+        self.imap_host = new_settings.imap_host
+        self.imap_port = new_settings.imap_port
+        self.imap_user = new_settings.imap_user
+        self.imap_password = new_settings.imap_password
+        self.imap_ssl = new_settings.imap_ssl
+        self.smtp_host = new_settings.smtp_host
+        self.smtp_port = new_settings.smtp_port
+        self.smtp_user = new_settings.smtp_user
+        self.smtp_password = new_settings.smtp_password
+        self.smtp_ssl = new_settings.smtp_ssl
         self.postgres_host = new_settings.postgres_host
         self.postgres_port = new_settings.postgres_port
         self.postgres_user = new_settings.postgres_user
@@ -597,6 +661,23 @@ class Settings:
         return self.apollo_api_key is not None
 
     @property
+    def has_gmail(self) -> bool:
+        """Check if Gmail OAuth credentials are configured."""
+        return self.gmail_client_id is not None and self.gmail_client_secret is not None
+
+    @property
+    def has_outlook(self) -> bool:
+        """Check if Outlook OAuth credentials are configured."""
+        return self.outlook_client_id is not None and self.outlook_client_secret is not None
+
+    @property
+    def has_generic_email(self) -> bool:
+        """Check if generic email (IMAP/SMTP) is configured."""
+        has_imap = all([self.imap_host, self.imap_port, self.imap_user, self.imap_password])
+        has_smtp = all([self.smtp_host, self.smtp_port, self.smtp_user, self.smtp_password])
+        return has_imap and has_smtp
+
+    @property
     def has_postgres(self) -> bool:
         """Check if PostgreSQL credentials are configured."""
         return self.postgres_host is not None and self.postgres_db is not None
@@ -645,6 +726,9 @@ class Settings:
             "lusha": self.has_lusha,
             "hunter": self.has_hunter,
             "apollo": self.has_apollo,
+            "gmail": self.has_gmail,
+            "outlook": self.has_outlook,
+            "generic_email": self.has_generic_email,
             "postgres": self.has_postgres,
             "mysql": self.has_mysql,
             "mongodb": self.has_mongodb,

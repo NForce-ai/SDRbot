@@ -3,6 +3,8 @@
 import importlib
 import os
 
+from rich.prompt import Prompt
+
 from sdrbot_cli.config import COLORS, console
 from sdrbot_cli.services import disable_service, enable_service
 from sdrbot_cli.services.registry import load_config
@@ -38,6 +40,14 @@ SERVICE_CATEGORIES = {
             ("postgres", "PostgreSQL"),
             ("mysql", "MySQL"),
             ("mongodb", "MongoDB"),
+        ],
+    },
+    "email": {
+        "label": "Email Services",
+        "services": [
+            ("gmail", "Gmail"),
+            ("outlook", "Outlook"),
+            ("generic_email", "Generic Email (IMAP/SMTP)"),
         ],
     },
 }
@@ -88,6 +98,17 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("MYSQL_HOST"))
     elif service_name == "mongodb":
         configured = bool(os.getenv("MONGODB_URI"))
+    elif service_name == "gmail":
+        configured = bool(os.getenv("GMAIL_CLIENT_ID") and os.getenv("GMAIL_CLIENT_SECRET"))
+    elif service_name == "outlook":
+        configured = bool(os.getenv("OUTLOOK_CLIENT_ID") and os.getenv("OUTLOOK_CLIENT_SECRET"))
+    elif service_name == "generic_email":
+        configured = bool(
+            os.getenv("IMAP_HOST")
+            and os.getenv("IMAP_USER")
+            and os.getenv("SMTP_HOST")
+            and os.getenv("SMTP_USER")
+        )
 
     # Check enabled state from registry
     try:
@@ -602,6 +623,223 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
             env_vars["MONGODB_DB"] = mongo_db
         if mongo_tls == "true":
             env_vars["MONGODB_TLS"] = "true"
+
+    elif service_name == "gmail":
+        console.print(f"[{COLORS['primary']}]--- Gmail Configuration ---[/{COLORS['primary']}]")
+        console.print(
+            f"[{COLORS['dim']}]Create OAuth credentials at console.cloud.google.com[/{COLORS['dim']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]Enable Gmail API and create a Desktop app OAuth client[/{COLORS['dim']}]"
+        )
+        gmail_client_id = await get_or_prompt(
+            "GMAIL_CLIENT_ID", "Gmail Client ID", required=True, force=force
+        )
+        gmail_client_secret = await get_or_prompt(
+            "GMAIL_CLIENT_SECRET",
+            "Gmail Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+
+        if gmail_client_id:
+            env_vars["GMAIL_CLIENT_ID"] = gmail_client_id
+        if gmail_client_secret:
+            env_vars["GMAIL_CLIENT_SECRET"] = gmail_client_secret
+
+        if gmail_client_id and gmail_client_secret:
+            save_env_vars(env_vars)
+            reload_env_and_settings()
+
+            try:
+                import sdrbot_cli.auth.gmail as gmail_auth
+
+                importlib.reload(gmail_auth)
+                gmail_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Gmail authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Gmail authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Gmail.[/{COLORS['dim']}]"
+                )
+
+            enable_service("gmail", sync=False, verbose=True)
+            return True
+
+    elif service_name == "outlook":
+        console.print(f"[{COLORS['primary']}]--- Outlook Configuration ---[/{COLORS['primary']}]")
+        console.print(
+            f"[{COLORS['dim']}]Create an app registration at portal.azure.com[/{COLORS['dim']}]"
+        )
+        console.print(f"[{COLORS['dim']}]Add Microsoft Graph Mail permissions[/{COLORS['dim']}]")
+        outlook_client_id = await get_or_prompt(
+            "OUTLOOK_CLIENT_ID", "Outlook Client ID (Application ID)", required=True, force=force
+        )
+        outlook_client_secret = await get_or_prompt(
+            "OUTLOOK_CLIENT_SECRET",
+            "Outlook Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+
+        if outlook_client_id:
+            env_vars["OUTLOOK_CLIENT_ID"] = outlook_client_id
+        if outlook_client_secret:
+            env_vars["OUTLOOK_CLIENT_SECRET"] = outlook_client_secret
+
+        if outlook_client_id and outlook_client_secret:
+            save_env_vars(env_vars)
+            reload_env_and_settings()
+
+            try:
+                import sdrbot_cli.auth.outlook as outlook_auth
+
+                importlib.reload(outlook_auth)
+                outlook_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Outlook authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Outlook authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Outlook.[/{COLORS['dim']}]"
+                )
+
+            enable_service("outlook", sync=False, verbose=True)
+            return True
+
+    elif service_name == "generic_email":
+        console.print(
+            f"[{COLORS['primary']}]--- Generic Email (IMAP/SMTP) Configuration ---[/{COLORS['primary']}]"
+        )
+
+        # Provider presets
+        from sdrbot_cli.auth.generic_email import PROVIDER_PRESETS
+
+        console.print(
+            f"\n[{COLORS['dim']}]Select a provider preset or choose Custom:[/{COLORS['dim']}]"
+        )
+        presets = list(PROVIDER_PRESETS.keys()) + ["custom"]
+        for i, preset in enumerate(presets, 1):
+            if preset == "custom":
+                console.print(f"  {i}. Custom (enter your own settings)")
+            else:
+                info = PROVIDER_PRESETS[preset]
+                console.print(f"  {i}. {info['name']} - {info.get('note', '')}")
+
+        choice = Prompt.ask(
+            f"[{COLORS['prompt']}]Select provider[/{COLORS['prompt']}]",
+            default="1",
+        )
+
+        try:
+            preset_idx = int(choice) - 1
+            selected_preset = presets[preset_idx] if 0 <= preset_idx < len(presets) else "custom"
+        except (ValueError, IndexError):
+            selected_preset = "custom"
+
+        # Pre-fill from preset or prompt for custom
+        if selected_preset != "custom" and selected_preset in PROVIDER_PRESETS:
+            preset_info = PROVIDER_PRESETS[selected_preset]
+            imap_host = preset_info["imap_host"]
+            imap_port = str(preset_info["imap_port"])
+            smtp_host = preset_info["smtp_host"]
+            smtp_port = str(preset_info["smtp_port"])
+            use_ssl = preset_info["use_ssl"]
+
+            console.print(
+                f"\n[{COLORS['dim']}]Using {preset_info['name']} preset settings[/{COLORS['dim']}]"
+            )
+            console.print(f"[{COLORS['dim']}]IMAP: {imap_host}:{imap_port}[/{COLORS['dim']}]")
+            console.print(f"[{COLORS['dim']}]SMTP: {smtp_host}:{smtp_port}[/{COLORS['dim']}]")
+        else:
+            console.print(
+                f"\n[{COLORS['dim']}]Enter your IMAP/SMTP server settings:[/{COLORS['dim']}]"
+            )
+            imap_host = Prompt.ask(f"[{COLORS['prompt']}]IMAP Host[/{COLORS['prompt']}]")
+            imap_port = Prompt.ask(
+                f"[{COLORS['prompt']}]IMAP Port[/{COLORS['prompt']}]", default="993"
+            )
+            smtp_host = Prompt.ask(f"[{COLORS['prompt']}]SMTP Host[/{COLORS['prompt']}]")
+            smtp_port = Prompt.ask(
+                f"[{COLORS['prompt']}]SMTP Port[/{COLORS['prompt']}]", default="465"
+            )
+            use_ssl_str = Prompt.ask(
+                f"[{COLORS['prompt']}]Use SSL/TLS?[/{COLORS['prompt']}]",
+                choices=["yes", "no"],
+                default="yes",
+            )
+            use_ssl = use_ssl_str == "yes"
+
+        # Always prompt for credentials
+        console.print(f"\n[{COLORS['dim']}]Enter your email credentials:[/{COLORS['dim']}]")
+        imap_user = Prompt.ask(f"[{COLORS['prompt']}]Email/Username[/{COLORS['prompt']}]")
+        imap_password = Prompt.ask(
+            f"[{COLORS['prompt']}]Password (or App Password)[/{COLORS['prompt']}]", password=True
+        )
+
+        # SMTP credentials (often same as IMAP)
+        use_same = Prompt.ask(
+            f"[{COLORS['prompt']}]Use same credentials for SMTP?[/{COLORS['prompt']}]",
+            choices=["yes", "no"],
+            default="yes",
+        )
+        if use_same == "yes":
+            smtp_user = imap_user
+            smtp_password = imap_password
+        else:
+            smtp_user = Prompt.ask(f"[{COLORS['prompt']}]SMTP Username[/{COLORS['prompt']}]")
+            smtp_password = Prompt.ask(
+                f"[{COLORS['prompt']}]SMTP Password[/{COLORS['prompt']}]", password=True
+            )
+
+        # Save settings
+        env_vars["IMAP_HOST"] = imap_host
+        env_vars["IMAP_PORT"] = imap_port
+        env_vars["IMAP_USER"] = imap_user
+        env_vars["IMAP_PASSWORD"] = imap_password
+        env_vars["IMAP_SSL"] = "true" if use_ssl else "false"
+        env_vars["SMTP_HOST"] = smtp_host
+        env_vars["SMTP_PORT"] = smtp_port
+        env_vars["SMTP_USER"] = smtp_user
+        env_vars["SMTP_PASSWORD"] = smtp_password
+        env_vars["SMTP_SSL"] = "true" if use_ssl else "false"
+
+        save_env_vars(env_vars)
+        reload_env_and_settings()
+
+        # Test connection
+        console.print(f"\n[{COLORS['dim']}]Testing connection...[/{COLORS['dim']}]")
+        try:
+            import sdrbot_cli.auth.generic_email as email_auth
+
+            importlib.reload(email_auth)
+            imap_ok, smtp_ok, msg = email_auth.test_connection()
+            console.print(msg)
+
+            if imap_ok and smtp_ok:
+                console.print(
+                    f"[{COLORS['primary']}]Generic email configured successfully![/{COLORS['primary']}]"
+                )
+                enable_service("generic_email", sync=False, verbose=True)
+                return True
+            else:
+                console.print(
+                    "[yellow]Connection test had issues. Service enabled anyway.[/yellow]"
+                )
+                enable_service("generic_email", sync=False, verbose=True)
+                return True
+        except Exception as e:
+            console.print(f"[red]Connection test failed: {e}[/red]")
+            console.print(
+                f"[{COLORS['dim']}]Service enabled - you can test again later.[/{COLORS['dim']}]"
+            )
+            enable_service("generic_email", sync=False, verbose=True)
+            return True
 
     else:
         console.print(f"[red]Unknown service: {service_name}[/red]")
