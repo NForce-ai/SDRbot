@@ -26,7 +26,7 @@ Schema tools return 10,000+ tokens. Call them directly and you'll overflow your 
 Spawn a general-purpose subagent:
 
 ```
-Query the [SOURCE CRM] schema and return a CONCISE summary of all business objects and their respective fields.
+Query the [SOURCE CRM] schema and return a CONCISE summary of all business objects, record counts, and their respective fields.
 
 Return markdown tables. Do NOT include raw API responses.
 ```
@@ -34,7 +34,7 @@ Return markdown tables. Do NOT include raw API responses.
 ### Subagent for Target CRM
 
 ```
-Query the [TARGET CRM] schema and return a CONCISE summary of all business objects and their respective fields.
+Query the [TARGET CRM] schema and return a CONCISE summary of all business objects, record counts, and their respective fields.
 
 Return markdown tables. Do NOT include raw API responses.
 ```
@@ -43,7 +43,7 @@ Return markdown tables. Do NOT include raw API responses.
 
 ## Phase 2: Clarifications
 
-Ask questions **one at a time** to avoid overwhelming the user.
+Ask questions **one at a time** and wait for a response before asking the next question.
 
 Base questions (ask additional questions at your discretion based on context):
 
@@ -52,8 +52,6 @@ Base questions (ask additional questions at your discretion based on context):
 - **Record owner**: Which user should own the imported records?
 - **Emails**: Migrate email history? (Default: NO)
 - **Execution mode**: Sequential or concurrent? (see below)
-
-**Note**: Duplicates are always skipped (records already in target CRM are not overwritten).
 
 ### Execution Mode
 
@@ -225,7 +223,7 @@ twenty_admin_create_field(
 
 IMPORTANT: Create the necessary custom fields yourself before engaging the subagent since the subagent needs them to already be in place.
 
-**DELEGATE TO `migration-executor` SUBAGENT**
+**NEVER EXECUTE SCRIPTS DIRECTLY INSTEAD DELEGATE SCRIPT EXECUTIONS TO `migration-executor` SUBAGENT**
 
 The executor uses a **staged approach**:
 - Creates one script per entity in the Migration Order
