@@ -16,11 +16,12 @@ class TestAttioToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 3
+        assert len(tools) == 4
         tool_names = [t.name for t in tools]
         assert "attio_create_note" in tool_names
         assert "attio_list_notes" in tool_names
         assert "attio_get_record" in tool_names
+        assert "attio_count_records" in tool_names
 
     def test_tools_are_base_tool_instances(self):
         """All tools should be BaseTool instances."""

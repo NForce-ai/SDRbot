@@ -394,10 +394,11 @@ class TestHubSpotToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 10
+        assert len(tools) == 11
         tool_names = [t.name for t in tools]
         # Original tools
         assert "hubspot_list_pipelines" in tool_names
+        assert "hubspot_count_records" in tool_names
         assert "hubspot_create_association" in tool_names
         assert "hubspot_list_associations" in tool_names
         assert "hubspot_delete_association" in tool_names
@@ -483,7 +484,7 @@ hubspot_dummy_generated_tool = StructuredTool.from_function(
                 from sdrbot_cli.services.hubspot.tools import get_static_tools
 
                 tools = get_static_tools()
-                assert len(tools) == 10
+                assert len(tools) == 11
 
 
 class TestEnabledToolsLoading:
