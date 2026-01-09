@@ -1,6 +1,7 @@
 """Main setup wizard for SDRbot configuration."""
 
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -102,7 +103,7 @@ async def _run_wizard_loop(allow_exit: bool) -> None:
     """Main wizard navigation loop."""
     while True:
         # Refresh env vars in case they changed
-        load_dotenv(override=True)
+        load_dotenv(Path.cwd() / ".env", override=True)
 
         # Get status for each section
         _, _, model_status = get_model_status()
