@@ -18,29 +18,35 @@ SETUP_CSS_PATH = Path(__file__).parent / "setup_common.tcss"
 # Model choices per provider
 MODEL_CHOICES = {
     "openai": [
-        ("gpt-5-mini", "ChatGPT 5 Mini"),
-        ("gpt-5", "ChatGPT 5"),
-        ("gpt-5.1", "ChatGPT 5.1"),
-        ("gpt-5.2-2025-12-11", "ChatGPT 5.2"),
+        ("gpt-4.1-mini", "GPT-4.1 Mini"),
+        ("gpt-4.1", "GPT-4.1"),
+        ("gpt-5-mini", "GPT-5 Mini"),
+        ("gpt-5", "GPT-5"),
+        ("gpt-5.1", "GPT-5.1"),
+        ("gpt-5.2", "GPT-5.2"),
+        ("o4-mini", "o4-mini"),
     ],
     "anthropic": [
-        ("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5"),
-        ("claude-opus-4-5-20251101", "Claude Opus 4.5"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+        ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+        ("claude-opus-4-6", "Claude Opus 4.6"),
     ],
     "google": [
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
         ("gemini-2.5-pro", "Gemini 2.5 Pro"),
-        ("gemini-3-pro-preview", "Gemini 3 Pro"),
+        ("gemini-3-flash-preview", "Gemini 3 Flash"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro"),
     ],
 }
 
 # Bedrock model ID to friendly name mapping
 BEDROCK_MODEL_NAMES = {
-    "anthropic.claude-3-5-sonnet-20241022-v2:0": "Claude 3.5 Sonnet v2",
-    "anthropic.claude-3-5-haiku-20241022-v1:0": "Claude 3.5 Haiku",
-    "anthropic.claude-3-opus-20240229-v1:0": "Claude 3 Opus",
-    "amazon.titan-text-premier-v1:0": "Titan Text Premier",
-    "meta.llama3-70b-instruct-v1:0": "Llama 3 70B",
-    "mistral.mistral-large-2407-v1:0": "Mistral Large",
+    "anthropic.claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
+    "anthropic.claude-sonnet-4-6": "Claude Sonnet 4.6",
+    "anthropic.claude-opus-4-6-v1": "Claude Opus 4.6",
+    "amazon.titan-text-premier-v2:0": "Titan Text Premier v2",
+    "meta.llama3-1-70b-instruct-v1:0": "Llama 3.1 70B",
+    "mistral.mistral-large-2411-v1:0": "Mistral Large",
 }
 
 
@@ -1039,12 +1045,12 @@ class BedrockSetupScreen(ModalScreen[bool]):
 
     # Common Bedrock model IDs
     BEDROCK_MODELS = [
-        ("anthropic.claude-3-5-sonnet-20241022-v2:0", "Claude 3.5 Sonnet v2"),
-        ("anthropic.claude-3-5-haiku-20241022-v1:0", "Claude 3.5 Haiku"),
-        ("anthropic.claude-3-opus-20240229-v1:0", "Claude 3 Opus"),
-        ("amazon.titan-text-premier-v1:0", "Amazon Titan Text Premier"),
-        ("meta.llama3-70b-instruct-v1:0", "Llama 3 70B Instruct"),
-        ("mistral.mistral-large-2407-v1:0", "Mistral Large"),
+        ("anthropic.claude-haiku-4-5-20251001-v1:0", "Claude Haiku 4.5"),
+        ("anthropic.claude-sonnet-4-6", "Claude Sonnet 4.6"),
+        ("anthropic.claude-opus-4-6-v1", "Claude Opus 4.6"),
+        ("amazon.titan-text-premier-v2:0", "Amazon Titan Text Premier v2"),
+        ("meta.llama3-1-70b-instruct-v1:0", "Llama 3.1 70B Instruct"),
+        ("mistral.mistral-large-2411-v1:0", "Mistral Large"),
     ]
 
     def __init__(self) -> None:

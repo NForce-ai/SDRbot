@@ -9,17 +9,24 @@ from .menu import CancelledError, show_choice_menu, show_menu
 
 MODEL_CHOICES = {
     "openai": [
-        ("ChatGPT 5 Mini", "gpt-5-mini"),
-        ("ChatGPT 5", "gpt-5"),
-        ("ChatGPT 5.1", "gpt-5.1"),
+        ("GPT-4.1 Mini", "gpt-4.1-mini"),
+        ("GPT-4.1", "gpt-4.1"),
+        ("GPT-5 Mini", "gpt-5-mini"),
+        ("GPT-5", "gpt-5"),
+        ("GPT-5.1", "gpt-5.1"),
+        ("GPT-5.2", "gpt-5.2"),
+        ("o4-mini", "o4-mini"),
     ],
     "anthropic": [
-        ("Claude Sonnet 4.5", "claude-sonnet-4-5-20250929"),
-        ("Claude Opus 4.5", "claude-opus-4-5-20251101"),
+        ("Claude Haiku 4.5", "claude-haiku-4-5-20251001"),
+        ("Claude Sonnet 4.6", "claude-sonnet-4-6"),
+        ("Claude Opus 4.6", "claude-opus-4-6"),
     ],
     "google": [
+        ("Gemini 2.5 Flash", "gemini-2.5-flash"),
         ("Gemini 2.5 Pro", "gemini-2.5-pro"),
-        ("Gemini 3 Pro", "gemini-3-pro-preview"),
+        ("Gemini 3 Flash", "gemini-3-flash-preview"),
+        ("Gemini 3.1 Pro", "gemini-3.1-pro-preview"),
     ],
 }
 
