@@ -12,6 +12,11 @@ The following are SDRBot-specific additions not present in upstream:
 | `sdrbot_cli/auth/` | OAuth and API key authentication handlers |
 | `sdrbot_cli/setup_wizard.py` | Interactive first-run configuration |
 | `sdrbot_cli/shell.py` | Shell middleware |
+| `sdrbot_cli/clipboard.py` | Clipboard copy with OSC52 fallback |
+| `sdrbot_cli/sessions.py` | SQLite-backed session persistence |
+| `sdrbot_cli/non_interactive.py` | Headless execution mode |
+| `sdrbot_cli/subagents/loader.py` | YAML frontmatter subagent loader |
+| `sdrbot_cli/system_prompt.md` | Templated system prompt |
 | `agents/` | User-defined agent personas |
 
 Additionally, most core files (`config.py`, `main.py`, `agent.py`, `execution.py`) have been substantially modified to support these features.
@@ -129,6 +134,7 @@ These files contain the core logic and are most likely to have important changes
 | 2025-11-27 | `deepagents-cli==0.0.10` | Reviewed - all relevant changes already ported (see below) |
 | 2025-12-27 | `deepagents-cli==0.0.11` | Ported image paste support, shell.py already existed (see below) |
 | 2025-12-27 | `deepagents-cli==0.0.12` | Reviewed - `--model` CLI arg not relevant (we use TUI), skills spec skipped (see below) |
+| 2026-03-02 | `deepagents-cli==0.0.13–0.0.25` | Bulk port: bug fixes, security hardening, clipboard, provider detection, sessions, shell allow-list, subagent loader, non-interactive mode (see below) |
 
 ### 0.0.10 Review Notes (2025-11-27)
 
@@ -194,6 +200,63 @@ These files contain the core logic and are most likely to have important changes
 **Skipped** (with reason):
 - `--model` CLI arg: We use TUI with interactive model selection + model.json configuration
 - Skills spec improvements: Deferred - our skills work fine, could consider for future alignment
+
+---
+
+### 0.0.13–0.0.25 Review Notes (2026-03-02)
+
+**Summary**: Bulk port of 13 upstream releases. Ported bug fixes, security hardening, clipboard copy, provider detection, model validation, session persistence, system prompt templating, shell allow-list, subagent loader, and non-interactive mode.
+
+| Change | Status | Notes |
+|--------|--------|-------|
+| `file_ops.py` - `encoding="utf-8"` in `_safe_read()` | **PORTED** | Prevents encoding errors on non-ASCII files |
+| `file_ops.py` - offset bounds check | **PORTED** | Clamps offset to 0 when > lines |
+| `file_ops.py` - narrow `except Exception` | **PORTED** | → `(OSError, UnicodeDecodeError, AttributeError)` in 3 locations |
+| `image_utils.py` - `_get_executable()` helper | **PORTED** | `shutil.which()` validates executables before `subprocess.run()` |
+| `image_utils.py` - narrow `except Exception` | **PORTED** | 5 bare excepts → specific types |
+| `config.py` - OSError guard in `_find_project_root()` | **PORTED** | Wraps `git_dir.exists()` |
+| `clipboard.py` (NEW) - `copy_to_clipboard()` | **PORTED** | pyperclip + OSC52 fallback for SSH/tmux |
+| `config.py` - `detect_provider()` | **PORTED** | Prefix-based matching for 6 providers incl. `o1-/o3-/o4-/chatgpt-` |
+| `config.py` - `validate_model_capabilities()` | **PORTED** | Warns about no tool_calling or small context windows |
+| `sessions.py` (NEW) - SQLite session persistence | **PORTED** | `AsyncSqliteSaver` checkpointer, CRUD helpers |
+| `agent.py` - widen checkpointer type | **PORTED** | `InMemorySaver | None` → `BaseCheckpointSaver | None` |
+| `tui/sessions_screen.py` (NEW) - thread list UI | **PORTED** | Resume/delete past conversations |
+| `system_prompt.md` (NEW) - template extraction | **PORTED** | Static boilerplate → Markdown with `{variable}` placeholders |
+| `agent.py` - model identity injection | **PORTED** | `"You are powered by {model_name} via {provider}."` |
+| `agent.py` - `/tmp` virtual routing | **PORTED** | `FilesystemBackend(virtual_mode=True)` route for large results |
+| `config.py` - shell allow-list | **PORTED** | `DEFAULT_SHELL_ALLOW_LIST` + `is_command_allowed()` + custom `.sdrbot/shell_allowlist.json` |
+| `execution.py` - auto-approve safe commands | **PORTED** | Allow-listed shell commands skip HITL prompt |
+| `subagents/loader.py` (NEW) - YAML frontmatter parser | **PORTED** | Regex-based, scans built-in + project-level `.md` definitions |
+| `deep_agent.py` - auto-discover subagents | **PORTED** | Scans `sdrbot_cli/subagents/*.md` and `.sdrbot/subagents/*.md` |
+| `non_interactive.py` (NEW) - headless mode | **PORTED** | `run_non_interactive()` with text/JSON output, stdin piping |
+| `main.py` - `--non-interactive/-n`, `--prompt/-p` flags | **PORTED** | + `--output-format`, `--max-turns` |
+| Upstream TUI migration (Textual) | ALREADY HAVE | We did this independently |
+| Various upstream CLI-only features (`--model` flag etc.) | SKIP | We use TUI with model.json |
+
+**New files**:
+- [x] `sdrbot_cli/clipboard.py`
+- [x] `sdrbot_cli/sessions.py`
+- [x] `sdrbot_cli/system_prompt.md`
+- [x] `sdrbot_cli/non_interactive.py`
+- [x] `sdrbot_cli/subagents/loader.py`
+- [x] `sdrbot_cli/tui/sessions_screen.py`
+
+**New test files**:
+- [x] `tests/test_file_ops.py` (11 tests)
+- [x] `tests/test_image_utils.py` (3 tests)
+- [x] `tests/test_provider_detection.py` (19 tests)
+- [x] `tests/test_clipboard.py` (2 tests)
+- [x] `tests/test_sessions.py` (4 tests)
+- [x] `tests/test_system_prompt.py` (5 tests)
+- [x] `tests/test_shell_allowlist.py` (26 tests)
+- [x] `tests/test_subagent_loader.py` (10 tests)
+- [x] `tests/test_non_interactive.py` (2 tests)
+
+**Dependencies added**:
+- `aiosqlite>=0.19.0`
+- `langgraph-checkpoint-sqlite>=1.0.0`
+
+**Test results**: 141 tests pass (79 new + 62 existing), 0 regressions.
 
 ---
 

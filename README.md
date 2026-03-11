@@ -38,6 +38,16 @@ By using this software, you acknowledge that:
 ### 3. Safety & Human-in-the-Loop
 - **Safe Mode:** The agent MUST ask for permission before creating, updating, or deleting records.
 - **Plan Review:** For complex tasks, it writes a TODO list and asks you to review the plan before execution.
+- **Shell Allow-List:** Read-only commands (`ls`, `grep`, `git status`, etc.) are auto-approved without prompting, keeping the workflow fast while blocking anything destructive.
+
+### 4. Non-Interactive (Headless) Mode
+- Run SDRbot from cron jobs, CI/CD pipelines, or scripts — no TUI needed.
+- Supports text and JSON output formats.
+- Pipe prompts via stdin: `echo "Enrich today's leads" | sdrbot -n`
+
+### 5. Session Persistence
+- Conversations are saved to a local SQLite database and can be resumed across restarts.
+- Browse and resume past threads from the Sessions screen.
 
 ---
 
@@ -553,6 +563,34 @@ Controls which tools are available to the agent:
 
 Cycle through scopes with `Ctrl+T`. The current scope is shown in the header next to the tool count.
 
+### Non-Interactive Mode
+
+Run SDRbot without the TUI for scripting, automation, and CI/CD:
+
+```bash
+# Basic usage with a prompt
+sdrbot -n -p "List the top 10 deals closing this month"
+
+# Pipe prompt via stdin
+echo "Enrich all leads added today" | sdrbot -n
+
+# JSON output for programmatic consumption
+sdrbot -n -p "Count contacts by lifecycle stage" --output-format json
+
+# Limit agent turns and auto-approve all tool calls
+sdrbot -n -p "Run data quality check" --max-turns 20 --auto-approve
+```
+
+| Flag | Description |
+|------|-------------|
+| `-n` / `--non-interactive` | Enable headless mode (no TUI) |
+| `-p` / `--prompt` | The prompt to execute |
+| `--output-format` | `text` (default) or `json` |
+| `--max-turns` | Max agent turns before stopping (default: 50) |
+| `--auto-approve` | Approve all tool calls without prompting |
+
+In non-interactive mode, commands on the [shell allow-list](#shell-allow-list) are auto-approved. All other tool calls require `--auto-approve` or the run will abort.
+
 ### Auto-approve Mode
 
 When enabled, tools run without confirmation prompts. Toggle with `Ctrl+A` or start with `--auto-approve`:
@@ -560,6 +598,24 @@ When enabled, tools run without confirmation prompts. Toggle with `Ctrl+A` or st
 ```bash
 sdrbot --auto-approve
 ```
+
+### Shell Allow-List
+
+SDRbot auto-approves read-only shell commands so the agent can inspect files and check status without interrupting you. Commands containing pipes (`|`), semicolons (`;`), subshells, or other shell meta-characters are always blocked.
+
+**Default allowed commands** include: `ls`, `cat`, `head`, `tail`, `grep`, `find`, `git status`, `git log`, `git diff`, `pwd`, `wc`, `echo`, and more.
+
+**Customizing the list:** Create `.sdrbot/shell_allowlist.json` in your project to extend the defaults:
+
+```json
+["docker ps", "kubectl get", "terraform plan"]
+```
+
+### Session Persistence
+
+Conversations are automatically saved to `.sdrbot/sessions.db` (SQLite). You can resume past threads or start fresh.
+
+The sessions screen is accessible from the TUI and shows past conversations sorted by most recent. You can resume a selected thread or delete old ones.
 
 ### Authentication Flows
 - **Salesforce:** The first time you ask for Salesforce data, the bot will open a browser for you to log in. It saves the token securely in your system keyring.
@@ -800,7 +856,10 @@ SDRbot creates these folders in your working directory (all gitignored):
 | `skills/` | Custom skills (`{name}/SKILL.md`) - created when you add skills |
 | `files/` | Agent-generated exports, reports, CSVs - created on first run |
 | `generated/` | Schema-synced CRM tools (hubspot_tools.py, etc.) - created on sync |
-| `.sdrbot/` | Service configuration (`services.json`) |
+| `.sdrbot/` | Service configuration (`services.json`), sessions DB, shell allow-list |
+| `.sdrbot/subagents/` | Project-level custom subagent definitions (`.md` files) |
+| `.sdrbot/sessions.db` | SQLite database for conversation persistence |
+| `.sdrbot/shell_allowlist.json` | Custom shell allow-list (optional) |
 
 ---
 
@@ -947,6 +1006,37 @@ SDRbot ships with these built-in skills:
 ### Overriding Built-in Skills
 
 Create a skill with the same name in `./skills/` to override a built-in skill with your own version.
+
+---
+
+## 🤖 Custom Subagents
+
+Subagents are specialized agents that the main agent can delegate tasks to. SDRbot ships with a built-in **CRM Migration Executor** subagent and supports loading custom definitions from `.md` files.
+
+### Subagent Definition Format
+
+Create `.md` files with YAML frontmatter in either location:
+
+| Source | Location | Priority |
+|--------|----------|----------|
+| **Built-in** | `sdrbot_cli/subagents/*.md` | Base |
+| **Project** | `.sdrbot/subagents/*.md` | Overrides built-in |
+
+```markdown
+---
+name: lead-scorer
+description: Scores and prioritizes leads based on firmographic signals
+tools:
+  - shell
+  - write_file
+---
+
+You are a lead scoring specialist. Given a list of leads...
+```
+
+The `name` and `description` fields are required. The `tools` list is optional. The body of the file becomes the subagent's system prompt.
+
+Project-level definitions with the same `name` override built-in ones, letting you customize behavior per project.
 
 ---
 

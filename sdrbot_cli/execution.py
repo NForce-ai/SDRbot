@@ -575,6 +575,40 @@ async def execute_task(
                             status.start()
                             spinner_active = True
                     else:
+                        # Check if all actions in this interrupt are
+                        # allow-listed shell commands that can be
+                        # auto-approved without prompting the user.
+                        from sdrbot_cli.config import is_command_allowed
+
+                        _all_allowed = True
+                        for _ar in hitl_request["action_requests"]:
+                            _tool = _ar.get("name", "")
+                            if _tool not in ("shell", "execute"):
+                                _all_allowed = False
+                                break
+                            _cmd = (_ar.get("args") or {}).get("command", "")
+                            if not is_command_allowed(_cmd):
+                                _all_allowed = False
+                                break
+
+                        if _all_allowed:
+                            decisions = []
+                            for _ar in hitl_request["action_requests"]:
+                                _cmd = (_ar.get("args") or {}).get("command", "")
+                                if spinner_active:
+                                    status.stop()
+                                    spinner_active = False
+                                if ui_callback:
+                                    ui_callback(
+                                        Text.from_markup(f"  [dim]✓ auto-approved: {_cmd}[/dim]")
+                                    )
+                                decisions.append({"type": "approve"})
+                            hitl_response[interrupt_id] = {"decisions": decisions}
+                            if not spinner_active:
+                                status.start()
+                                spinner_active = True
+                            continue
+
                         # Normal HITL flow - stop spinner and prompt user
                         if spinner_active:
                             status.stop()

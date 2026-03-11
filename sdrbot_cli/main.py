@@ -65,6 +65,31 @@ def parse_args():
         help="Disable the startup splash screen",
     )
     parser.add_argument(
+        "-n",
+        "--non-interactive",
+        action="store_true",
+        help="Run in non-interactive (headless) mode — no TUI",
+    )
+    parser.add_argument(
+        "-p",
+        "--prompt",
+        type=str,
+        default=None,
+        help="Prompt to execute in non-interactive mode",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format for non-interactive mode (default: text)",
+    )
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=50,
+        help="Maximum agent turns in non-interactive mode (default: 50)",
+    )
+    parser.add_argument(
         "-v",
         "--version",
         action="version",
@@ -172,6 +197,30 @@ def cli_main() -> None:
                 main(
                     args.agent if hasattr(args, "agent") else "default",
                     session_state,
+                )
+            )
+        elif getattr(args, "non_interactive", False):
+            # Non-interactive (headless) mode
+            prompt = args.prompt
+            if not prompt:
+                # Try reading from stdin
+                if not sys.stdin.isatty():
+                    prompt = sys.stdin.read().strip()
+                if not prompt:
+                    console.print(
+                        "[red]Error:[/red] --non-interactive requires -p/--prompt or stdin input."
+                    )
+                    sys.exit(1)
+
+            from sdrbot_cli.non_interactive import run_non_interactive
+
+            asyncio.run(
+                run_non_interactive(
+                    prompt,
+                    assistant_id=args.agent,
+                    output_format=args.output_format,
+                    max_turns=args.max_turns,
+                    auto_approve=args.auto_approve,
                 )
             )
         else:

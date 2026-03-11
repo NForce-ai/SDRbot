@@ -363,12 +363,13 @@ class SDRBotTUI(App[None]):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
-        Binding("ctrl+g", "show_help", "Help"),
-        Binding("ctrl+s", "show_setup", "Setup"),
-        Binding("ctrl+j", "newline", "New line", show=False),
-        Binding("ctrl+a", "toggle_auto_approve", "Auto-Approve", priority=True),
         Binding("ctrl+c", "interrupt_agent", "Interrupt", priority=True),
+        Binding("ctrl+l", "show_sessions", "Sessions"),
+        Binding("ctrl+a", "toggle_auto_approve", "Auto-Approve", priority=True),
         Binding("ctrl+t", "cycle_tool_scope", "Tool Scope"),
+        Binding("ctrl+s", "show_setup", "Setup"),
+        Binding("ctrl+g", "show_help", "Help"),
+        Binding("ctrl+j", "newline", "New line", show=False),
     ]
 
     # Add paste binding for Windows/Linux (Ctrl+Shift+V)
@@ -436,6 +437,15 @@ class SDRBotTUI(App[None]):
         from sdrbot_cli.tui.setup_wizard_screen import SetupWizardScreen
 
         self.push_screen(SetupWizardScreen())
+
+    def action_show_sessions(self) -> None:
+        """Show the sessions management screen."""
+        from sdrbot_cli.tui.sessions_screen import SessionsScreen
+
+        self.push_screen(
+            SessionsScreen(current_thread_id=self.session_state.thread_id),
+            self.agent_worker._on_sessions_screen_closed if self.agent_worker else None,
+        )
 
     def action_cycle_tool_scope(self) -> None:
         """Cycle through tool scopes: Standard -> Extended -> Privileged."""
@@ -586,6 +596,15 @@ class SDRBotTUI(App[None]):
             if sandbox_type == "none":
                 sandbox_type = None
 
+            # Use SQLite-backed checkpointer for session persistence
+            sqlite_checkpointer = None
+            try:
+                from sdrbot_cli.sessions import get_checkpointer
+
+                sqlite_checkpointer = await get_checkpointer()
+            except Exception:
+                pass  # Fall back to InMemorySaver inside create_agent_with_config
+
             def create_agent():
                 tools = [http_request, fetch_url, sync_crm_schema]
                 return create_agent_with_config(
@@ -594,6 +613,7 @@ class SDRBotTUI(App[None]):
                     tools,
                     sandbox=sandbox_backend,
                     sandbox_type=sandbox_type,
+                    checkpointer=sqlite_checkpointer,
                     session_state=self.session_state,
                 )
 
@@ -1002,3 +1022,10 @@ class SDRBotTUI(App[None]):
         """Cleanup when app is unmounted."""
         # Ensure OAuth server is shutdown on any exit path
         shutdown_oauth_server()
+        # Close SQLite session checkpointer connection
+        checkpointer = getattr(self.session_state, "checkpointer", None)
+        if checkpointer and hasattr(checkpointer, "conn"):
+            try:
+                await checkpointer.conn.close()
+            except Exception:
+                pass

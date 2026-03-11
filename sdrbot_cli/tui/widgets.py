@@ -17,11 +17,12 @@ from sdrbot_cli.version import __version__
 # Desired order for footer bindings (by action name)
 FOOTER_BINDING_ORDER = [
     "quit",
-    "show_help",
-    "show_setup",
-    "cycle_tool_scope",
-    "toggle_auto_approve",
     "interrupt_agent",
+    "show_sessions",
+    "toggle_auto_approve",
+    "cycle_tool_scope",
+    "show_setup",
+    "show_help",
     "paste",
     "newline",
 ]

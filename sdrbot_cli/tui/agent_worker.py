@@ -71,6 +71,91 @@ class AgentWorker(Worker):
         # Run reload in a worker to avoid blocking the UI
         self.app.run_worker(self._reload_agent_async(), exclusive=True)
 
+    def _on_sessions_screen_closed(self, thread_id: str | None = None) -> None:
+        """Called when the sessions screen is dismissed.
+
+        If a thread_id is returned the user wants to resume that thread.
+        ``"__clear__"`` means the user deleted the active session.
+        """
+        if thread_id is None:
+            return  # User dismissed without selecting
+
+        import uuid
+
+        if thread_id == "__clear__":
+            # Active session was deleted — start fresh
+            self.session_state.thread_id = str(uuid.uuid4())
+            self.token_tracker.reset()
+            self.app.post_message(ClearChatLog())
+            self.app.post_message(TaskListUpdate([]))
+            self._display_splash_and_greeting(show_tips=True)
+            self.app.post_message(TokenUpdate(0))
+            return
+
+        # Switch the thread_id and replay messages into the chat log
+        self.session_state.thread_id = thread_id
+        self.app.run_worker(self._replay_session(thread_id), exclusive=False)
+
+    async def _replay_session(self, thread_id: str) -> None:
+        """Load messages from a checkpoint and display them in the chat log."""
+        from langchain_core.messages import AIMessage, HumanMessage
+        from rich.markdown import Markdown as RichMarkdown
+        from rich.text import Text
+
+        agent = self.session_state.agent
+        if not agent:
+            return
+
+        # Clear current chat and show header
+        self.app.post_message(ClearChatLog())
+
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            state = await agent.aget_state(config)
+            messages = state.values.get("messages", [])
+        except Exception:
+            self._send_message_to_app(Text("Could not load session history.", style="red"))
+            return
+
+        if not messages:
+            self._send_message_to_app(Text("(empty session)", style="dim"))
+            return
+
+        self._send_message_to_app(Text.from_markup("[dim]─── Restored session ───[/dim]"))
+        self._send_message_to_app(Text(""))
+
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                content = msg.content if isinstance(msg.content, str) else ""
+                if content and not content.startswith("["):
+                    # Skip internal system messages like "[User interrupted...]"
+                    self._send_message_to_app(Text(f"> {content}", style="bold #00a2c7"))
+            elif isinstance(msg, AIMessage):
+                # Extract text content from the message
+                content = msg.content
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, list):
+                    # Content blocks — extract text parts
+                    parts = []
+                    for block in content:
+                        if isinstance(block, str):
+                            parts.append(block)
+                        elif isinstance(block, dict) and block.get("type") == "text":
+                            parts.append(block.get("text", ""))
+                    text = "".join(parts)
+                else:
+                    continue
+
+                if text.strip():
+                    try:
+                        self._send_message_to_app(RichMarkdown(text))
+                    except Exception:
+                        self._send_message_to_app(Text(text))
+                    self._send_message_to_app(Text(""))
+
+        self._send_message_to_app(Text.from_markup("[dim]─── End of history ───[/dim]\n"))
+
     def _on_agents_screen_closed(self, result: dict | None = None) -> None:
         """Called when the agents screen is dismissed. Reloads if needed."""
         if result:
@@ -326,6 +411,15 @@ class AgentWorker(Worker):
                     # Sync services - run as worker to avoid blocking
                     self.app.run_worker(self._run_sync_command(user_input), exclusive=True)
                     return
+                elif user_input == "/sessions":
+                    # Open sessions management screen
+                    from sdrbot_cli.tui.sessions_screen import SessionsScreen
+
+                    self.app.push_screen(
+                        SessionsScreen(current_thread_id=self.session_state.thread_id),
+                        self._on_sessions_screen_closed,
+                    )
+                    return
                 elif user_input == "/agents":
                     # Open agents management screen
                     from sdrbot_cli.tui.agents_screen import AgentsManagementScreen
@@ -346,13 +440,11 @@ class AgentWorker(Worker):
                     return
                 elif user_input == "/clear":
                     # Full reset: clear chat log, reset state, re-display splash
-                    from langgraph.checkpoint.memory import InMemorySaver
+                    import uuid
 
-                    # Reset checkpointer (conversation state)
-                    new_checkpointer = InMemorySaver()
-                    if self.session_state.agent:
-                        self.session_state.agent.checkpointer = new_checkpointer
-                    self.session_state.checkpointer = new_checkpointer
+                    # Start a fresh thread — the SQLite checkpointer persists the
+                    # old thread so it can be resumed via /sessions.
+                    self.session_state.thread_id = str(uuid.uuid4())
 
                     # Reset token tracker
                     self.token_tracker.reset()

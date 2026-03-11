@@ -48,9 +48,9 @@ def twenty_link_note_to_record(
         Success message or error message.
     """
     target_field_map = {
-        "person": "personId",
-        "company": "companyId",
-        "opportunity": "opportunityId",
+        "person": "targetPerson",
+        "company": "targetCompany",
+        "opportunity": "targetOpportunity",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -86,11 +86,11 @@ def twenty_list_notes_on_record(
     Returns:
         Formatted list of notes or error message.
     """
-    # Map target type to the correct ID field name
+    # Map target type to the correct relation field name
     target_field_map = {
-        "person": "personId",
-        "company": "companyId",
-        "opportunity": "opportunityId",
+        "person": "targetPerson",
+        "company": "targetCompany",
+        "opportunity": "targetOpportunity",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -166,9 +166,9 @@ def twenty_link_task_to_record(
         Success message or error message.
     """
     target_field_map = {
-        "person": "personId",
-        "company": "companyId",
-        "opportunity": "opportunityId",
+        "person": "targetPerson",
+        "company": "targetCompany",
+        "opportunity": "targetOpportunity",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -205,9 +205,9 @@ def twenty_list_tasks_on_record(
         Formatted list of tasks or error message.
     """
     target_field_map = {
-        "person": "personId",
-        "company": "companyId",
-        "opportunity": "opportunityId",
+        "person": "targetPerson",
+        "company": "targetCompany",
+        "opportunity": "targetOpportunity",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -291,7 +291,9 @@ def twenty_search_records(
                 )
             else:
                 # Companies and other objects have simple name field
-                params["filter"] = f'or(name[ilike]:"%{query}%",domainName[ilike]:"%{query}%")'
+                params["filter"] = (
+                    f'or(name[ilike]:"%{query}%",domainName.primaryLinkUrl[ilike]:"%{query}%")'
+                )
 
         response = client.get(f"/{object_type}", params=params)
         records = response.get("data", {}).get(object_type, [])
