@@ -1,0 +1,34 @@
+name: Check Notarization Status
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - name: Check previous submissions
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "=== Checking submission 812f6685 (first attempt) ==="
+          xcrun notarytool info 812f6685-7b6e-42d6-8669-00e5b114897f \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
+
+          echo ""
+          echo "=== Checking submission 1134484a (second attempt) ==="
+          xcrun notarytool info 1134484a-1ae7-42e0-bae7-5c302eeca4ef \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
+
+          echo ""
+          echo "=== Recent submission history ==="
+          xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
