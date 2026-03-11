@@ -93,12 +93,27 @@ jobs:
           # Create a zip for notarization (notarytool requires zip/dmg/pkg)
           ditto -c -k --keepParent dist/sdrbot dist/sdrbot.zip
 
-          # Submit for notarization and wait for result
+          # Submit for notarization and wait (timeout after 15 minutes)
           xcrun notarytool submit dist/sdrbot.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait --timeout 15m \
+            --verbose 2>&1 | tee notarization.log
+
+          # Show the log if it failed
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "Notarization failed. Fetching detailed log..."
+            # Extract submission ID and fetch log if available
+            SUB_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' notarization.log | head -1)
+            if [ -n "$SUB_ID" ]; then
+              xcrun notarytool log "$SUB_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          fi
 
           # Staple the notarization ticket to the binary
           # Note: stapler only works on .app/.dmg/.pkg, not bare binaries.
