@@ -36,11 +36,80 @@ jobs:
         run: |
           uv run pyinstaller sdrbot.spec
 
+      # ── macOS: Sign, notarize, and staple ──
+      - name: Import signing certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          MACOS_KEYCHAIN_PWD: ${{ secrets.MACOS_KEYCHAIN_PWD }}
+        run: |
+          # Decode the .p12 certificate from base64
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+
+          # Create a temporary keychain
+          security create-keychain -p "$MACOS_KEYCHAIN_PWD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PWD" build.keychain
+
+          # Import the certificate
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$MACOS_CERTIFICATE_PWD" \
+            -T /usr/bin/codesign
+
+          # Allow codesign to access the keychain without prompt
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$MACOS_KEYCHAIN_PWD" build.keychain
+
+          # Clean up
+          rm certificate.p12
+
       - name: Sign binary (macOS)
         if: runner.os == 'macOS'
-        run: codesign --force --deep -s - dist/sdrbot
+        env:
+          MACOS_IDENTITY: ${{ secrets.MACOS_IDENTITY }}
+        run: |
+          codesign --force --deep --timestamp \
+            --options runtime \
+            --sign "$MACOS_IDENTITY" \
+            dist/sdrbot
 
-      # Calculate a consistent suffix (e.g., linux-x64, windows-x64)
+          # Verify the signature
+          codesign --verify --verbose dist/sdrbot
+
+      - name: Notarize binary (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Create a zip for notarization (notarytool requires zip/dmg/pkg)
+          ditto -c -k --keepParent dist/sdrbot dist/sdrbot.zip
+
+          # Submit for notarization and wait for result
+          xcrun notarytool submit dist/sdrbot.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the notarization ticket to the binary
+          # Note: stapler only works on .app/.dmg/.pkg, not bare binaries.
+          # The notarization ticket is cached by Apple's servers, so Gatekeeper
+          # will validate it online. For offline support we'd need a .dmg wrapper.
+
+          # Clean up the zip
+          rm dist/sdrbot.zip
+
+      - name: Clean up keychain (macOS)
+        if: runner.os == 'macOS' && always()
+        run: |
+          security delete-keychain build.keychain 2>/dev/null || true
+
+      # ── Common: rename and upload ──
       - name: Set Binary Suffix
         shell: bash
         run: |
@@ -48,7 +117,6 @@ jobs:
           ARCH_NAME=$(echo "${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
           echo "BINARY_SUFFIX=${OS_NAME}-${ARCH_NAME}" >> $GITHUB_ENV
 
-      # Rename binaries
       - name: Rename Binary
         shell: bash
         run: |
