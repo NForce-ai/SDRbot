@@ -89,12 +89,12 @@ jobs:
           # Create a zip for notarization (notarytool requires zip/dmg/pkg)
           ditto -c -k --keepParent dist/sdrbot dist/sdrbot.zip
 
-          # Submit for notarization and wait (timeout after 15 minutes)
+          # Submit for notarization and wait (timeout after 30 minutes)
           xcrun notarytool submit dist/sdrbot.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 15m \
+            --wait --timeout 30m \
             --verbose 2>&1 | tee notarization.log
 
           # Show the log if it failed
