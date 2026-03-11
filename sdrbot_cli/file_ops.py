@@ -31,7 +31,7 @@ class ApprovalPreview:
 def _safe_read(path: Path) -> str | None:
     """Read file content, returning None on failure."""
     try:
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
 
@@ -272,7 +272,7 @@ class FileOpTracker:
                         record.before_content = responses[0].content.decode("utf-8")
                     else:
                         record.before_content = ""
-                except Exception:
+                except (OSError, UnicodeDecodeError, AttributeError):
                     record.before_content = ""
             elif record.physical_path:
                 record.before_content = _safe_read(record.physical_path) or ""
@@ -303,7 +303,7 @@ class FileOpTracker:
                             record.before_content = responses[0].content.decode("utf-8")
                         else:
                             record.before_content = ""
-                    except Exception:
+                    except (OSError, UnicodeDecodeError, AttributeError):
                         record.before_content = ""
                 elif record.physical_path:
                     record.before_content = _safe_read(record.physical_path) or ""
@@ -344,6 +344,8 @@ class FileOpTracker:
             offset = record.args.get("offset")
             limit = record.args.get("limit")
             if isinstance(offset, int):
+                if offset > lines:
+                    offset = 0
                 record.metrics.start_line = offset + 1
                 if lines:
                     record.metrics.end_line = offset + lines
@@ -428,7 +430,7 @@ class FileOpTracker:
                         record.after_content = None
                 else:
                     record.after_content = None
-            except Exception:
+            except (OSError, UnicodeDecodeError, AttributeError):
                 record.after_content = None
         else:
             # Fallback: direct filesystem read when no backend provided

@@ -13,6 +13,7 @@ from langchain.agents.middleware.types import AgentState
 from langchain.messages import ToolCall
 from langchain.tools import BaseTool
 from langchain_core.language_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.pregel import Pregel
 from langgraph.runtime import Runtime
@@ -144,13 +145,21 @@ def reset_agent(agent_name: str, source_agent: str | None = None) -> None:
     console.print(f"Location: {agent_dir}\n", style=COLORS["dim"])
 
 
-def get_system_prompt(assistant_id: str, sandbox_type: str | None = None) -> str:
+def get_system_prompt(
+    assistant_id: str,
+    sandbox_type: str | None = None,
+    *,
+    model_name: str | None = None,
+    provider: str | None = None,
+) -> str:
     """Get the base system prompt for the agent.
 
     Args:
         assistant_id: The agent identifier for path references
         sandbox_type: Type of sandbox provider ("modal", "runloop", "daytona").
                      If None, agent is operating in local mode.
+        model_name: Optional model name to inject into the prompt.
+        provider: Optional provider name to inject into the prompt.
 
     Returns:
         The system prompt string (without agent.md content)
@@ -193,55 +202,23 @@ The filesystem backend is currently operating in: `{cwd}`
 
 """
 
-    return (
-        working_dir_section
-        + f"""### Skills Directory
+    # Build model identity line
+    model_identity = ""
+    if model_name and provider:
+        model_identity = f"You are powered by {model_name} via {provider}."
+    elif model_name:
+        model_identity = f"You are powered by {model_name}."
 
-Skills are stored at: `{skills_dir}/`
-Skills may contain scripts or supporting files. When executing skill scripts with bash, use the real filesystem path:
-Example: `bash python {skills_dir}/web-research/script.py`
-
-### Human-in-the-Loop Tool Approval
-
-Some tool calls require user approval before execution. When a tool call is rejected by the user:
-1. Accept their decision immediately - do NOT retry the same command
-2. Explain that you understand they rejected the action
-3. Suggest an alternative approach or ask for clarification
-4. Never attempt the exact same rejected command again
-
-Respect the user's decisions and work with them collaboratively.
-
-### Action Plan Management
-
-If the user explicitly asks you to plan something first check to see if there are any relevant skills as they may provide more specific guidance for the task at hand.
-
-As a rule of thumb if you're being asked to carry out a task with more than 3 steps, use the write_todos tool to document the plan and present it to them.
-
-If you do use the write_todos:
-1. Aim for 3-6 action items unless the task is truly complex in which case its fine to plan more extensively.
-2. Update the plan status as you complete each item.
-3. You can keep your final response succint since the plan will be presented to them in a separate widget.
-
-### Privileged Actions
-The following actions require privileged mode:
-- CRM Migration
-
-Before any planning, decomposition, write_todos usage, or skill selection:
-1. Determine whether the user's request involves a privileged action.
-2. If the action is privileged and privileged mode is disabled:
-   - IMMEDIATELY abort the request
-   - Do NOT plan, decompose, explain steps, or suggest an approach
-   - Only instruct the user to enable privileged mode via /setup
-3. This rule overrides Action Plan Management and all other planning behaviors.
-
-### Scripting as Alternative to Tool Calling
-You have the ability to write your own scripts and execute them using the write_file read_file and shell execution tools.
-
-For complex or large batch operations, it may be more efficient to write a script that imports and uses the tools, and then executing the script, rather than using the tools directly.
-"""
-        + _get_enabled_services_prompt()
-        + _get_privileged_mode_prompt()
+    # Load and render template
+    template_path = Path(__file__).parent / "system_prompt.md"
+    template = template_path.read_text(encoding="utf-8")
+    prompt_body = template.format(
+        working_dir_section=working_dir_section,
+        skills_dir=skills_dir,
+        model_identity=model_identity,
     )
+
+    return prompt_body + _get_enabled_services_prompt() + _get_privileged_mode_prompt()
 
 
 def _get_enabled_services_prompt() -> str:
@@ -454,9 +431,9 @@ def create_agent_with_config(
     *,
     sandbox: SandboxBackendProtocol | None = None,
     sandbox_type: str | None = None,
-    checkpointer: InMemorySaver | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
     session_state=None,
-) -> tuple[Pregel, CompositeBackend, int, int, InMemorySaver, int]:
+) -> tuple[Pregel, CompositeBackend, int, int, BaseCheckpointSaver, int]:
     """Create and configure an agent with the specified model and tools.
 
     Args:
@@ -467,7 +444,8 @@ def create_agent_with_config(
                  If None, uses local filesystem + shell.
         sandbox_type: Type of sandbox provider ("modal", "runloop", "daytona")
         checkpointer: Optional existing checkpointer to preserve conversation history.
-                     If None, creates a new InMemorySaver.
+                     If None, creates a new InMemorySaver. Accepts any
+                     ``BaseCheckpointSaver`` (e.g. ``AsyncSqliteSaver``).
         session_state: Optional session state for status callbacks during summarization.
 
     Returns:
@@ -486,9 +464,18 @@ def create_agent_with_config(
         # ========== LOCAL MODE ==========
         # Backend: Restrict file operations to ./files/ directory
         files_dir = settings.ensure_files_dir()
+
+        # Route /tmp writes to a virtual filesystem so large tool results
+        # and conversation artefacts don't pollute the working directory.
+        import tempfile
+
+        tmp_backend = FilesystemBackend(
+            root_dir=Path(tempfile.gettempdir()),
+            virtual_mode=True,
+        )
         composite_backend = CompositeBackend(
             default=FilesystemBackend(root_dir=files_dir),
-            routes={},
+            routes={"/tmp": tmp_backend},
         )
 
         # Middleware: AgentMemoryMiddleware, SkillsMiddleware, ShellMiddleware
@@ -522,8 +509,23 @@ def create_agent_with_config(
             ),
         ]
 
+    # Extract model identity for system prompt injection
+    _model_name: str | None = getattr(model, "model_name", None) or getattr(model, "model", None)
+    _provider: str | None = None
+    if _model_name:
+        from sdrbot_cli.config import detect_provider
+
+        _provider = detect_provider(_model_name)
+        if _provider == "unknown":
+            _provider = None
+
     # Get the system prompt (sandbox-aware and with skills)
-    system_prompt = get_system_prompt(assistant_id=assistant_id, sandbox_type=sandbox_type)
+    system_prompt = get_system_prompt(
+        assistant_id=assistant_id,
+        sandbox_type=sandbox_type,
+        model_name=_model_name,
+        provider=_provider,
+    )
 
     interrupt_on = _add_interrupt_on()
 

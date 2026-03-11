@@ -63,6 +63,7 @@ TUI_COMMANDS = {
     "tracing": "Open tracing setup screen",
     "agents": "Open agents management screen",
     "skills": "Open skills management screen",
+    "sessions": "Browse and resume past conversations",
     "sync": "Sync service schemas",
     "clear": "Clear screen and reset conversation",
     "quit": "Exit the application",
@@ -75,6 +76,117 @@ MAX_ARG_LENGTH = 150
 
 # Agent configuration
 config = {"recursion_limit": 1000}
+
+# --------------------------------------------------------------------------- #
+# Shell allow-list: commands that skip HITL approval
+# --------------------------------------------------------------------------- #
+
+DEFAULT_SHELL_ALLOW_LIST: set[str] = {
+    # Navigation / inspection
+    "ls",
+    "pwd",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "file",
+    "stat",
+    "du",
+    "df",
+    "find",
+    "which",
+    "whoami",
+    "date",
+    "echo",
+    "printf",
+    "tree",
+    # Text processing (read-only)
+    "grep",
+    "rg",
+    "awk",
+    "sed",
+    "sort",
+    "uniq",
+    "cut",
+    "tr",
+    "diff",
+    "jq",
+    "yq",
+    "less",
+    "more",
+    # Git (read-only)
+    "git status",
+    "git log",
+    "git diff",
+    "git branch",
+    "git show",
+    "git remote",
+    "git tag",
+    "git stash list",
+    # Python / Node inspection
+    "python --version",
+    "python3 --version",
+    "node --version",
+    "pip list",
+    "pip show",
+    "npm list",
+}
+
+# Characters that indicate shell meta-programming (pipes, subshells, etc.)
+_SHELL_DANGEROUS_CHARS = {"|", ";", "&", "`", "$", "(", ")", "{", "}"}
+
+
+def _load_custom_allow_list() -> set[str] | None:
+    """Load a project-level shell allow-list from ``.sdrbot/shell_allowlist.json``."""
+    allow_file = get_config_dir() / "shell_allowlist.json"
+    if not allow_file.exists():
+        return None
+    try:
+        data = json.loads(allow_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return set(data)
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def is_command_allowed(command: str) -> bool:
+    """Return ``True`` if *command* is on the shell allow-list.
+
+    A command is allowed when:
+    1. It contains no shell meta-characters (pipes, semicolons, etc.)
+    2. Its first token (or first two tokens for ``git status``-style
+       entries) matches the allow-list.
+
+    Custom entries from ``.sdrbot/shell_allowlist.json`` extend the
+    default list.
+    """
+    command = command.strip()
+    if not command:
+        return False
+
+    # Reject anything containing dangerous shell meta-characters
+    for ch in _SHELL_DANGEROUS_CHARS:
+        if ch in command:
+            return False
+
+    allow_list = DEFAULT_SHELL_ALLOW_LIST.copy()
+    custom = _load_custom_allow_list()
+    if custom:
+        allow_list |= custom
+
+    parts = command.split()
+    first_token = parts[0]
+
+    # Check two-token match first (e.g. "git status")
+    if len(parts) >= 2:
+        two_token = f"{parts[0]} {parts[1]}"
+        if two_token in allow_list:
+            return True
+
+    # Single token match
+    return first_token in allow_list
+
 
 # Custom theme to override dim style for better visibility on Windows/macOS terminals
 _theme = Theme({"dim": COLORS["dim"]})
@@ -212,8 +324,11 @@ def _find_project_root(start_path: Path | None = None) -> Path | None:
     # Walk up the directory tree
     for parent in [current, *list(current.parents)]:
         git_dir = parent / ".git"
-        if git_dir.exists():
-            return parent
+        try:
+            if git_dir.exists():
+                return parent
+        except OSError:
+            continue
 
     return None
 
@@ -1007,6 +1122,84 @@ def get_default_coding_instructions() -> str:
     return default_prompt_path.read_text()
 
 
+def detect_provider(model_name: str) -> str:
+    """Infer the LLM provider from a model name string.
+
+    Uses simple prefix matching to map common model naming conventions
+    to their providers.
+
+    Returns:
+        One of: ``"openai"``, ``"anthropic"``, ``"google"``, ``"bedrock"``,
+        ``"ollama"``, or ``"unknown"``.
+    """
+    name = model_name.lower()
+
+    # Anthropic
+    if name.startswith("claude"):
+        return "anthropic"
+
+    # OpenAI (including o-series reasoning models and chatgpt- aliases)
+    openai_prefixes = ("gpt-", "o1-", "o3-", "o4-", "chatgpt-")
+    if any(name.startswith(p) for p in openai_prefixes):
+        return "openai"
+
+    # Google
+    if name.startswith("gemini"):
+        return "google"
+
+    # AWS Bedrock (ARN-style model IDs)
+    if (
+        name.startswith("arn:")
+        or "." in name
+        and name.split(".")[0]
+        in {
+            "anthropic",
+            "amazon",
+            "meta",
+            "cohere",
+            "ai21",
+            "mistral",
+        }
+    ):
+        return "bedrock"
+
+    # Ollama — convention: namespace/model
+    if "/" in name and not name.startswith("arn:"):
+        return "ollama"
+
+    return "unknown"
+
+
+def validate_model_capabilities(model_name: str, provider: str) -> list[str]:
+    """Check for known capability limitations of a model.
+
+    Returns a list of human-readable warning strings.  An empty list
+    means no known issues.
+    """
+    warnings: list[str] = []
+    name = model_name.lower()
+
+    # Models known to lack tool_calling support
+    no_tool_calling = {"o1-preview", "o1-mini"}
+    if name in no_tool_calling:
+        warnings.append(
+            f"{model_name} does not support tool calling. Agent tool use will be unavailable."
+        )
+
+    # Models with relatively small context windows
+    small_ctx: dict[str, int] = {
+        "gpt-4": 8_192,
+        "gpt-3.5-turbo": 16_385,
+    }
+    if name in small_ctx:
+        ctx = small_ctx[name]
+        warnings.append(
+            f"{model_name} has a {ctx:,}-token context window which may limit conversation length."
+        )
+
+    return warnings
+
+
 def create_model() -> BaseChatModel:
     """Create the appropriate model based on available API keys.
 
@@ -1024,6 +1217,10 @@ def create_model() -> BaseChatModel:
     if model_config:
         provider = model_config["provider"]
         model_name = model_config["model_name"]
+
+        # Emit capability warnings for the selected model
+        for warning in validate_model_capabilities(model_name, provider):
+            console.print(f"[bold yellow]Warning:[/bold yellow] {warning}")
 
         if provider == "ollama":
             from langchain_openai import ChatOpenAI

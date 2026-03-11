@@ -24,6 +24,7 @@ from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
 from sdrbot_cli.subagents import MIGRATION_EXECUTOR
+from sdrbot_cli.subagents.loader import scan_subagent_dirs
 from sdrbot_cli.summarization import CustomSummarizationMiddleware
 from sdrbot_cli.token_counting import calculate_context_overhead
 
@@ -92,8 +93,30 @@ def create_custom_deep_agent(
         session_state=session_state,
     )
 
-    # Built-in specialized subagents + any custom ones passed in
-    builtin_subagents: list[SubAgent | CompiledSubAgent] = [MIGRATION_EXECUTOR]
+    # Discover subagent definitions from .md files
+    from pathlib import Path
+
+    from sdrbot_cli.config import get_config_dir
+
+    discovered_defs = scan_subagent_dirs(
+        Path(__file__).parent / "subagents",  # built-in
+        get_config_dir() / "subagents",  # project-level
+    )
+    # Convert discovered dicts to SubAgent objects
+    discovered_subagents: list[SubAgent] = [
+        SubAgent(
+            name=d["name"],
+            description=d["description"],
+            system_prompt=d["system_prompt"],
+        )
+        for d in discovered_defs
+    ]
+
+    # Built-in specialized subagents + discovered + any custom ones passed in
+    builtin_subagents: list[SubAgent | CompiledSubAgent] = [
+        MIGRATION_EXECUTOR,
+        *discovered_subagents,
+    ]
     all_subagents = builtin_subagents + (subagents or [])
 
     # Extract ShellMiddleware from passed middleware for subagents

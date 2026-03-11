@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,16 @@ class ImageTracker:
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif"}
 
 
+def _get_executable(name: str) -> str | None:
+    """Return the full path to *name* if it exists on ``$PATH``, else ``None``.
+
+    Using ``shutil.which`` avoids passing an unvalidated string straight to
+    ``subprocess.run`` and makes it easy to test clipboard helpers when the
+    required tool is missing.
+    """
+    return shutil.which(name)
+
+
 def _normalize_path(text: str) -> str:
     """Normalize a path, handling file:// URIs and extra whitespace.
 
@@ -130,7 +141,7 @@ def load_image_from_path(path: str) -> ImageData | None:
             buffer.seek(0)
             base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
             return ImageData(base64_data=base64_data, format="png")
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         return None
 
 
@@ -169,7 +180,7 @@ def get_clipboard_image() -> ImageData | None:
             buffer.seek(0)
             base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
             return ImageData(base64_data=base64_data, format="png")
-    except Exception:
+    except (ImportError, OSError, AttributeError):
         pass
 
     # Platform-specific fallbacks
@@ -192,9 +203,13 @@ def _get_macos_clipboard_image() -> ImageData | None:
     os.close(fd)
 
     try:
+        osascript = _get_executable("osascript")
+        if osascript is None:
+            return None
+
         # First check if clipboard has image data
         check_result = subprocess.run(
-            ["osascript", "-e", "clipboard info"],
+            [osascript, "-e", "clipboard info"],
             capture_output=True,
             check=False,
             timeout=2,
@@ -227,7 +242,7 @@ def _get_macos_clipboard_image() -> ImageData | None:
             """
 
         result = subprocess.run(
-            ["osascript", "-e", get_script],
+            [osascript, "-e", get_script],
             capture_output=True,
             check=False,
             timeout=3,
@@ -253,7 +268,7 @@ def _get_macos_clipboard_image() -> ImageData | None:
             buffer.seek(0)
             base64_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
             return ImageData(base64_data=base64_data, format="png")
-        except Exception:
+        except (ImportError, OSError, ValueError):
             return None
 
     except (subprocess.TimeoutExpired, OSError):
@@ -273,10 +288,14 @@ def _get_linux_clipboard_image() -> ImageData | None:
     Returns:
         ImageData if an image is found, None otherwise
     """
+    xclip = _get_executable("xclip")
+    if xclip is None:
+        return None
+
     try:
         # Try to get PNG from clipboard
         result = subprocess.run(
-            ["xclip", "-selection", "clipboard", "-t", "image/png", "-o"],
+            [xclip, "-selection", "clipboard", "-t", "image/png", "-o"],
             capture_output=True,
             check=False,
             timeout=2,
@@ -290,7 +309,7 @@ def _get_linux_clipboard_image() -> ImageData | None:
                 Image.open(io.BytesIO(result.stdout))
                 base64_data = base64.b64encode(result.stdout).decode("utf-8")
                 return ImageData(base64_data=base64_data, format="png")
-            except Exception:
+            except (ImportError, OSError, ValueError):
                 pass
 
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -325,6 +344,7 @@ def create_multimodal_content(text: str, images: list[ImageData]) -> list[dict]:
 __all__ = [
     "ImageData",
     "ImageTracker",
+    "_get_executable",
     "get_clipboard_image",
     "load_image_from_path",
     "is_image_path",
