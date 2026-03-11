@@ -131,5 +131,5 @@ def reload_env_and_settings() -> None:
 
     from sdrbot_cli.config import settings
 
-    load_dotenv(override=True)
+    load_dotenv(Path.cwd() / ".env", override=True)
     settings.reload()
