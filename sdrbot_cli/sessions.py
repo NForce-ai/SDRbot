@@ -93,6 +93,7 @@ def list_threads(*, limit: int = 50) -> list[dict[str, Any]]:
     - ``preview`` (str) — first human message, truncated
     - ``timestamp`` (str) — approximate creation time
     - ``steps`` (int) — number of agent steps
+    - ``assistant_id`` (str | None) — agent profile used, if recorded
 
     Sorted most-recent first.
     """
@@ -132,11 +133,12 @@ def list_threads(*, limit: int = 50) -> list[dict[str, Any]]:
             preview = ""
             timestamp = ""
             steps = 0
+            assistant_id: str | None = None
             if row:
                 preview = _extract_first_human_message(row[0])
                 timestamp = _extract_timestamp(row[0])
 
-            # Get step count from the latest checkpoint metadata
+            # Get step count and assistant_id from the latest checkpoint metadata
             latest = conn.execute(
                 """
                 SELECT metadata FROM checkpoints
@@ -151,6 +153,7 @@ def list_threads(*, limit: int = 50) -> list[dict[str, Any]]:
                 try:
                     meta = json.loads(latest[0])
                     steps = meta.get("step", 0)
+                    assistant_id = meta.get("assistant_id")
                 except (json.JSONDecodeError, TypeError):
                     pass
 
@@ -160,6 +163,7 @@ def list_threads(*, limit: int = 50) -> list[dict[str, Any]]:
                     "preview": preview[:80] if preview else "(empty)",
                     "timestamp": timestamp,
                     "steps": steps,
+                    "assistant_id": assistant_id,
                 }
             )
         conn.close()
@@ -167,6 +171,36 @@ def list_threads(*, limit: int = 50) -> list[dict[str, Any]]:
         pass
 
     return results
+
+
+def get_thread_assistant_id(thread_id: str) -> str | None:
+    """Return the ``assistant_id`` stored in the most recent checkpoint for *thread_id*.
+
+    Returns ``None`` if the thread doesn't exist or no assistant_id was recorded.
+    """
+    db_path = _sessions_db_path()
+    if not db_path.exists():
+        return None
+
+    try:
+        import json
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            """
+            SELECT metadata FROM checkpoints
+            WHERE thread_id = ? AND checkpoint_ns = ''
+            ORDER BY checkpoint_id DESC LIMIT 1
+            """,
+            (thread_id,),
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            meta = json.loads(row[0])
+            return meta.get("assistant_id")
+    except (sqlite3.Error, OSError, json.JSONDecodeError, TypeError):
+        pass
+    return None
 
 
 def get_most_recent() -> str | None:
