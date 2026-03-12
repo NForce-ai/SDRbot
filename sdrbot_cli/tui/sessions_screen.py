@@ -39,7 +39,7 @@ class SessionsScreen(ModalScreen[str | None]):
         color: $text-muted;
         width: auto;
         text-align: right;
-        min-width: 18;
+        min-width: 28;
     }
     """
 
@@ -88,7 +88,11 @@ class SessionsScreen(ModalScreen[str | None]):
         for t in threads:
             preview = t.get("preview", "(empty)")
             timestamp = t.get("timestamp", "")
-            meta = timestamp[:10] if timestamp else ""
+            date_str = timestamp[:10] if timestamp else ""
+            # Show agent profile name alongside date
+            aid = t.get("assistant_id")
+            agent_label = "default" if aid in (None, "agent") else aid
+            meta = f"[{agent_label}]  {date_str}" if date_str else f"[{agent_label}]"
 
             item = ListItem(
                 Horizontal(

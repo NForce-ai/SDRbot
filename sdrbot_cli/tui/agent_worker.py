@@ -92,9 +92,45 @@ class AgentWorker(Worker):
             self.app.post_message(TokenUpdate(0))
             return
 
-        # Switch the thread_id and replay messages into the chat log
+        # Restore the agent profile that was active when this session was saved
+        self.app.run_worker(self._restore_session_with_profile(thread_id), exclusive=True)
+
+    async def _restore_session_with_profile(self, thread_id: str) -> None:
+        """Restore a session and switch to its original agent profile if possible."""
+        from sdrbot_cli.config import settings
+        from sdrbot_cli.sessions import get_thread_assistant_id
+
+        stored_aid = get_thread_assistant_id(thread_id)
+        current_aid = self.assistant_id
+
+        need_switch = stored_aid and stored_aid != current_aid
+
+        if need_switch:
+            # Check if the agent profile directory still exists
+            agent_dir = settings.get_agent_dir(stored_aid)
+            if agent_dir.exists():
+                # Switch to the stored profile
+                self.assistant_id = stored_aid
+                self.app.assistant_id = stored_aid
+                # Update AgentInfo widget
+                from sdrbot_cli.tui.widgets import AgentInfo
+
+                agent_info = self.app.query_one("#agent_info", AgentInfo)
+                agent_info.agent_name = "default" if stored_aid in (None, "agent") else stored_aid
+                # Reload agent with the restored profile
+                await self._reload_agent_async()
+            else:
+                # Profile no longer exists — warn and keep current
+                self._send_message_to_app(
+                    Text(
+                        f"⚠ Session was created with agent '{stored_aid}' which no longer exists. "
+                        f"Using current profile instead.",
+                        style="yellow",
+                    )
+                )
+
         self.session_state.thread_id = thread_id
-        self.app.run_worker(self._replay_session(thread_id), exclusive=False)
+        await self._replay_session(thread_id)
 
     async def _replay_session(self, thread_id: str) -> None:
         """Load messages from a checkpoint and display them in the chat log."""
