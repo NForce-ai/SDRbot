@@ -10,7 +10,11 @@ Works with any email provider that supports IMAP/SMTP including:
 import email
 import email.utils
 import json
+import mimetypes
+import os
+from email import encoders
 from email.header import decode_header
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -76,6 +80,26 @@ def _get_email_body(msg: email.message.Message) -> str:
             except (LookupError, UnicodeDecodeError):
                 return payload.decode("utf-8", errors="replace")
     return ""
+
+
+def _attach_files(message: MIMEMultipart, file_paths: list[str]) -> None:
+    """Attach files to a MIME message."""
+    for file_path in file_paths:
+        path = file_path.strip()
+        if not path:
+            continue
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Attachment not found: {path}")
+        content_type, _ = mimetypes.guess_type(path)
+        if content_type is None:
+            content_type = "application/octet-stream"
+        main_type, sub_type = content_type.split("/", 1)
+        with open(path, "rb") as f:
+            part = MIMEBase(main_type, sub_type)
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+        message.attach(part)
 
 
 @tool
@@ -334,16 +358,26 @@ def email_read(uid: str, folder: str = "INBOX") -> str:
 
 
 @tool
-def email_send(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def email_send(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "plain",
+    attachments: str = "",
+) -> str:
     """
     Send an email via SMTP.
 
     Args:
         to: Recipient email address (required). For multiple recipients, separate with commas.
         subject: Email subject line (required).
-        body: Email body text (plain text).
+        body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation that the email was sent.
@@ -369,7 +403,10 @@ def email_send(to: str, subject: str, body: str, cc: str = "", bcc: str = "") ->
             if bcc:
                 msg["Bcc"] = bcc
 
-            msg.attach(MIMEText(body, "plain"))
+            msg.attach(MIMEText(body, content_type))
+
+            if attachments:
+                _attach_files(msg, attachments.split(","))
 
             # Build recipient list
             recipients = [addr.strip() for addr in to.split(",") if addr.strip()]
@@ -389,15 +426,24 @@ def email_send(to: str, subject: str, body: str, cc: str = "", bcc: str = "") ->
 
 
 @tool
-def email_reply(uid: str, body: str, reply_all: bool = False, folder: str = "INBOX") -> str:
+def email_reply(
+    uid: str,
+    body: str,
+    reply_all: bool = False,
+    folder: str = "INBOX",
+    content_type: str = "plain",
+    attachments: str = "",
+) -> str:
     """
     Reply to an existing email.
 
     Args:
         uid: The UID of the email to reply to.
-        body: Reply body text.
+        body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         folder: Folder containing the original email (default: INBOX).
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation that the reply was sent.
@@ -481,7 +527,10 @@ def email_reply(uid: str, body: str, reply_all: bool = False, folder: str = "INB
             quoted_body = "\n".join(f"> {line}" for line in original_body.split("\n")[:20])
             full_body = f"{body}\n\nOn {original_msg.get('Date', '')}, {_decode_header_value(original_msg.get('From', ''))} wrote:\n{quoted_body}"
 
-            msg.attach(MIMEText(full_body, "plain"))
+            msg.attach(MIMEText(full_body, content_type))
+
+            if attachments:
+                _attach_files(msg, attachments.split(","))
 
             # Build recipient list
             recipients = [msg["To"]]
@@ -621,16 +670,26 @@ def email_delete(uid: str, folder: str = "INBOX") -> str:
 
 
 @tool
-def email_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def email_create_draft(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "plain",
+    attachments: str = "",
+) -> str:
     """
     Create an email draft (saves to Drafts folder).
 
     Args:
         to: Recipient email address (required).
         subject: Email subject line (required).
-        body: Email body text.
+        body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation that the draft was created.
@@ -657,7 +716,10 @@ def email_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str 
             if bcc:
                 msg["Bcc"] = bcc
 
-            msg.attach(MIMEText(body, "plain"))
+            msg.attach(MIMEText(body, content_type))
+
+            if attachments:
+                _attach_files(msg, attachments.split(","))
 
             # Try common draft folder names
             draft_folders = ["Drafts", "INBOX.Drafts", "[Gmail]/Drafts", "Draft"]

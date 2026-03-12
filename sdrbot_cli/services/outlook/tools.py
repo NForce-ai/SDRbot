@@ -3,7 +3,10 @@
 Outlook is an email service - all tools are static (no schema sync required).
 """
 
+import base64
 import json
+import mimetypes
+import os
 
 import requests
 from langchain_core.tools import BaseTool, tool
@@ -37,6 +40,114 @@ def _extract_body(message: dict) -> str:
         return text
 
     return content
+
+
+# Graph API limit for inline attachments in a JSON request body.
+# Files larger than this must use an upload session.
+_MAX_INLINE_BYTES = 3 * 1024 * 1024  # 3 MB (conservative, limit is 4 MB)
+
+# Upload sessions accept chunks between 320 KiB and 4 MiB (must be 320 KiB-aligned).
+_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024  # 4 MiB – keeps round-trips low
+
+
+def _validated_paths(file_paths: list[str]) -> list[str]:
+    """Validate and return cleaned attachment paths."""
+    paths: list[str] = []
+    for file_path in file_paths:
+        path = file_path.strip()
+        if not path:
+            continue
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Attachment not found: {path}")
+        paths.append(path)
+    return paths
+
+
+def _build_small_attachments(paths: list[str]) -> list[dict]:
+    """Build inline Graph API attachment objects for small files."""
+    result = []
+    for path in paths:
+        if os.path.getsize(path) > _MAX_INLINE_BYTES:
+            continue  # skip – handled by upload session
+        content_type, _ = mimetypes.guess_type(path)
+        if content_type is None:
+            content_type = "application/octet-stream"
+        with open(path, "rb") as f:
+            content_bytes = base64.b64encode(f.read()).decode("utf-8")
+        result.append(
+            {
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": os.path.basename(path),
+                "contentType": content_type,
+                "contentBytes": content_bytes,
+            }
+        )
+    return result
+
+
+def _upload_large_attachment(headers: dict, message_id: str, path: str) -> None:
+    """Upload a large file to a message via an upload session.
+
+    Uses the Graph API ``createUploadSession`` endpoint and streams the
+    file in ≤4 MiB chunks.
+    """
+    file_size = os.path.getsize(path)
+    file_name = os.path.basename(path)
+    content_type, _ = mimetypes.guess_type(path)
+    if content_type is None:
+        content_type = "application/octet-stream"
+
+    # 1. Create the upload session
+    session_body = {
+        "AttachmentItem": {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": file_name,
+            "size": file_size,
+            "contentType": content_type,
+        }
+    }
+    session_resp = requests.post(
+        f"{BASE_URL}/me/messages/{message_id}/attachments/createUploadSession",
+        headers=headers,
+        json=session_body,
+    )
+    if not session_resp.ok:
+        raise RuntimeError(
+            f"Failed to create upload session for {file_name}: "
+            f"{session_resp.status_code} - {session_resp.text}"
+        )
+    upload_url = session_resp.json()["uploadUrl"]
+
+    # 2. Upload in chunks
+    with open(path, "rb") as f:
+        offset = 0
+        while offset < file_size:
+            chunk = f.read(_UPLOAD_CHUNK_SIZE)
+            chunk_len = len(chunk)
+            end = offset + chunk_len - 1
+            put_headers = {
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(chunk_len),
+                "Content-Range": f"bytes {offset}-{end}/{file_size}",
+            }
+            put_resp = requests.put(upload_url, headers=put_headers, data=chunk)
+            if not put_resp.ok:
+                raise RuntimeError(
+                    f"Upload chunk failed for {file_name}: {put_resp.status_code} - {put_resp.text}"
+                )
+            offset += chunk_len
+
+
+def _has_large_files(paths: list[str]) -> bool:
+    """Return True if any path exceeds the inline-attachment limit."""
+    return any(os.path.getsize(p) > _MAX_INLINE_BYTES for p in paths)
+
+
+def _attach_files_to_message(headers: dict, message_id: str, paths: list[str]) -> None:
+    """Upload all large files in *paths* to an existing draft message."""
+    for path in paths:
+        if os.path.getsize(path) > _MAX_INLINE_BYTES:
+            _upload_large_attachment(headers, message_id, path)
 
 
 @tool
@@ -161,16 +272,26 @@ def outlook_read_email(message_id: str) -> str:
 
 
 @tool
-def outlook_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def outlook_send_email(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "text",
+    attachments: str = "",
+) -> str:
     """
     Send an email.
 
     Args:
         to: Recipient email address (required). For multiple recipients, separate with commas.
         subject: Email subject line (required).
-        body: Email body text (plain text).
+        body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
+        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation that the email was sent.
@@ -193,10 +314,52 @@ def outlook_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str 
             else []
         )
 
+        paths = _validated_paths(attachments.split(",")) if attachments else []
+
+        # If any file is too large for inline JSON, use draft → upload → send.
+        if paths and _has_large_files(paths):
+            msg_body = {
+                "subject": subject,
+                "body": {"contentType": content_type, "content": body},
+                "toRecipients": to_recipients,
+            }
+            if cc_recipients:
+                msg_body["ccRecipients"] = cc_recipients
+            if bcc_recipients:
+                msg_body["bccRecipients"] = bcc_recipients
+
+            # Inline the small attachments directly on the draft.
+            small = _build_small_attachments(paths)
+            if small:
+                msg_body["attachments"] = small
+
+            draft_resp = requests.post(
+                f"{BASE_URL}/me/messages",
+                headers=headers,
+                json=msg_body,
+            )
+            if not draft_resp.ok:
+                return (
+                    f"Error creating draft for send: {draft_resp.status_code} - {draft_resp.text}"
+                )
+
+            draft_id = draft_resp.json()["id"]
+            _attach_files_to_message(headers, draft_id, paths)
+
+            send_resp = requests.post(
+                f"{BASE_URL}/me/messages/{draft_id}/send",
+                headers=headers,
+            )
+            if not send_resp.ok:
+                return f"Error sending email: {send_resp.status_code} - {send_resp.text}"
+
+            return "Email sent successfully."
+
+        # --- Standard path: everything fits in a single JSON request ---
         message = {
             "message": {
                 "subject": subject,
-                "body": {"contentType": "text", "content": body},
+                "body": {"contentType": content_type, "content": body},
                 "toRecipients": to_recipients,
             }
         }
@@ -205,6 +368,9 @@ def outlook_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str 
             message["message"]["ccRecipients"] = cc_recipients
         if bcc_recipients:
             message["message"]["bccRecipients"] = bcc_recipients
+
+        if paths:
+            message["message"]["attachments"] = _build_small_attachments(paths)
 
         resp = requests.post(
             f"{BASE_URL}/me/sendMail",
@@ -257,16 +423,26 @@ def outlook_reply_to_email(message_id: str, body: str, reply_all: bool = False) 
 
 
 @tool
-def outlook_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def outlook_create_draft(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "text",
+    attachments: str = "",
+) -> str:
     """
     Create an email draft without sending.
 
     Args:
         to: Recipient email address (required).
         subject: Email subject line (required).
-        body: Email body text.
+        body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
+        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation with the draft ID.
@@ -288,9 +464,11 @@ def outlook_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: st
             else []
         )
 
+        paths = _validated_paths(attachments.split(",")) if attachments else []
+
         message = {
             "subject": subject,
-            "body": {"contentType": "text", "content": body},
+            "body": {"contentType": content_type, "content": body},
             "toRecipients": to_recipients,
         }
 
@@ -298,6 +476,12 @@ def outlook_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: st
             message["ccRecipients"] = cc_recipients
         if bcc_recipients:
             message["bccRecipients"] = bcc_recipients
+
+        # Inline only the small attachments on the initial create.
+        if paths:
+            small = _build_small_attachments(paths)
+            if small:
+                message["attachments"] = small
 
         resp = requests.post(
             f"{BASE_URL}/me/messages",
@@ -309,7 +493,13 @@ def outlook_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: st
             return f"Error creating draft: {resp.status_code} - {resp.text}"
 
         result = resp.json()
-        return f"Draft created successfully. Draft ID: {result['id']}"
+        draft_id = result["id"]
+
+        # Upload large attachments via upload sessions.
+        if paths and _has_large_files(paths):
+            _attach_files_to_message(headers, draft_id, paths)
+
+        return f"Draft created successfully. Draft ID: {draft_id}"
 
     except Exception as e:
         return f"Error creating draft: {e}"
@@ -317,7 +507,14 @@ def outlook_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: st
 
 @tool
 def outlook_schedule_email(
-    to: str, subject: str, body: str, send_at: str, cc: str = "", bcc: str = ""
+    to: str,
+    subject: str,
+    body: str,
+    send_at: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "text",
+    attachments: str = "",
 ) -> str:
     """
     Schedule an email to be sent at a future time.
@@ -328,11 +525,13 @@ def outlook_schedule_email(
     Args:
         to: Recipient email address (required). For multiple recipients, separate with commas.
         subject: Email subject line (required).
-        body: Email body text (plain text).
+        body: Email body content.
         send_at: When to send the email in ISO 8601 format (e.g., "2024-12-25T09:00:00Z").
                  Must be in UTC timezone. Example: "2024-01-15T14:30:00Z" for 2:30 PM UTC.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
+        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation that the email was scheduled.
@@ -355,11 +554,13 @@ def outlook_schedule_email(
             else []
         )
 
+        paths = _validated_paths(attachments.split(",")) if attachments else []
+
         # Create message with deferred send time using extended property
         # PidTagDeferredSendTime property tag: 0x3FEF, type: SystemTime
         message = {
             "subject": subject,
-            "body": {"contentType": "text", "content": body},
+            "body": {"contentType": content_type, "content": body},
             "toRecipients": to_recipients,
             "singleValueExtendedProperties": [
                 {
@@ -374,6 +575,12 @@ def outlook_schedule_email(
         if bcc_recipients:
             message["bccRecipients"] = bcc_recipients
 
+        # Inline only small attachments.
+        if paths:
+            small = _build_small_attachments(paths)
+            if small:
+                message["attachments"] = small
+
         # Create the draft with deferred send time
         resp = requests.post(
             f"{BASE_URL}/me/messages",
@@ -386,6 +593,10 @@ def outlook_schedule_email(
 
         draft = resp.json()
         draft_id = draft["id"]
+
+        # Upload large attachments via upload sessions.
+        if paths and _has_large_files(paths):
+            _attach_files_to_message(headers, draft_id, paths)
 
         # Get the Outbox folder ID
         outbox_resp = requests.get(

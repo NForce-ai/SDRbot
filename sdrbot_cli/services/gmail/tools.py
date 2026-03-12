@@ -5,6 +5,10 @@ Gmail is an email service - all tools are static (no schema sync required).
 
 import base64
 import json
+import mimetypes
+import os
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -14,6 +18,11 @@ from langchain_core.tools import BaseTool, tool
 from sdrbot_cli.auth import gmail as gmail_auth
 
 BASE_URL = "https://gmail.googleapis.com/gmail/v1"
+UPLOAD_URL = "https://www.googleapis.com/upload/gmail/v1"
+
+# Gmail API limit for simple JSON-body requests is ~5 MB encoded.
+# Beyond this we switch to multipart upload.
+_MAX_SIMPLE_BYTES = 4 * 1024 * 1024  # 4 MB (conservative)
 
 
 def _headers() -> dict:
@@ -22,6 +31,112 @@ def _headers() -> dict:
     if not headers:
         raise RuntimeError("Gmail not authenticated. Run /setup to configure Gmail.")
     return headers
+
+
+def _gmail_api_request(
+    endpoint: str,
+    message: MIMEMultipart,
+    extra_json: dict | None = None,
+) -> requests.Response:
+    """Send a MIME message to a Gmail API endpoint.
+
+    Automatically chooses between a simple JSON request (small messages) and
+    a multipart media upload (large messages / big attachments).
+
+    Args:
+        endpoint: API path *after* ``/users/me/``, e.g. ``"messages/send"``
+                  or ``"drafts"``.
+        message:  Fully-built MIME message.
+        extra_json: Extra top-level JSON keys (e.g. ``{"threadId": "…"}``).
+                    For drafts the raw payload is nested under ``message``.
+    """
+    headers = _headers()
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+    is_draft = endpoint.startswith("drafts")
+    body_json: dict = {}
+    if extra_json:
+        body_json.update(extra_json)
+
+    if is_draft:
+        body_json.setdefault("message", {})["raw"] = raw
+    else:
+        body_json["raw"] = raw
+
+    # If the encoded payload is small enough, use a plain JSON request.
+    if len(raw) < _MAX_SIMPLE_BYTES:
+        return requests.post(
+            f"{BASE_URL}/users/me/{endpoint}",
+            headers=headers,
+            json=body_json,
+        )
+
+    # --- Large message: use multipart media upload ---
+    import uuid
+
+    boundary = f"==={uuid.uuid4().hex}==="
+
+    # For multipart upload the JSON metadata should NOT contain "raw";
+    # the raw RFC-822 bytes go in the second part instead.
+    metadata: dict = {}
+    if is_draft:
+        # Draft resource wraps the message; strip "raw" from inner dict.
+        inner = dict(body_json.get("message", {}))
+        inner.pop("raw", None)
+        if inner:
+            metadata["message"] = inner
+        # Preserve any top-level draft fields (there usually aren't any).
+        for k, v in body_json.items():
+            if k != "message":
+                metadata[k] = v
+    else:
+        metadata = {k: v for k, v in body_json.items() if k != "raw"}
+
+    metadata_bytes = json.dumps(metadata).encode() if metadata else b"{}"
+    rfc822_bytes = message.as_bytes()
+
+    # Build the multipart/related body: part 1 = JSON metadata,
+    # part 2 = raw RFC-822 message bytes.
+    parts: list[bytes] = []
+    parts.append(f"--{boundary}".encode())
+    parts.append(b"Content-Type: application/json; charset=UTF-8")
+    parts.append(b"")
+    parts.append(metadata_bytes)
+    parts.append(f"--{boundary}".encode())
+    parts.append(b"Content-Type: message/rfc822")
+    parts.append(b"")
+    parts.append(rfc822_bytes)
+    parts.append(f"--{boundary}--".encode())
+    body_bytes = b"\r\n".join(parts)
+
+    upload_headers = {
+        **headers,
+        "Content-Type": f'multipart/related; boundary="{boundary}"',
+        "Content-Length": str(len(body_bytes)),
+    }
+
+    url = f"{UPLOAD_URL}/users/me/{endpoint}?uploadType=multipart"
+    return requests.post(url, headers=upload_headers, data=body_bytes)
+
+
+def _attach_files(message: MIMEMultipart, file_paths: list[str]) -> None:
+    """Attach files to a MIME message."""
+    for file_path in file_paths:
+        path = file_path.strip()
+        if not path:
+            continue
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Attachment not found: {path}")
+        content_type, _ = mimetypes.guess_type(path)
+        if content_type is None:
+            content_type = "application/octet-stream"
+        main_type, sub_type = content_type.split("/", 1)
+        with open(path, "rb") as f:
+            part = MIMEBase(main_type, sub_type)
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+        message.attach(part)
 
 
 def _parse_email_body(payload: dict) -> str:
@@ -186,23 +301,31 @@ def gmail_read_email(message_id: str) -> str:
 
 
 @tool
-def gmail_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def gmail_send_email(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "plain",
+    attachments: str = "",
+) -> str:
     """
     Send an email.
 
     Args:
         to: Recipient email address (required). For multiple recipients, separate with commas.
         subject: Email subject line (required).
-        body: Email body text (plain text).
+        body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation with the sent message ID.
     """
     try:
-        headers = _headers()
-
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
@@ -210,15 +333,12 @@ def gmail_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str = 
             message["cc"] = cc
         if bcc:
             message["bcc"] = bcc
-        message.attach(MIMEText(body, "plain"))
+        message.attach(MIMEText(body, content_type))
 
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        if attachments:
+            _attach_files(message, attachments.split(","))
 
-        resp = requests.post(
-            f"{BASE_URL}/users/me/messages/send",
-            headers=headers,
-            json={"raw": raw},
-        )
+        resp = _gmail_api_request("messages/send", message)
 
         if not resp.ok:
             return f"Error sending email: {resp.status_code} - {resp.text}"
@@ -232,16 +352,23 @@ def gmail_send_email(to: str, subject: str, body: str, cc: str = "", bcc: str = 
 
 @tool
 def gmail_reply_to_email(
-    message_id: str, body: str, reply_all: bool = False, include_quote: bool = True
+    message_id: str,
+    body: str,
+    reply_all: bool = False,
+    include_quote: bool = True,
+    content_type: str = "plain",
+    attachments: str = "",
 ) -> str:
     """
     Reply to an existing email.
 
     Args:
         message_id: The message ID to reply to.
-        body: Reply body text.
+        body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         include_quote: If True, include original message in reply (default True).
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation with the sent reply message ID.
@@ -305,13 +432,16 @@ def gmail_reply_to_email(
             message["In-Reply-To"] = message_id_header
             message["References"] = message_id_header
 
-        message.attach(MIMEText(full_body, "plain"))
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        message.attach(MIMEText(full_body, content_type))
 
-        resp = requests.post(
-            f"{BASE_URL}/users/me/messages/send",
-            headers=headers,
-            json={"raw": raw, "threadId": orig_data.get("threadId")},
+        if attachments:
+            _attach_files(message, attachments.split(","))
+
+        thread_id = orig_data.get("threadId")
+        resp = _gmail_api_request(
+            "messages/send",
+            message,
+            extra_json={"threadId": thread_id} if thread_id else None,
         )
 
         if not resp.ok:
@@ -325,23 +455,31 @@ def gmail_reply_to_email(
 
 
 @tool
-def gmail_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> str:
+def gmail_create_draft(
+    to: str,
+    subject: str,
+    body: str,
+    cc: str = "",
+    bcc: str = "",
+    content_type: str = "plain",
+    attachments: str = "",
+) -> str:
     """
     Create an email draft without sending.
 
     Args:
         to: Recipient email address (required).
         subject: Email subject line (required).
-        body: Email body text.
+        body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
+        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        attachments: File paths to attach, separated by commas (optional).
 
     Returns:
         Confirmation with the draft ID.
     """
     try:
-        headers = _headers()
-
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
@@ -349,15 +487,12 @@ def gmail_create_draft(to: str, subject: str, body: str, cc: str = "", bcc: str 
             message["cc"] = cc
         if bcc:
             message["bcc"] = bcc
-        message.attach(MIMEText(body, "plain"))
+        message.attach(MIMEText(body, content_type))
 
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        if attachments:
+            _attach_files(message, attachments.split(","))
 
-        resp = requests.post(
-            f"{BASE_URL}/users/me/drafts",
-            headers=headers,
-            json={"message": {"raw": raw}},
-        )
+        resp = _gmail_api_request("drafts", message)
 
         if not resp.ok:
             return f"Error creating draft: {resp.status_code} - {resp.text}"
