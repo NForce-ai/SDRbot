@@ -139,39 +139,62 @@ def _attach_files(message: MIMEMultipart, file_paths: list[str]) -> None:
         message.attach(part)
 
 
-def _parse_email_body(payload: dict) -> str:
-    """Extract plain text body from email payload.
+def _parse_email_body(payload: dict, prefer_html: bool = False) -> str:
+    """Extract body from email payload.
 
     Gmail API returns email bodies in a nested structure that varies
     depending on the email format (plain, html, multipart).
+
+    Args:
+        payload: Gmail API message payload.
+        prefer_html: If True, return raw HTML when available (for HTML quoting).
+                     If False, return plain text (converting HTML if needed).
     """
     # Direct body data
     if "body" in payload and payload["body"].get("data"):
         return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
 
-    # Multipart - look for text/plain first, then text/html
     if "parts" in payload:
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/plain" and part.get("body", {}).get("data"):
-                return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+        if prefer_html:
+            # Try HTML first
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/html" and part.get("body", {}).get("data"):
+                    return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
 
-        # Fallback to HTML if no plain text
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/html" and part.get("body", {}).get("data"):
-                html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
-                # Basic HTML stripping (for readability in chat)
-                import re
+            # Fall back to plain text wrapped in HTML
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/plain" and part.get("body", {}).get("data"):
+                    import html as html_mod
 
-                text = re.sub(r"<[^>]+>", "", html)
-                text = re.sub(r"\s+", " ", text).strip()
-                return text
+                    text = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                    return "<p>" + html_mod.escape(text).replace("\n", "<br>") + "</p>"
+        else:
+            # Try plain text first
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/plain" and part.get("body", {}).get("data"):
+                    return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+
+            # Fallback to HTML converted to plain text
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/html" and part.get("body", {}).get("data"):
+                    html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                    import re
+
+                    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+                    text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+                    text = re.sub(r"<[^>]+>", "", text)
+                    text = re.sub(r"[^\S\n]+", " ", text)
+                    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+                    return text
 
         # Recursive check for nested multipart
         for part in payload["parts"]:
             if "parts" in part:
-                result = _parse_email_body(part)
+                result = _parse_email_body(part, prefer_html=prefer_html)
                 if result:
                     return result
 
@@ -307,7 +330,7 @@ def gmail_send_email(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -319,7 +342,7 @@ def gmail_send_email(
         body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -356,7 +379,7 @@ def gmail_reply_to_email(
     body: str,
     reply_all: bool = False,
     include_quote: bool = True,
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -367,7 +390,7 @@ def gmail_reply_to_email(
         body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         include_quote: If True, include original message in reply (default True).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -461,7 +484,7 @@ def gmail_create_draft(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -473,7 +496,7 @@ def gmail_create_draft(
         body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:

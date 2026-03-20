@@ -40,45 +40,75 @@ def _decode_header_value(value: str | None) -> str:
     return " ".join(decoded_parts)
 
 
-def _get_email_body(msg: email.message.Message) -> str:
-    """Extract plain text body from email message."""
-    if msg.is_multipart():
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            content_disposition = str(part.get("Content-Disposition", ""))
+def _get_email_body(msg: email.message.Message, prefer_html: bool = False) -> str:
+    """Extract body from email message.
 
-            if content_type == "text/plain" and "attachment" not in content_disposition:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    try:
-                        return payload.decode(charset, errors="replace")
-                    except (LookupError, UnicodeDecodeError):
-                        return payload.decode("utf-8", errors="replace")
-        # Fallback to HTML if no plain text
-        for part in msg.walk():
-            if part.get_content_type() == "text/html":
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    try:
-                        # Basic HTML stripping
+    Args:
+        msg: Email message object.
+        prefer_html: If True, return raw HTML when available (for HTML quoting).
+                     If False, return plain text (converting HTML if needed).
+    """
+
+    def _decode(part_obj):
+        payload = part_obj.get_payload(decode=True)
+        if not payload:
+            return ""
+        charset = part_obj.get_content_charset() or "utf-8"
+        try:
+            return payload.decode(charset, errors="replace")
+        except (LookupError, UnicodeDecodeError):
+            return payload.decode("utf-8", errors="replace")
+
+    if msg.is_multipart():
+        if prefer_html:
+            # Try HTML first
+            for part in msg.walk():
+                if part.get_content_type() == "text/html" and "attachment" not in str(
+                    part.get("Content-Disposition", "")
+                ):
+                    result = _decode(part)
+                    if result:
+                        return result
+            # Fall back to plain text wrapped in HTML
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain" and "attachment" not in str(
+                    part.get("Content-Disposition", "")
+                ):
+                    import html as html_mod
+
+                    result = _decode(part)
+                    if result:
+                        return "<p>" + html_mod.escape(result).replace("\n", "<br>") + "</p>"
+        else:
+            # Try plain text first
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition", ""))
+                if content_type == "text/plain" and "attachment" not in content_disposition:
+                    result = _decode(part)
+                    if result:
+                        return result
+            # Fallback to HTML converted to plain text
+            for part in msg.walk():
+                if part.get_content_type() == "text/html":
+                    result = _decode(part)
+                    if result:
                         import re
 
-                        html = payload.decode(charset, errors="replace")
-                        text = re.sub(r"<[^>]+>", "", html)
-                        text = re.sub(r"\s+", " ", text).strip()
+                        text = re.sub(r"<br\s*/?>", "\n", result, flags=re.IGNORECASE)
+                        text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+                        text = re.sub(r"<[^>]+>", "", text)
+                        text = re.sub(r"[^\S\n]+", " ", text)
+                        text = re.sub(r"\n{3,}", "\n\n", text).strip()
                         return text
-                    except Exception:
-                        pass
     else:
-        payload = msg.get_payload(decode=True)
-        if payload:
-            charset = msg.get_content_charset() or "utf-8"
-            try:
-                return payload.decode(charset, errors="replace")
-            except (LookupError, UnicodeDecodeError):
-                return payload.decode("utf-8", errors="replace")
+        result = _decode(msg)
+        if result:
+            if prefer_html and msg.get_content_type() == "text/plain":
+                import html as html_mod
+
+                return "<p>" + html_mod.escape(result).replace("\n", "<br>") + "</p>"
+            return result
     return ""
 
 
@@ -364,7 +394,7 @@ def email_send(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -376,7 +406,7 @@ def email_send(
         body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -431,7 +461,7 @@ def email_reply(
     body: str,
     reply_all: bool = False,
     folder: str = "INBOX",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -442,7 +472,7 @@ def email_reply(
         body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         folder: Folder containing the original email (default: INBOX).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -676,7 +706,7 @@ def email_create_draft(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -688,7 +718,7 @@ def email_create_draft(
         body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:

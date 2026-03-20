@@ -278,7 +278,7 @@ def outlook_send_email(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "text",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -290,7 +290,7 @@ def outlook_send_email(
         body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "text" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -429,7 +429,7 @@ def outlook_create_draft(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "text",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -441,7 +441,7 @@ def outlook_create_draft(
         body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
-        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "text" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -513,7 +513,7 @@ def outlook_schedule_email(
     send_at: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "text",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -530,7 +530,7 @@ def outlook_schedule_email(
                  Must be in UTC timezone. Example: "2024-01-15T14:30:00Z" for 2:30 PM UTC.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "text" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "text" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
