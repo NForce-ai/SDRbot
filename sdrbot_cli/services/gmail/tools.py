@@ -33,6 +33,38 @@ def _headers() -> dict:
     return headers
 
 
+def _get_gmail_signature(headers: dict) -> str:
+    """Fetch the user's Gmail signature HTML for their primary send-as address."""
+    resp = requests.get(
+        f"{BASE_URL}/users/me/settings/sendAs",
+        headers=headers,
+    )
+    if not resp.ok:
+        return ""
+    for alias in resp.json().get("sendAs", []):
+        if alias.get("isPrimary"):
+            return alias.get("signature", "")
+    return ""
+
+
+def _append_signature(body: str, content_type: str, headers: dict) -> str:
+    """Append the user's Gmail signature to the message body."""
+    signature = _get_gmail_signature(headers)
+    if not signature:
+        return body
+    if content_type == "html":
+        return f"{body}<br><div>--</div><div>{signature}</div>"
+    else:
+        import re
+
+        text_sig = re.sub(r"<br\s*/?>", "\n", signature, flags=re.IGNORECASE)
+        text_sig = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text_sig, flags=re.IGNORECASE)
+        text_sig = re.sub(r"<[^>]+>", "", text_sig)
+        text_sig = re.sub(r"[^\S\n]+", " ", text_sig)
+        text_sig = re.sub(r"\n{3,}", "\n\n", text_sig).strip()
+        return f"{body}\n\n--\n{text_sig}"
+
+
 def _gmail_api_request(
     endpoint: str,
     message: MIMEMultipart,
@@ -337,6 +369,7 @@ def gmail_send_email(
     bcc: str = "",
     content_type: str = "html",
     attachments: str = "",
+    include_signature: bool = False,
 ) -> str:
     """
     Send an email.
@@ -349,11 +382,16 @@ def gmail_send_email(
         bcc: BCC recipients (optional). Separate multiple with commas.
         content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the sent message ID.
     """
     try:
+        headers = _headers()
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
+
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
@@ -387,6 +425,7 @@ def gmail_reply_to_email(
     content_type: str = "html",
     attachments: str = "",
     send: bool = False,
+    include_signature: bool = False,
 ) -> str:
     """
     Reply to a received email. Creates a draft reply by default.
@@ -399,6 +438,7 @@ def gmail_reply_to_email(
         content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
         send: If True, send the reply immediately. If False, save as draft (default False).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the draft or sent reply message ID.
@@ -439,6 +479,10 @@ def gmail_reply_to_email(
             subject = f"Re: {orig_subject}"
         else:
             subject = orig_subject
+
+        # Append signature before quoting so it appears between reply and quote
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
 
         # Build message body with quote if requested
         full_body = body
@@ -510,6 +554,7 @@ def gmail_followup_email(
     content_type: str = "html",
     attachments: str = "",
     send: bool = False,
+    include_signature: bool = False,
 ) -> str:
     """
     Follow up on a previously sent email. Creates a threaded draft by default.
@@ -525,6 +570,7 @@ def gmail_followup_email(
         content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
         send: If True, send immediately. If False, save as draft (default False).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the draft or sent follow-up message ID.
@@ -560,6 +606,10 @@ def gmail_followup_email(
             subject = f"Re: {orig_subject}"
         else:
             subject = orig_subject
+
+        # Append signature before quoting so it appears between follow-up and quote
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
 
         # Build message body with quote if requested
         full_body = body
@@ -632,6 +682,7 @@ def gmail_create_draft(
     bcc: str = "",
     content_type: str = "html",
     attachments: str = "",
+    include_signature: bool = False,
 ) -> str:
     """
     Create an email draft without sending.
@@ -644,11 +695,16 @@ def gmail_create_draft(
         bcc: BCC recipients (optional).
         content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the draft ID.
     """
     try:
+        if include_signature:
+            headers = _headers()
+            body = _append_signature(body, content_type, headers)
+
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
