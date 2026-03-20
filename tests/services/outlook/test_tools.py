@@ -17,12 +17,13 @@ class TestOutlookToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 13
+        assert len(tools) == 14
         tool_names = [t.name for t in tools]
         assert "outlook_search_emails" in tool_names
         assert "outlook_read_email" in tool_names
         assert "outlook_send_email" in tool_names
         assert "outlook_reply_to_email" in tool_names
+        assert "outlook_followup_email" in tool_names
         assert "outlook_create_draft" in tool_names
         assert "outlook_send_draft" in tool_names
         assert "outlook_schedule_email" in tool_names
@@ -57,7 +58,7 @@ class TestOutlookToolLoading:
 
         tools = get_tools()
 
-        assert len(tools) == 13
+        assert len(tools) == 14
 
 
 class TestOutlookToolsUnit:
@@ -428,12 +429,17 @@ class TestOutlookToolsUnit:
         assert parsed["messages"][0]["id"] == "msg1"
         assert parsed["messages"][1]["id"] == "msg2"
 
-    def test_reply_to_email_success(self, mock_outlook_auth, mock_requests):
-        """reply_to_email should send reply."""
+    def test_reply_to_email_draft(self, mock_outlook_auth, mock_requests):
+        """reply_to_email should create draft by default."""
         mock_resp = MagicMock()
         mock_resp.ok = True
+        mock_resp.json.return_value = {"id": "draft123"}
+
+        mock_patch_resp = MagicMock()
+        mock_patch_resp.ok = True
 
         mock_requests.post.return_value = mock_resp
+        mock_requests.patch.return_value = mock_patch_resp
 
         from sdrbot_cli.services.outlook.tools import outlook_reply_to_email
 
@@ -441,10 +447,10 @@ class TestOutlookToolsUnit:
             {"message_id": "msg123", "body": "This is my reply", "reply_all": False}
         )
 
-        assert "Reply sent" in result
+        assert "Reply draft created" in result
 
-    def test_reply_all_success(self, mock_outlook_auth, mock_requests):
-        """reply_to_email should handle reply_all."""
+    def test_reply_to_email_send(self, mock_outlook_auth, mock_requests):
+        """reply_to_email should send when send=True."""
         mock_resp = MagicMock()
         mock_resp.ok = True
 
@@ -453,7 +459,22 @@ class TestOutlookToolsUnit:
         from sdrbot_cli.services.outlook.tools import outlook_reply_to_email
 
         result = outlook_reply_to_email.invoke(
-            {"message_id": "msg123", "body": "Reply to all", "reply_all": True}
+            {"message_id": "msg123", "body": "This is my reply", "reply_all": False, "send": True}
+        )
+
+        assert "Reply sent" in result
+
+    def test_reply_all_success(self, mock_outlook_auth, mock_requests):
+        """reply_to_email should handle reply_all with send=True."""
+        mock_resp = MagicMock()
+        mock_resp.ok = True
+
+        mock_requests.post.return_value = mock_resp
+
+        from sdrbot_cli.services.outlook.tools import outlook_reply_to_email
+
+        result = outlook_reply_to_email.invoke(
+            {"message_id": "msg123", "body": "Reply to all", "reply_all": True, "send": True}
         )
 
         assert "Reply sent" in result

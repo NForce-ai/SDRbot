@@ -17,7 +17,7 @@ class TestGenericEmailToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 10
+        assert len(tools) == 11
         tool_names = [t.name for t in tools]
         assert "email_list_folders" in tool_names
         assert "email_list_folder" in tool_names
@@ -25,6 +25,7 @@ class TestGenericEmailToolLoading:
         assert "email_read" in tool_names
         assert "email_send" in tool_names
         assert "email_reply" in tool_names
+        assert "email_followup" in tool_names
         assert "email_mark_read" in tool_names
         assert "email_move" in tool_names
         assert "email_delete" in tool_names
@@ -54,7 +55,7 @@ class TestGenericEmailToolLoading:
 
         tools = get_tools()
 
-        assert len(tools) == 10
+        assert len(tools) == 11
 
 
 class TestGenericEmailToolsUnit:
