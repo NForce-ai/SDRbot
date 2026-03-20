@@ -33,6 +33,38 @@ def _headers() -> dict:
     return headers
 
 
+def _get_gmail_signature(headers: dict) -> str:
+    """Fetch the user's Gmail signature HTML for their primary send-as address."""
+    resp = requests.get(
+        f"{BASE_URL}/users/me/settings/sendAs",
+        headers=headers,
+    )
+    if not resp.ok:
+        return ""
+    for alias in resp.json().get("sendAs", []):
+        if alias.get("isPrimary"):
+            return alias.get("signature", "")
+    return ""
+
+
+def _append_signature(body: str, content_type: str, headers: dict) -> str:
+    """Append the user's Gmail signature to the message body."""
+    signature = _get_gmail_signature(headers)
+    if not signature:
+        return body
+    if content_type == "html":
+        return f"{body}<br><div>--</div><div>{signature}</div>"
+    else:
+        import re
+
+        text_sig = re.sub(r"<br\s*/?>", "\n", signature, flags=re.IGNORECASE)
+        text_sig = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text_sig, flags=re.IGNORECASE)
+        text_sig = re.sub(r"<[^>]+>", "", text_sig)
+        text_sig = re.sub(r"[^\S\n]+", " ", text_sig)
+        text_sig = re.sub(r"\n{3,}", "\n\n", text_sig).strip()
+        return f"{body}\n\n--\n{text_sig}"
+
+
 def _gmail_api_request(
     endpoint: str,
     message: MIMEMultipart,
@@ -59,7 +91,12 @@ def _gmail_api_request(
         body_json.update(extra_json)
 
     if is_draft:
-        body_json.setdefault("message", {})["raw"] = raw
+        # For drafts, threadId and raw must be inside the "message" object
+        msg_obj = body_json.pop("message", {})
+        msg_obj["raw"] = raw
+        if "threadId" in body_json:
+            msg_obj["threadId"] = body_json.pop("threadId")
+        body_json["message"] = msg_obj
     else:
         body_json["raw"] = raw
 
@@ -139,39 +176,62 @@ def _attach_files(message: MIMEMultipart, file_paths: list[str]) -> None:
         message.attach(part)
 
 
-def _parse_email_body(payload: dict) -> str:
-    """Extract plain text body from email payload.
+def _parse_email_body(payload: dict, prefer_html: bool = False) -> str:
+    """Extract body from email payload.
 
     Gmail API returns email bodies in a nested structure that varies
     depending on the email format (plain, html, multipart).
+
+    Args:
+        payload: Gmail API message payload.
+        prefer_html: If True, return raw HTML when available (for HTML quoting).
+                     If False, return plain text (converting HTML if needed).
     """
     # Direct body data
     if "body" in payload and payload["body"].get("data"):
         return base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
 
-    # Multipart - look for text/plain first, then text/html
     if "parts" in payload:
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/plain" and part.get("body", {}).get("data"):
-                return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+        if prefer_html:
+            # Try HTML first
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/html" and part.get("body", {}).get("data"):
+                    return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
 
-        # Fallback to HTML if no plain text
-        for part in payload["parts"]:
-            mime_type = part.get("mimeType", "")
-            if mime_type == "text/html" and part.get("body", {}).get("data"):
-                html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
-                # Basic HTML stripping (for readability in chat)
-                import re
+            # Fall back to plain text wrapped in HTML
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/plain" and part.get("body", {}).get("data"):
+                    import html as html_mod
 
-                text = re.sub(r"<[^>]+>", "", html)
-                text = re.sub(r"\s+", " ", text).strip()
-                return text
+                    text = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                    return "<p>" + html_mod.escape(text).replace("\n", "<br>") + "</p>"
+        else:
+            # Try plain text first
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/plain" and part.get("body", {}).get("data"):
+                    return base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+
+            # Fallback to HTML converted to plain text
+            for part in payload["parts"]:
+                mime_type = part.get("mimeType", "")
+                if mime_type == "text/html" and part.get("body", {}).get("data"):
+                    html = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+                    import re
+
+                    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+                    text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+                    text = re.sub(r"<[^>]+>", "", text)
+                    text = re.sub(r"[^\S\n]+", " ", text)
+                    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+                    return text
 
         # Recursive check for nested multipart
         for part in payload["parts"]:
             if "parts" in part:
-                result = _parse_email_body(part)
+                result = _parse_email_body(part, prefer_html=prefer_html)
                 if result:
                     return result
 
@@ -307,8 +367,9 @@ def gmail_send_email(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
+    include_signature: bool = False,
 ) -> str:
     """
     Send an email.
@@ -319,13 +380,18 @@ def gmail_send_email(
         body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the sent message ID.
     """
     try:
+        headers = _headers()
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
+
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
@@ -356,22 +422,26 @@ def gmail_reply_to_email(
     body: str,
     reply_all: bool = False,
     include_quote: bool = True,
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
+    send: bool = False,
+    include_signature: bool = False,
 ) -> str:
     """
-    Reply to an existing email.
+    Reply to a received email. Creates a draft reply by default.
 
     Args:
         message_id: The message ID to reply to.
         body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         include_quote: If True, include original message in reply (default True).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        send: If True, send the reply immediately. If False, save as draft (default False).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
-        Confirmation with the sent reply message ID.
+        Confirmation with the draft or sent reply message ID.
     """
     try:
         headers = _headers()
@@ -410,15 +480,31 @@ def gmail_reply_to_email(
         else:
             subject = orig_subject
 
+        # Append signature before quoting so it appears between reply and quote
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
+
         # Build message body with quote if requested
         full_body = body
         if include_quote:
-            orig_body = _parse_email_body(orig_data.get("payload", {}))
             orig_date = orig_headers.get("Date", "")
             orig_from = orig_headers.get("From", "")
-            if orig_body:
-                quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
-                full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
+            if content_type == "html":
+                orig_body = _parse_email_body(orig_data.get("payload", {}), prefer_html=True)
+                if orig_body:
+                    full_body = (
+                        f"{body}"
+                        f"<br><br>"
+                        f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                        f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                        f"{orig_body}"
+                        f"</blockquote>"
+                    )
+            else:
+                orig_body = _parse_email_body(orig_data.get("payload", {}))
+                if orig_body:
+                    quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
+                    full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
 
         message = MIMEMultipart()
         message["to"] = reply_to
@@ -438,20 +524,153 @@ def gmail_reply_to_email(
             _attach_files(message, attachments.split(","))
 
         thread_id = orig_data.get("threadId")
+        endpoint = "messages/send" if send else "drafts"
         resp = _gmail_api_request(
-            "messages/send",
+            endpoint,
             message,
             extra_json={"threadId": thread_id} if thread_id else None,
         )
 
         if not resp.ok:
-            return f"Error sending reply: {resp.status_code} - {resp.text}"
+            action = "sending" if send else "drafting"
+            return f"Error {action} reply: {resp.status_code} - {resp.text}"
 
         result = resp.json()
-        return f"Reply sent successfully. Message ID: {result['id']}"
+        if send:
+            return f"Reply sent successfully. Message ID: {result['id']}"
+        else:
+            return f"Reply draft created successfully. Draft ID: {result['id']}"
 
     except Exception as e:
-        return f"Error sending reply: {e}"
+        action = "sending" if send else "drafting"
+        return f"Error {action} reply: {e}"
+
+
+@tool
+def gmail_followup_email(
+    message_id: str,
+    body: str,
+    include_quote: bool = True,
+    content_type: str = "html",
+    attachments: str = "",
+    send: bool = False,
+    include_signature: bool = False,
+) -> str:
+    """
+    Follow up on a previously sent email. Creates a threaded draft by default.
+
+    Use this when you sent an email and the recipient hasn't replied — it sends
+    the follow-up to the original recipients (To/Cc) and keeps it in the same
+    thread.
+
+    Args:
+        message_id: The message ID of the sent email to follow up on.
+        body: Follow-up body content.
+        include_quote: If True, include original message in follow-up (default True).
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
+        attachments: File paths to attach, separated by commas (optional).
+        send: If True, send immediately. If False, save as draft (default False).
+        include_signature: If True, append the user's Gmail signature (default False).
+
+    Returns:
+        Confirmation with the draft or sent follow-up message ID.
+    """
+    try:
+        headers = _headers()
+
+        # Get original sent message
+        orig_resp = requests.get(
+            f"{BASE_URL}/users/me/messages/{message_id}",
+            headers=headers,
+            params={"format": "full"},
+        )
+
+        if not orig_resp.ok:
+            return f"Error fetching original email: {orig_resp.status_code}"
+
+        orig_data = orig_resp.json()
+        orig_headers = {
+            h["name"]: h["value"] for h in orig_data.get("payload", {}).get("headers", [])
+        }
+
+        # Follow-up goes to original recipients, not back to sender
+        to = orig_headers.get("To", "")
+        cc = orig_headers.get("Cc", "")
+
+        if not to:
+            return "Error: could not determine original recipients from sent message"
+
+        # Build subject with Re: prefix
+        orig_subject = orig_headers.get("Subject", "")
+        if not orig_subject.lower().startswith("re:"):
+            subject = f"Re: {orig_subject}"
+        else:
+            subject = orig_subject
+
+        # Append signature before quoting so it appears between follow-up and quote
+        if include_signature:
+            body = _append_signature(body, content_type, headers)
+
+        # Build message body with quote if requested
+        full_body = body
+        if include_quote:
+            orig_date = orig_headers.get("Date", "")
+            orig_from = orig_headers.get("From", "")
+            if content_type == "html":
+                orig_body = _parse_email_body(orig_data.get("payload", {}), prefer_html=True)
+                if orig_body:
+                    full_body = (
+                        f"{body}"
+                        f"<br><br>"
+                        f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                        f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                        f"{orig_body}"
+                        f"</blockquote>"
+                    )
+            else:
+                orig_body = _parse_email_body(orig_data.get("payload", {}))
+                if orig_body:
+                    quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
+                    full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
+
+        message = MIMEMultipart()
+        message["to"] = to
+        message["subject"] = subject
+        if cc:
+            message["cc"] = cc
+
+        # Set threading headers
+        message_id_header = orig_headers.get("Message-ID", "")
+        if message_id_header:
+            message["In-Reply-To"] = message_id_header
+            message["References"] = message_id_header
+
+        message.attach(MIMEText(full_body, content_type))
+
+        if attachments:
+            _attach_files(message, attachments.split(","))
+
+        thread_id = orig_data.get("threadId")
+        endpoint = "messages/send" if send else "drafts"
+        resp = _gmail_api_request(
+            endpoint,
+            message,
+            extra_json={"threadId": thread_id} if thread_id else None,
+        )
+
+        if not resp.ok:
+            action = "sending" if send else "drafting"
+            return f"Error {action} follow-up: {resp.status_code} - {resp.text}"
+
+        result = resp.json()
+        if send:
+            return f"Follow-up sent successfully. Message ID: {result['id']}"
+        else:
+            return f"Follow-up draft created successfully. Draft ID: {result['id']}"
+
+    except Exception as e:
+        action = "sending" if send else "drafting"
+        return f"Error {action} follow-up: {e}"
 
 
 @tool
@@ -461,8 +680,9 @@ def gmail_create_draft(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
+    include_signature: bool = False,
 ) -> str:
     """
     Create an email draft without sending.
@@ -473,13 +693,18 @@ def gmail_create_draft(
         body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        include_signature: If True, append the user's Gmail signature (default False).
 
     Returns:
         Confirmation with the draft ID.
     """
     try:
+        if include_signature:
+            headers = _headers()
+            body = _append_signature(body, content_type, headers)
+
         message = MIMEMultipart()
         message["to"] = to
         message["subject"] = subject
@@ -685,6 +910,7 @@ def get_static_tools() -> list[BaseTool]:
         gmail_read_email,
         gmail_send_email,
         gmail_reply_to_email,
+        gmail_followup_email,
         gmail_create_draft,
         gmail_list_labels,
         gmail_modify_labels,

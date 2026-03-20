@@ -40,45 +40,75 @@ def _decode_header_value(value: str | None) -> str:
     return " ".join(decoded_parts)
 
 
-def _get_email_body(msg: email.message.Message) -> str:
-    """Extract plain text body from email message."""
-    if msg.is_multipart():
-        for part in msg.walk():
-            content_type = part.get_content_type()
-            content_disposition = str(part.get("Content-Disposition", ""))
+def _get_email_body(msg: email.message.Message, prefer_html: bool = False) -> str:
+    """Extract body from email message.
 
-            if content_type == "text/plain" and "attachment" not in content_disposition:
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    try:
-                        return payload.decode(charset, errors="replace")
-                    except (LookupError, UnicodeDecodeError):
-                        return payload.decode("utf-8", errors="replace")
-        # Fallback to HTML if no plain text
-        for part in msg.walk():
-            if part.get_content_type() == "text/html":
-                payload = part.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    try:
-                        # Basic HTML stripping
+    Args:
+        msg: Email message object.
+        prefer_html: If True, return raw HTML when available (for HTML quoting).
+                     If False, return plain text (converting HTML if needed).
+    """
+
+    def _decode(part_obj):
+        payload = part_obj.get_payload(decode=True)
+        if not payload:
+            return ""
+        charset = part_obj.get_content_charset() or "utf-8"
+        try:
+            return payload.decode(charset, errors="replace")
+        except (LookupError, UnicodeDecodeError):
+            return payload.decode("utf-8", errors="replace")
+
+    if msg.is_multipart():
+        if prefer_html:
+            # Try HTML first
+            for part in msg.walk():
+                if part.get_content_type() == "text/html" and "attachment" not in str(
+                    part.get("Content-Disposition", "")
+                ):
+                    result = _decode(part)
+                    if result:
+                        return result
+            # Fall back to plain text wrapped in HTML
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain" and "attachment" not in str(
+                    part.get("Content-Disposition", "")
+                ):
+                    import html as html_mod
+
+                    result = _decode(part)
+                    if result:
+                        return "<p>" + html_mod.escape(result).replace("\n", "<br>") + "</p>"
+        else:
+            # Try plain text first
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition", ""))
+                if content_type == "text/plain" and "attachment" not in content_disposition:
+                    result = _decode(part)
+                    if result:
+                        return result
+            # Fallback to HTML converted to plain text
+            for part in msg.walk():
+                if part.get_content_type() == "text/html":
+                    result = _decode(part)
+                    if result:
                         import re
 
-                        html = payload.decode(charset, errors="replace")
-                        text = re.sub(r"<[^>]+>", "", html)
-                        text = re.sub(r"\s+", " ", text).strip()
+                        text = re.sub(r"<br\s*/?>", "\n", result, flags=re.IGNORECASE)
+                        text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+                        text = re.sub(r"<[^>]+>", "", text)
+                        text = re.sub(r"[^\S\n]+", " ", text)
+                        text = re.sub(r"\n{3,}", "\n\n", text).strip()
                         return text
-                    except Exception:
-                        pass
     else:
-        payload = msg.get_payload(decode=True)
-        if payload:
-            charset = msg.get_content_charset() or "utf-8"
-            try:
-                return payload.decode(charset, errors="replace")
-            except (LookupError, UnicodeDecodeError):
-                return payload.decode("utf-8", errors="replace")
+        result = _decode(msg)
+        if result:
+            if prefer_html and msg.get_content_type() == "text/plain":
+                import html as html_mod
+
+                return "<p>" + html_mod.escape(result).replace("\n", "<br>") + "</p>"
+            return result
     return ""
 
 
@@ -364,7 +394,7 @@ def email_send(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -376,7 +406,7 @@ def email_send(
         body: Email body content.
         cc: CC recipients (optional). Separate multiple with commas.
         bcc: BCC recipients (optional). Separate multiple with commas.
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -431,22 +461,24 @@ def email_reply(
     body: str,
     reply_all: bool = False,
     folder: str = "INBOX",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
+    send: bool = False,
 ) -> str:
     """
-    Reply to an existing email.
+    Reply to a received email. Creates a draft reply by default.
 
     Args:
         uid: The UID of the email to reply to.
         body: Reply body content.
         reply_all: If True, reply to all recipients (default False).
         folder: Folder containing the original email (default: INBOX).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        send: If True, send the reply immediately. If False, save as draft (default False).
 
     Returns:
-        Confirmation that the reply was sent.
+        Confirmation with the draft or sent reply details.
     """
     try:
         # First, fetch the original email
@@ -472,79 +504,263 @@ def email_reply(
         finally:
             imap.logout()
 
-        # Now send the reply via SMTP
-        smtp = email_auth.get_smtp_connection()
-        if not smtp:
-            return "Error: SMTP not configured or connection failed"
+        smtp_config = email_auth.get_smtp_config()
+        if not smtp_config:
+            return "Error: SMTP configuration not found"
+
+        # Build reply
+        msg = MIMEMultipart()
+        msg["From"] = smtp_config.username
+
+        # Reply to sender
+        reply_to = original_msg.get("Reply-To") or original_msg.get("From")
+        msg["To"] = reply_to
+
+        # Reply-all includes other recipients
+        if reply_all:
+            original_to = original_msg.get("To", "")
+            original_cc = original_msg.get("Cc", "")
+            all_recipients = []
+            if original_to:
+                all_recipients.extend(original_to.split(","))
+            if original_cc:
+                all_recipients.extend(original_cc.split(","))
+            # Remove self from recipients
+            all_recipients = [
+                r.strip() for r in all_recipients if smtp_config.username.lower() not in r.lower()
+            ]
+            if all_recipients:
+                msg["Cc"] = ", ".join(all_recipients)
+
+        # Subject with Re:
+        original_subject = _decode_header_value(original_msg.get("Subject", ""))
+        if not original_subject.lower().startswith("re:"):
+            msg["Subject"] = f"Re: {original_subject}"
+        else:
+            msg["Subject"] = original_subject
+
+        # Set reply headers
+        if original_msg.get("Message-ID"):
+            msg["In-Reply-To"] = original_msg["Message-ID"]
+            msg["References"] = (
+                original_msg.get("References", "") + " " + original_msg["Message-ID"]
+            )
+
+        # Quote original message
+        orig_date = original_msg.get("Date", "")
+        orig_from = _decode_header_value(original_msg.get("From", ""))
+        if content_type == "html":
+            original_body = _get_email_body(original_msg, prefer_html=True)
+            full_body = (
+                f"{body}"
+                f"<br><br>"
+                f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                f"{original_body}"
+                f"</blockquote>"
+            )
+        else:
+            original_body = _get_email_body(original_msg)
+            quoted_body = "\n".join(f"> {line}" for line in original_body.split("\n")[:20])
+            full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted_body}"
+
+        msg.attach(MIMEText(full_body, content_type))
+
+        if attachments:
+            _attach_files(msg, attachments.split(","))
+
+        if send:
+            # Send via SMTP
+            smtp = email_auth.get_smtp_connection()
+            if not smtp:
+                return "Error: SMTP not configured or connection failed"
+
+            try:
+                recipients = [msg["To"]]
+                if msg.get("Cc"):
+                    recipients.extend([r.strip() for r in msg["Cc"].split(",")])
+
+                smtp.sendmail(smtp_config.username, recipients, msg.as_string())
+                return f"Reply sent successfully (reply_all={reply_all})."
+            finally:
+                smtp.quit()
+        else:
+            # Save as draft via IMAP
+            imap = email_auth.get_imap_connection()
+            if not imap:
+                return "Error: IMAP not configured or connection failed"
+
+            try:
+                draft_folders = ["Drafts", "INBOX.Drafts", "[Gmail]/Drafts", "Draft"]
+                saved = False
+                for draft_folder in draft_folders:
+                    status, _ = imap.select(draft_folder)
+                    if status == "OK":
+                        imap.append(
+                            draft_folder,
+                            "\\Draft",
+                            None,
+                            msg.as_bytes(),
+                        )
+                        saved = True
+                        return f"Reply draft saved to '{draft_folder}' (reply_all={reply_all})."
+                if not saved:
+                    return "Error: could not find Drafts folder"
+            finally:
+                imap.logout()
+    except Exception as e:
+        action = "sending" if send else "drafting"
+        return f"Error {action} reply: {e}"
+
+
+@tool
+def email_followup(
+    uid: str,
+    body: str,
+    folder: str = "Sent",
+    content_type: str = "html",
+    attachments: str = "",
+    send: bool = False,
+) -> str:
+    """
+    Follow up on a previously sent email. Creates a threaded draft by default.
+
+    Use this when you sent an email and the recipient hasn't replied — it sends
+    the follow-up to the original recipients (To/Cc) and keeps it in the same
+    thread.
+
+    Args:
+        uid: The UID of the sent email to follow up on.
+        body: Follow-up body content.
+        folder: Folder containing the sent email (default: Sent).
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
+        attachments: File paths to attach, separated by commas (optional).
+        send: If True, send immediately. If False, save as draft (default False).
+
+    Returns:
+        Confirmation with the draft or sent follow-up details.
+    """
+    try:
+        # Fetch the original sent email
+        imap = email_auth.get_imap_connection()
+        if not imap:
+            return "Error: IMAP not configured or connection failed"
+
+        try:
+            # Try the provided folder name and common sent folder variants
+            sent_folders = (
+                [folder]
+                if folder != "Sent"
+                else ["Sent", "INBOX.Sent", "[Gmail]/Sent Mail", "Sent Items", "Sent Messages"]
+            )
+            original_msg = None
+
+            for sent_folder in sent_folders:
+                status, _ = imap.select(sent_folder)
+                if status == "OK":
+                    status, data = imap.uid("fetch", uid, "(RFC822)")
+                    if status == "OK" and data and data[0] and isinstance(data[0], tuple):
+                        original_msg = email.message_from_bytes(data[0][1])
+                        break
+
+            if not original_msg:
+                return f"Error: could not find email UID {uid} in sent folder"
+
+        finally:
+            imap.logout()
 
         smtp_config = email_auth.get_smtp_config()
         if not smtp_config:
             return "Error: SMTP configuration not found"
 
-        try:
-            # Build reply
-            msg = MIMEMultipart()
-            msg["From"] = smtp_config.username
+        # Build follow-up — send to original recipients, not back to sender
+        msg = MIMEMultipart()
+        msg["From"] = smtp_config.username
 
-            # Reply to sender
-            reply_to = original_msg.get("Reply-To") or original_msg.get("From")
-            msg["To"] = reply_to
+        to = original_msg.get("To", "")
+        if not to:
+            return "Error: could not determine original recipients from sent message"
+        msg["To"] = to
 
-            # Reply-all includes other recipients
-            if reply_all:
-                original_to = original_msg.get("To", "")
-                original_cc = original_msg.get("Cc", "")
-                all_recipients = []
-                if original_to:
-                    all_recipients.extend(original_to.split(","))
-                if original_cc:
-                    all_recipients.extend(original_cc.split(","))
-                # Remove self from recipients
-                all_recipients = [
-                    r.strip()
-                    for r in all_recipients
-                    if smtp_config.username.lower() not in r.lower()
-                ]
-                if all_recipients:
-                    msg["Cc"] = ", ".join(all_recipients)
+        cc = original_msg.get("Cc", "")
+        if cc:
+            msg["Cc"] = cc
 
-            # Subject with Re:
-            original_subject = _decode_header_value(original_msg.get("Subject", ""))
-            if not original_subject.lower().startswith("re:"):
-                msg["Subject"] = f"Re: {original_subject}"
-            else:
-                msg["Subject"] = original_subject
+        # Subject with Re:
+        original_subject = _decode_header_value(original_msg.get("Subject", ""))
+        if not original_subject.lower().startswith("re:"):
+            msg["Subject"] = f"Re: {original_subject}"
+        else:
+            msg["Subject"] = original_subject
 
-            # Set reply headers
-            if original_msg.get("Message-ID"):
-                msg["In-Reply-To"] = original_msg["Message-ID"]
-                msg["References"] = (
-                    original_msg.get("References", "") + " " + original_msg["Message-ID"]
-                )
+        # Set threading headers
+        if original_msg.get("Message-ID"):
+            msg["In-Reply-To"] = original_msg["Message-ID"]
+            msg["References"] = (
+                original_msg.get("References", "") + " " + original_msg["Message-ID"]
+            )
 
-            # Quote original message
+        # Quote original message
+        orig_date = original_msg.get("Date", "")
+        orig_from = _decode_header_value(original_msg.get("From", ""))
+        if content_type == "html":
+            original_body = _get_email_body(original_msg, prefer_html=True)
+            full_body = (
+                f"{body}"
+                f"<br><br>"
+                f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                f"{original_body}"
+                f"</blockquote>"
+            )
+        else:
             original_body = _get_email_body(original_msg)
             quoted_body = "\n".join(f"> {line}" for line in original_body.split("\n")[:20])
-            full_body = f"{body}\n\nOn {original_msg.get('Date', '')}, {_decode_header_value(original_msg.get('From', ''))} wrote:\n{quoted_body}"
+            full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted_body}"
 
-            msg.attach(MIMEText(full_body, content_type))
+        msg.attach(MIMEText(full_body, content_type))
 
-            if attachments:
-                _attach_files(msg, attachments.split(","))
+        if attachments:
+            _attach_files(msg, attachments.split(","))
 
-            # Build recipient list
-            recipients = [msg["To"]]
-            if msg.get("Cc"):
-                recipients.extend([r.strip() for r in msg["Cc"].split(",")])
+        if send:
+            smtp = email_auth.get_smtp_connection()
+            if not smtp:
+                return "Error: SMTP not configured or connection failed"
 
-            smtp.sendmail(smtp_config.username, recipients, msg.as_string())
+            try:
+                recipients = [msg["To"]]
+                if msg.get("Cc"):
+                    recipients.extend([r.strip() for r in msg["Cc"].split(",")])
 
-            return f"Reply sent successfully (reply_all={reply_all})."
-        finally:
-            smtp.quit()
+                smtp.sendmail(smtp_config.username, recipients, msg.as_string())
+                return "Follow-up sent successfully."
+            finally:
+                smtp.quit()
+        else:
+            imap = email_auth.get_imap_connection()
+            if not imap:
+                return "Error: IMAP not configured or connection failed"
+
+            try:
+                draft_folders = ["Drafts", "INBOX.Drafts", "[Gmail]/Drafts", "Draft"]
+                for draft_folder in draft_folders:
+                    status, _ = imap.select(draft_folder)
+                    if status == "OK":
+                        imap.append(
+                            draft_folder,
+                            "\\Draft",
+                            None,
+                            msg.as_bytes(),
+                        )
+                        return f"Follow-up draft saved to '{draft_folder}'."
+                return "Error: could not find Drafts folder"
+            finally:
+                imap.logout()
 
     except Exception as e:
-        return f"Error sending reply: {e}"
+        action = "sending" if send else "drafting"
+        return f"Error {action} follow-up: {e}"
 
 
 @tool
@@ -676,7 +892,7 @@ def email_create_draft(
     body: str,
     cc: str = "",
     bcc: str = "",
-    content_type: str = "plain",
+    content_type: str = "html",
     attachments: str = "",
 ) -> str:
     """
@@ -688,7 +904,7 @@ def email_create_draft(
         body: Email body content.
         cc: CC recipients (optional).
         bcc: BCC recipients (optional).
-        content_type: Body format - "plain" for plain text (default) or "html" for HTML content.
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
 
     Returns:
@@ -749,6 +965,7 @@ def get_static_tools() -> list[BaseTool]:
         email_read,
         email_send,
         email_reply,
+        email_followup,
         email_mark_read,
         email_move,
         email_delete,

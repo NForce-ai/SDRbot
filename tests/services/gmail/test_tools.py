@@ -18,12 +18,13 @@ class TestGmailToolLoading:
 
         tools = get_static_tools()
 
-        assert len(tools) == 9
+        assert len(tools) == 10
         tool_names = [t.name for t in tools]
         assert "gmail_search_emails" in tool_names
         assert "gmail_read_email" in tool_names
         assert "gmail_send_email" in tool_names
         assert "gmail_reply_to_email" in tool_names
+        assert "gmail_followup_email" in tool_names
         assert "gmail_create_draft" in tool_names
         assert "gmail_list_labels" in tool_names
         assert "gmail_modify_labels" in tool_names
@@ -54,7 +55,7 @@ class TestGmailToolLoading:
 
         tools = get_tools()
 
-        assert len(tools) == 9
+        assert len(tools) == 10
 
 
 class TestGmailToolsUnit:
@@ -369,8 +370,48 @@ class TestGmailToolsUnit:
         assert parsed["messages"][0]["id"] == "msg1"
         assert parsed["messages"][1]["id"] == "msg2"
 
-    def test_reply_to_email_success(self, mock_gmail_auth, mock_requests):
-        """reply_to_email should send reply in thread."""
+    def test_reply_to_email_draft(self, mock_gmail_auth, mock_requests):
+        """reply_to_email should create draft by default."""
+        body_text = "Original message content"
+        encoded_body = base64.urlsafe_b64encode(body_text.encode()).decode()
+
+        # Mock get original message
+        mock_get_resp = MagicMock()
+        mock_get_resp.ok = True
+        mock_get_resp.json.return_value = {
+            "id": "msg123",
+            "threadId": "thread123",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "sender@example.com"},
+                    {"name": "To", "value": "me@example.com"},
+                    {"name": "Subject", "value": "Original Subject"},
+                    {"name": "Date", "value": "Mon, 1 Jan 2024 12:00:00 +0000"},
+                    {"name": "Message-ID", "value": "<original@example.com>"},
+                ],
+                "body": {"data": encoded_body},
+            },
+        }
+
+        # Mock create draft
+        mock_draft_resp = MagicMock()
+        mock_draft_resp.ok = True
+        mock_draft_resp.json.return_value = {"id": "draft123"}
+
+        mock_requests.get.return_value = mock_get_resp
+        mock_requests.post.return_value = mock_draft_resp
+
+        from sdrbot_cli.services.gmail.tools import gmail_reply_to_email
+
+        result = gmail_reply_to_email.invoke(
+            {"message_id": "msg123", "body": "This is my reply", "reply_all": False}
+        )
+
+        assert "draft123" in result
+        assert "Reply draft created" in result
+
+    def test_reply_to_email_send(self, mock_gmail_auth, mock_requests):
+        """reply_to_email should send when send=True."""
         body_text = "Original message content"
         encoded_body = base64.urlsafe_b64encode(body_text.encode()).decode()
 
@@ -403,7 +444,7 @@ class TestGmailToolsUnit:
         from sdrbot_cli.services.gmail.tools import gmail_reply_to_email
 
         result = gmail_reply_to_email.invoke(
-            {"message_id": "msg123", "body": "This is my reply", "reply_all": False}
+            {"message_id": "msg123", "body": "This is my reply", "reply_all": False, "send": True}
         )
 
         assert "reply123" in result
