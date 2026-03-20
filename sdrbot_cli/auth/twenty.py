@@ -176,3 +176,32 @@ class TwentyClient:
     def delete(self, endpoint: str, **kwargs) -> dict:
         """Make a DELETE request."""
         return self.request("DELETE", endpoint, **kwargs)
+
+    def graphql(self, query: str, variables: dict | None = None) -> dict:
+        """Execute a GraphQL query against the Twenty GraphQL endpoint.
+
+        Args:
+            query: GraphQL query string.
+            variables: Optional variables dict for the query.
+
+        Returns:
+            Parsed JSON response as a dictionary.
+
+        Raises:
+            Exception: If the request fails or GraphQL returns errors.
+        """
+        url = f"{self.base_url}/graphql"
+        payload: dict = {"query": query}
+        if variables:
+            payload["variables"] = variables
+
+        response = self.session.post(url, json=payload)
+
+        if not response.ok:
+            raise Exception(f"Twenty GraphQL Error ({response.status_code}): {response.text}")
+
+        data = response.json()
+        if "errors" in data:
+            raise Exception(f"Twenty GraphQL Error: {data['errors']}")
+
+        return data

@@ -5,6 +5,7 @@ Schema-dependent CRUD tools are generated in twenty_tools.py after sync.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from langchain_core.tools import BaseTool, tool
 
@@ -404,6 +405,245 @@ def twenty_count_records(object_type: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _fetch_all_pages(client, query: str, key: str, variables: dict | None = None) -> list:
+    """Paginate through all pages of a GraphQL query.
+
+    Args:
+        client: TwentyClient instance.
+        query: GraphQL query string. Must accept $after: String and return pageInfo.
+        key: The top-level data key to extract (e.g. "people", "opportunities").
+        variables: Optional base variables dict.
+
+    Returns:
+        Flat list of all node dicts across all pages.
+    """
+    results = []
+    after = None
+    variables = dict(variables or {})
+
+    while True:
+        variables["after"] = after
+        data = client.graphql(query, variables)
+        collection = data.get("data", {}).get(key, {})
+        edges = collection.get("edges", [])
+        results.extend(edge["node"] for edge in edges)
+
+        page_info = collection.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        after = page_info.get("endCursor")
+
+    return results
+
+
+@tool
+def twenty_get_pipeline_status(
+    object_type: str = "people",
+    stage_field: str = "emailStatus",
+    display_fields: list[str] | None = None,
+    filter_field: str | None = None,
+    filter_value: str | None = None,
+    terminal_field: str | None = None,
+    terminal_values: list[str] | None = None,
+    overdue_field: str | None = None,
+    overdue_after_field: str | None = None,
+    overdue_days: int | None = None,
+    title: str | None = None,
+) -> str:
+    """Get a structured pipeline status report from Twenty CRM.
+
+    Fetches records of any object type, groups them by a specified stage field,
+    and optionally separates terminal states and flags overdue records.
+    All business logic (which fields, which values, what counts as overdue)
+    is provided by the caller — nothing is hardcoded.
+
+    Args:
+        object_type: Twenty plural object name to query (e.g. "people", "opportunities").
+        stage_field: Field to group records by (e.g. "emailStatus", "resellerPipelineStage").
+        display_fields: List of additional fields to show per record in the output.
+                        Nested relation fields use dot notation (e.g. "company.name",
+                        "name.firstName"). Defaults to ["id"] if not provided.
+        filter_field: Optional field to pre-filter records on (e.g. "sourcePipeline").
+        filter_value: Value for filter_field (e.g. "RESELLER_CHANNEL"). Must be an
+                      unquoted enum value or a quoted string as appropriate for GraphQL.
+        terminal_field: Optional field used to detect terminal states (e.g. "stage").
+                        Records where this field matches a terminal_value are separated
+                        into a Terminal section rather than grouped with active records.
+        terminal_values: List of values on terminal_field that indicate terminal state
+                         (e.g. ["WON", "LOST"]).
+        overdue_field: Optional boolean/status field to flag overdue records — records
+                       where this field is null or matches overdue_after_field criteria.
+                       Used as the stage_field value to watch (e.g. "OUTREACH_SENT").
+        overdue_after_field: Date field to compare against overdue_days
+                             (e.g. "emailSentDate").
+        overdue_days: Number of days after overdue_after_field before a record is
+                      considered overdue. Only applies if overdue_after_field is set.
+        title: Optional title for the report section. Defaults to
+               "{object_type} grouped by {stage_field}".
+
+    Returns:
+        Formatted pipeline status report as a string.
+
+    Examples:
+        # Outreach pipeline — people grouped by emailStatus, flag overdue OUTREACH_SENT
+        twenty_get_pipeline_status(
+            object_type="people",
+            stage_field="emailStatus",
+            display_fields=["name.firstName", "name.lastName", "company.name", "emailSentDate"],
+            overdue_field="OUTREACH_SENT",
+            overdue_after_field="emailSentDate",
+            overdue_days=6,
+            title="Outreach Pipeline",
+        )
+
+        # Reseller opportunity pipeline — opportunities filtered to RESELLER_CHANNEL,
+        # grouped by resellerPipelineStage, WON/LOST separated as terminal
+        twenty_get_pipeline_status(
+            object_type="opportunities",
+            stage_field="resellerPipelineStage",
+            display_fields=["name", "company.name", "pointOfContact.name.firstName", "pointOfContact.name.lastName"],
+            filter_field="sourcePipeline",
+            filter_value="RESELLER_CHANNEL",
+            terminal_field="stage",
+            terminal_values=["WON", "LOST"],
+            title="Reseller Partner Pipeline",
+        )
+    """
+    client = get_twenty()
+
+    # --- Build GraphQL field selection ---
+    fields = display_fields or []
+    all_scalar_fields = {stage_field}
+    if terminal_field:
+        all_scalar_fields.add(terminal_field)
+    if overdue_after_field:
+        all_scalar_fields.add(overdue_after_field)
+
+    def _build_field_selection(
+        fields: list[str], extra_scalars: set[str], top_level: bool = False
+    ) -> str:
+        """Build GraphQL field selection, handling dot-notation for nested fields."""
+        scalars = set(extra_scalars)
+        nested: dict[str, list[str]] = {}
+
+        for f in fields:
+            parts = f.split(".", 1)
+            if len(parts) == 1:
+                scalars.add(f)
+            else:
+                parent, child = parts
+                nested.setdefault(parent, []).append(child)
+
+        lines = (["id"] if top_level else []) + sorted(scalars)
+        for parent, children in sorted(nested.items()):
+            inner = _build_field_selection(children, set(), top_level=False)
+            lines.append(f"{parent} {{ {inner} }}")
+        return " ".join(lines)
+
+    field_selection = _build_field_selection(fields, all_scalar_fields, top_level=True)
+
+    # --- Build GraphQL filter clause ---
+    filter_clause = ""
+    if filter_field and filter_value:
+        filter_clause = f"filter: {{ {filter_field}: {{ eq: {filter_value} }} }}"
+
+    query = f"""
+    query GetPipelineStatus($after: String) {{
+      {object_type}(
+        {filter_clause}
+        first: 100
+        after: $after
+      ) {{
+        pageInfo {{ hasNextPage endCursor }}
+        edges {{
+          node {{
+            {field_selection}
+          }}
+        }}
+      }}
+    }}
+    """
+
+    try:
+        records = _fetch_all_pages(client, query, object_type)
+    except Exception as e:
+        return f"Error fetching {object_type}: {str(e)}"
+
+    # --- Helper to extract a value from a nested dot-path ---
+    def _get_nested(record: dict, path: str) -> str:
+        parts = path.split(".")
+        val = record
+        for p in parts:
+            if not isinstance(val, dict):
+                return ""
+            val = val.get(p, "")
+        return str(val) if val else ""
+
+    # --- Group records ---
+    active_groups: dict[str, list] = {}
+    terminal_groups: dict[str, list] = {}
+    terminal_set = set(terminal_values or [])
+
+    for r in records:
+        # Check terminal first
+        if terminal_field and terminal_set:
+            t_val = r.get(terminal_field, "")
+            if t_val in terminal_set:
+                terminal_groups.setdefault(t_val, []).append(r)
+                continue
+        stage_val = r.get(stage_field) or "UNKNOWN"
+        active_groups.setdefault(stage_val, []).append(r)
+
+    # --- Flag overdue records ---
+    overdue: list[dict] = []
+    if overdue_field and overdue_after_field and overdue_days is not None:
+        cutoff = datetime.now(UTC) - timedelta(days=overdue_days)
+        for r in active_groups.get(overdue_field, []):
+            date_raw = r.get(overdue_after_field)
+            if date_raw:
+                try:
+                    date_dt = datetime.fromisoformat(str(date_raw)).replace(tzinfo=UTC)
+                    if date_dt <= cutoff:
+                        overdue.append(r)
+                except ValueError:
+                    pass
+
+    # --- Format output ---
+    report_title = title or f"{object_type} grouped by {stage_field}"
+    total = len(records)
+    lines = [f"## {report_title} ({total} total)"]
+
+    if active_groups:
+        for stage_val, recs in sorted(active_groups.items()):
+            lines.append(f"\n### {stage_val} ({len(recs)})")
+            for r in recs:
+                parts = []
+                for f in fields:
+                    val = _get_nested(r, f)
+                    if val:
+                        parts.append(val)
+                lines.append(f"  - {' | '.join(parts) if parts else r.get('id', '')}")
+
+    if terminal_groups:
+        lines.append("\n### Terminal")
+        for t_val, recs in sorted(terminal_groups.items()):
+            lines.append(f"  **{t_val}**: {len(recs)}")
+
+    if overdue:
+        lines.append(
+            f"\n### OVERDUE ({len(overdue)}) — {overdue_field} for >{overdue_days}d with no follow-up"
+        )
+        for r in overdue:
+            parts = []
+            for f in fields:
+                val = _get_nested(r, f)
+                if val:
+                    parts.append(val)
+            lines.append(f"  - {' | '.join(parts) if parts else r.get('id', '')}")
+
+    return "\n".join(lines)
+
+
 def get_static_tools() -> list[BaseTool]:
     """Get all static Twenty tools.
 
@@ -420,4 +660,6 @@ def get_static_tools() -> list[BaseTool]:
         twenty_search_records,
         twenty_get_record,
         twenty_count_records,
+        # Pipeline status
+        twenty_get_pipeline_status,
     ]
