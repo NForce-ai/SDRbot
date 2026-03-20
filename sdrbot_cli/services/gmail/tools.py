@@ -59,7 +59,12 @@ def _gmail_api_request(
         body_json.update(extra_json)
 
     if is_draft:
-        body_json.setdefault("message", {})["raw"] = raw
+        # For drafts, threadId and raw must be inside the "message" object
+        msg_obj = body_json.pop("message", {})
+        msg_obj["raw"] = raw
+        if "threadId" in body_json:
+            msg_obj["threadId"] = body_json.pop("threadId")
+        body_json["message"] = msg_obj
     else:
         body_json["raw"] = raw
 
@@ -381,9 +386,10 @@ def gmail_reply_to_email(
     include_quote: bool = True,
     content_type: str = "html",
     attachments: str = "",
+    send: bool = False,
 ) -> str:
     """
-    Reply to an existing email.
+    Reply to a received email. Creates a draft reply by default.
 
     Args:
         message_id: The message ID to reply to.
@@ -392,9 +398,10 @@ def gmail_reply_to_email(
         include_quote: If True, include original message in reply (default True).
         content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
         attachments: File paths to attach, separated by commas (optional).
+        send: If True, send the reply immediately. If False, save as draft (default False).
 
     Returns:
-        Confirmation with the sent reply message ID.
+        Confirmation with the draft or sent reply message ID.
     """
     try:
         headers = _headers()
@@ -436,12 +443,24 @@ def gmail_reply_to_email(
         # Build message body with quote if requested
         full_body = body
         if include_quote:
-            orig_body = _parse_email_body(orig_data.get("payload", {}))
             orig_date = orig_headers.get("Date", "")
             orig_from = orig_headers.get("From", "")
-            if orig_body:
-                quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
-                full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
+            if content_type == "html":
+                orig_body = _parse_email_body(orig_data.get("payload", {}), prefer_html=True)
+                if orig_body:
+                    full_body = (
+                        f"{body}"
+                        f"<br><br>"
+                        f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                        f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                        f"{orig_body}"
+                        f"</blockquote>"
+                    )
+            else:
+                orig_body = _parse_email_body(orig_data.get("payload", {}))
+                if orig_body:
+                    quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
+                    full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
 
         message = MIMEMultipart()
         message["to"] = reply_to
@@ -461,20 +480,147 @@ def gmail_reply_to_email(
             _attach_files(message, attachments.split(","))
 
         thread_id = orig_data.get("threadId")
+        endpoint = "messages/send" if send else "drafts"
         resp = _gmail_api_request(
-            "messages/send",
+            endpoint,
             message,
             extra_json={"threadId": thread_id} if thread_id else None,
         )
 
         if not resp.ok:
-            return f"Error sending reply: {resp.status_code} - {resp.text}"
+            action = "sending" if send else "drafting"
+            return f"Error {action} reply: {resp.status_code} - {resp.text}"
 
         result = resp.json()
-        return f"Reply sent successfully. Message ID: {result['id']}"
+        if send:
+            return f"Reply sent successfully. Message ID: {result['id']}"
+        else:
+            return f"Reply draft created successfully. Draft ID: {result['id']}"
 
     except Exception as e:
-        return f"Error sending reply: {e}"
+        action = "sending" if send else "drafting"
+        return f"Error {action} reply: {e}"
+
+
+@tool
+def gmail_followup_email(
+    message_id: str,
+    body: str,
+    include_quote: bool = True,
+    content_type: str = "html",
+    attachments: str = "",
+    send: bool = False,
+) -> str:
+    """
+    Follow up on a previously sent email. Creates a threaded draft by default.
+
+    Use this when you sent an email and the recipient hasn't replied — it sends
+    the follow-up to the original recipients (To/Cc) and keeps it in the same
+    thread.
+
+    Args:
+        message_id: The message ID of the sent email to follow up on.
+        body: Follow-up body content.
+        include_quote: If True, include original message in follow-up (default True).
+        content_type: Body format - "html" for HTML content (default) or "plain" for plain text.
+        attachments: File paths to attach, separated by commas (optional).
+        send: If True, send immediately. If False, save as draft (default False).
+
+    Returns:
+        Confirmation with the draft or sent follow-up message ID.
+    """
+    try:
+        headers = _headers()
+
+        # Get original sent message
+        orig_resp = requests.get(
+            f"{BASE_URL}/users/me/messages/{message_id}",
+            headers=headers,
+            params={"format": "full"},
+        )
+
+        if not orig_resp.ok:
+            return f"Error fetching original email: {orig_resp.status_code}"
+
+        orig_data = orig_resp.json()
+        orig_headers = {
+            h["name"]: h["value"] for h in orig_data.get("payload", {}).get("headers", [])
+        }
+
+        # Follow-up goes to original recipients, not back to sender
+        to = orig_headers.get("To", "")
+        cc = orig_headers.get("Cc", "")
+
+        if not to:
+            return "Error: could not determine original recipients from sent message"
+
+        # Build subject with Re: prefix
+        orig_subject = orig_headers.get("Subject", "")
+        if not orig_subject.lower().startswith("re:"):
+            subject = f"Re: {orig_subject}"
+        else:
+            subject = orig_subject
+
+        # Build message body with quote if requested
+        full_body = body
+        if include_quote:
+            orig_date = orig_headers.get("Date", "")
+            orig_from = orig_headers.get("From", "")
+            if content_type == "html":
+                orig_body = _parse_email_body(orig_data.get("payload", {}), prefer_html=True)
+                if orig_body:
+                    full_body = (
+                        f"{body}"
+                        f"<br><br>"
+                        f"<div>On {orig_date}, {orig_from} wrote:</div>"
+                        f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                        f"{orig_body}"
+                        f"</blockquote>"
+                    )
+            else:
+                orig_body = _parse_email_body(orig_data.get("payload", {}))
+                if orig_body:
+                    quoted = "\n".join(f"> {line}" for line in orig_body[:2000].split("\n"))
+                    full_body = f"{body}\n\nOn {orig_date}, {orig_from} wrote:\n{quoted}"
+
+        message = MIMEMultipart()
+        message["to"] = to
+        message["subject"] = subject
+        if cc:
+            message["cc"] = cc
+
+        # Set threading headers
+        message_id_header = orig_headers.get("Message-ID", "")
+        if message_id_header:
+            message["In-Reply-To"] = message_id_header
+            message["References"] = message_id_header
+
+        message.attach(MIMEText(full_body, content_type))
+
+        if attachments:
+            _attach_files(message, attachments.split(","))
+
+        thread_id = orig_data.get("threadId")
+        endpoint = "messages/send" if send else "drafts"
+        resp = _gmail_api_request(
+            endpoint,
+            message,
+            extra_json={"threadId": thread_id} if thread_id else None,
+        )
+
+        if not resp.ok:
+            action = "sending" if send else "drafting"
+            return f"Error {action} follow-up: {resp.status_code} - {resp.text}"
+
+        result = resp.json()
+        if send:
+            return f"Follow-up sent successfully. Message ID: {result['id']}"
+        else:
+            return f"Follow-up draft created successfully. Draft ID: {result['id']}"
+
+    except Exception as e:
+        action = "sending" if send else "drafting"
+        return f"Error {action} follow-up: {e}"
 
 
 @tool
@@ -708,6 +854,7 @@ def get_static_tools() -> list[BaseTool]:
         gmail_read_email,
         gmail_send_email,
         gmail_reply_to_email,
+        gmail_followup_email,
         gmail_create_draft,
         gmail_list_labels,
         gmail_modify_labels,

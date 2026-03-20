@@ -388,38 +388,174 @@ def outlook_send_email(
 
 
 @tool
-def outlook_reply_to_email(message_id: str, body: str, reply_all: bool = False) -> str:
+def outlook_reply_to_email(
+    message_id: str, body: str, reply_all: bool = False, send: bool = False
+) -> str:
     """
-    Reply to an existing email.
+    Reply to a received email. Creates a draft reply by default.
 
     Args:
         message_id: The message ID to reply to.
         body: Reply body text.
         reply_all: If True, reply to all recipients (default False).
+        send: If True, send the reply immediately. If False, save as draft (default False).
 
     Returns:
-        Confirmation that the reply was sent.
+        Confirmation with the draft or sent reply details.
     """
     try:
         headers = _headers()
 
-        endpoint = "replyAll" if reply_all else "reply"
+        if send:
+            endpoint = "replyAll" if reply_all else "reply"
+            payload = {"comment": body}
 
-        payload = {"comment": body}
+            resp = requests.post(
+                f"{BASE_URL}/me/messages/{message_id}/{endpoint}",
+                headers=headers,
+                json=payload,
+            )
+
+            if not resp.ok:
+                return f"Error sending reply: {resp.status_code} - {resp.text}"
+
+            return f"Reply sent successfully (reply_all={reply_all})."
+        else:
+            endpoint = "createReplyAll" if reply_all else "createReply"
+
+            resp = requests.post(
+                f"{BASE_URL}/me/messages/{message_id}/{endpoint}",
+                headers=headers,
+                json={},
+            )
+
+            if not resp.ok:
+                return f"Error creating reply draft: {resp.status_code} - {resp.text}"
+
+            draft = resp.json()
+            draft_id = draft.get("id")
+
+            # Update the draft body with the user's reply
+            update_resp = requests.patch(
+                f"{BASE_URL}/me/messages/{draft_id}",
+                headers=headers,
+                json={"body": {"contentType": "html", "content": body}},
+            )
+
+            if not update_resp.ok:
+                return f"Reply draft created (ID: {draft_id}) but failed to update body: {update_resp.status_code} - {update_resp.text}"
+
+            return f"Reply draft created successfully. Draft ID: {draft_id}"
+
+    except Exception as e:
+        action = "sending" if send else "drafting"
+        return f"Error {action} reply: {e}"
+
+
+@tool
+def outlook_followup_email(
+    message_id: str,
+    body: str,
+    content_type: str = "html",
+    send: bool = False,
+) -> str:
+    """
+    Follow up on a previously sent email. Creates a threaded draft by default.
+
+    Use this when you sent an email and the recipient hasn't replied — it sends
+    the follow-up to the original recipients (To/Cc) and keeps it in the same
+    conversation thread.
+
+    Args:
+        message_id: The message ID of the sent email to follow up on.
+        body: Follow-up body content.
+        content_type: Body format - "html" for HTML content (default) or "text" for plain text.
+        send: If True, send immediately. If False, save as draft (default False).
+
+    Returns:
+        Confirmation with the draft or sent follow-up details.
+    """
+    try:
+        headers = _headers()
+
+        # Fetch the original sent message to get recipients and conversation context
+        orig_resp = requests.get(
+            f"{BASE_URL}/me/messages/{message_id}",
+            headers=headers,
+            params={"$select": "subject,toRecipients,ccRecipients,conversationId,body"},
+        )
+
+        if not orig_resp.ok:
+            return f"Error fetching original email: {orig_resp.status_code} - {orig_resp.text}"
+
+        orig = orig_resp.json()
+        to_recipients = orig.get("toRecipients", [])
+        cc_recipients = orig.get("ccRecipients", [])
+
+        if not to_recipients:
+            return "Error: could not determine original recipients from sent message"
+
+        # Build subject with Re: prefix
+        orig_subject = orig.get("subject", "")
+        if not orig_subject.lower().startswith("re:"):
+            subject = f"Re: {orig_subject}"
+        else:
+            subject = orig_subject
+
+        # Build quoted body
+        orig_body = orig.get("body", {})
+        orig_content = orig_body.get("content", "")
+        if content_type == "html" and orig_content:
+            full_body = (
+                f"{body}"
+                f"<br><br>"
+                f'<blockquote style="margin:0 0 0 0.8ex;border-left:1px solid #ccc;padding-left:1ex">'
+                f"{orig_content}"
+                f"</blockquote>"
+            )
+        else:
+            full_body = body
+
+        # Create the follow-up message as a draft
+        message = {
+            "subject": subject,
+            "body": {"contentType": content_type, "content": full_body},
+            "toRecipients": to_recipients,
+        }
+        if cc_recipients:
+            message["ccRecipients"] = cc_recipients
+
+        # Link to same conversation
+        conversation_id = orig.get("conversationId")
+        if conversation_id:
+            message["conversationId"] = conversation_id
 
         resp = requests.post(
-            f"{BASE_URL}/me/messages/{message_id}/{endpoint}",
+            f"{BASE_URL}/me/messages",
             headers=headers,
-            json=payload,
+            json=message,
         )
 
         if not resp.ok:
-            return f"Error sending reply: {resp.status_code} - {resp.text}"
+            return f"Error creating follow-up draft: {resp.status_code} - {resp.text}"
 
-        return f"Reply sent successfully (reply_all={reply_all})."
+        draft = resp.json()
+        draft_id = draft.get("id")
+
+        if send:
+            send_resp = requests.post(
+                f"{BASE_URL}/me/messages/{draft_id}/send",
+                headers=headers,
+            )
+            if not send_resp.ok:
+                return f"Follow-up draft created (ID: {draft_id}) but failed to send: {send_resp.status_code} - {send_resp.text}"
+            return "Follow-up sent successfully."
+        else:
+            return f"Follow-up draft created successfully. Draft ID: {draft_id}"
 
     except Exception as e:
-        return f"Error sending reply: {e}"
+        action = "sending" if send else "drafting"
+        return f"Error {action} follow-up: {e}"
 
 
 @tool
@@ -979,6 +1115,7 @@ def get_static_tools() -> list[BaseTool]:
         outlook_read_email,
         outlook_send_email,
         outlook_reply_to_email,
+        outlook_followup_email,
         outlook_create_draft,
         outlook_send_draft,
         outlook_schedule_email,
