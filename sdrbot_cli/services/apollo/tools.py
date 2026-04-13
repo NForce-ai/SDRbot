@@ -246,6 +246,20 @@ def apollo_search_people(
     person_locations: str | None = None,
     organization_num_employees_ranges: str | None = None,
     organization_keywords: str | None = None,
+    q_keywords: str | None = None,
+    include_similar_titles: bool | None = None,
+    contact_email_status: str | None = None,
+    technologies: str | None = None,
+    technologies_all: str | None = None,
+    technologies_exclude: str | None = None,
+    revenue_min_usd: int | None = None,
+    revenue_max_usd: int | None = None,
+    org_hiring_job_titles: str | None = None,
+    org_hiring_locations: str | None = None,
+    org_num_jobs_min: int | None = None,
+    org_num_jobs_max: int | None = None,
+    org_job_posted_after: str | None = None,
+    org_job_posted_before: str | None = None,
     limit: int = 10,
 ) -> str:
     """
@@ -262,7 +276,29 @@ def apollo_search_people(
         organization_locations: Comma-separated company HQ locations (e.g., "San Francisco,New York").
         person_locations: Comma-separated person locations (e.g., "California,Texas").
         organization_num_employees_ranges: Comma-separated employee ranges (e.g., "1,10;11,50;51,200").
-        organization_keywords: Comma-separated industry/business keywords (e.g., "insurance,fintech,healthcare").
+        organization_keywords: Comma-separated industry/business keyword tags
+            (e.g., "insurance,fintech,healthcare"). Note: these match Apollo's taxonomy, not free text.
+        q_keywords: Free-text search across name, title, and company.
+        include_similar_titles: If False, restrict ``person_titles`` to exact matches only.
+            Apollo defaults to True (fuzzy), so pass False for strict title matching.
+        contact_email_status: Comma-separated email statuses to include. Useful values:
+            "verified", "likely_to_engage", "unverified", "unavailable".
+            Pass "verified" to avoid wasting enrichment credits on guessed emails.
+        technologies: Comma-separated Apollo technology UIDs the employer must currently use (ANY of).
+            Use underscores for spaces/periods (e.g., "hubspot,chili_piper,salesforce").
+        technologies_all: Comma-separated technology UIDs the employer must use ALL of
+            (strict AND, e.g., "salesforce,marketo" means using both).
+        technologies_exclude: Comma-separated technology UIDs the employer must NOT use
+            (useful for targeting competitors' non-customers).
+        revenue_min_usd: Minimum annual revenue of the employer in USD (integer, no commas).
+        revenue_max_usd: Maximum annual revenue of the employer in USD (integer, no commas).
+        org_hiring_job_titles: Comma-separated job titles the employer is currently hiring for
+            (e.g., "VP Sales,Account Executive"). Strong buying signal.
+        org_hiring_locations: Comma-separated locations where the employer is hiring.
+        org_num_jobs_min: Minimum number of open jobs at the employer.
+        org_num_jobs_max: Maximum number of open jobs at the employer.
+        org_job_posted_after: Only employers with jobs posted on/after this date (YYYY-MM-DD).
+        org_job_posted_before: Only employers with jobs posted on/before this date (YYYY-MM-DD).
         limit: Maximum results to return (default 10, max 100).
 
     Returns:
@@ -297,21 +333,69 @@ def apollo_search_people(
             params["person_locations"] = [loc.strip() for loc in person_locations.split(",")]
 
         if organization_num_employees_ranges:
-            # Parse ranges like "1,10;11,50" into [{"min":1,"max":10},...]
-            ranges = []
-            for range_str in organization_num_employees_ranges.split(";"):
-                parts = range_str.split(",")
-                if len(parts) == 2:
-                    ranges.append({"min": int(parts[0].strip()), "max": int(parts[1].strip())})
-            if ranges:
-                params["organization_num_employees_ranges"] = ranges
+            # Apollo wants an array of "min,max" strings, not dicts.
+            # Input like "1,10;11,50" becomes ["1,10", "11,50"].
+            params["organization_num_employees_ranges"] = [
+                r.strip() for r in organization_num_employees_ranges.split(";") if r.strip()
+            ]
 
         if organization_keywords:
             params["q_organization_keyword_tags"] = [
                 k.strip() for k in organization_keywords.split(",")
             ]
 
-        response = client.post("/mixed_people/search", json=params)
+        if q_keywords:
+            params["q_keywords"] = q_keywords
+
+        if include_similar_titles is not None:
+            params["include_similar_titles"] = include_similar_titles
+
+        if contact_email_status:
+            params["contact_email_status"] = [s.strip() for s in contact_email_status.split(",")]
+
+        if technologies:
+            params["currently_using_any_of_technology_uids"] = [
+                t.strip() for t in technologies.split(",")
+            ]
+
+        if technologies_all:
+            params["currently_using_all_of_technology_uids"] = [
+                t.strip() for t in technologies_all.split(",")
+            ]
+
+        if technologies_exclude:
+            params["currently_not_using_any_of_technology_uids"] = [
+                t.strip() for t in technologies_exclude.split(",")
+            ]
+
+        if revenue_min_usd is not None:
+            params["revenue_range[min]"] = revenue_min_usd
+
+        if revenue_max_usd is not None:
+            params["revenue_range[max]"] = revenue_max_usd
+
+        if org_hiring_job_titles:
+            params["q_organization_job_titles"] = [
+                t.strip() for t in org_hiring_job_titles.split(",")
+            ]
+
+        if org_hiring_locations:
+            params["organization_job_locations"] = [
+                loc.strip() for loc in org_hiring_locations.split(",")
+            ]
+
+        if org_num_jobs_min is not None:
+            params["organization_num_jobs_range[min]"] = org_num_jobs_min
+        if org_num_jobs_max is not None:
+            params["organization_num_jobs_range[max]"] = org_num_jobs_max
+
+        if org_job_posted_after:
+            params["organization_job_posted_at_range[min]"] = org_job_posted_after
+        if org_job_posted_before:
+            params["organization_job_posted_at_range[max]"] = org_job_posted_before
+
+        # Apollo deprecated /mixed_people/search for API callers; use api_search.
+        response = client.post("/mixed_people/api_search", json=params)
         people = response.get("people", [])
 
         if not people:
@@ -345,8 +429,26 @@ def apollo_search_companies(
     organization_domains: str | None = None,
     organization_names: str | None = None,
     organization_locations: str | None = None,
+    organization_not_locations: str | None = None,
     organization_num_employees_ranges: str | None = None,
     organization_keywords: str | None = None,
+    technologies: str | None = None,
+    technologies_all: str | None = None,
+    technologies_exclude: str | None = None,
+    revenue_min_usd: int | None = None,
+    revenue_max_usd: int | None = None,
+    total_funding_min_usd: int | None = None,
+    total_funding_max_usd: int | None = None,
+    latest_funding_min_usd: int | None = None,
+    latest_funding_max_usd: int | None = None,
+    latest_funding_after: str | None = None,
+    latest_funding_before: str | None = None,
+    hiring_job_titles: str | None = None,
+    hiring_locations: str | None = None,
+    num_jobs_min: int | None = None,
+    num_jobs_max: int | None = None,
+    job_posted_after: str | None = None,
+    job_posted_before: str | None = None,
     limit: int = 10,
 ) -> str:
     """
@@ -356,8 +458,30 @@ def apollo_search_companies(
         organization_domains: Comma-separated domains to search (e.g., "apollo.io,openai.com").
         organization_names: Comma-separated company names (e.g., "Apollo,OpenAI").
         organization_locations: Comma-separated HQ locations (e.g., "San Francisco,New York").
+        organization_not_locations: Comma-separated HQ locations to EXCLUDE.
         organization_num_employees_ranges: Employee count ranges (e.g., "1,10;11,50;51,200").
-        organization_keywords: Comma-separated industry/business keywords (e.g., "insurance,fintech,healthcare").
+        organization_keywords: Comma-separated industry/business keyword tags (e.g., "insurance,fintech").
+        technologies: Comma-separated Apollo technology UIDs the company must currently use (ANY of).
+            Use underscores for spaces/periods (e.g., "hubspot,chili_piper,salesforce").
+            Apollo supports ~1,500 technology UIDs via its Technographics data.
+        technologies_all: Comma-separated technology UIDs the company must use ALL of
+            (strict AND, e.g., "salesforce,marketo").
+        technologies_exclude: Comma-separated technology UIDs the company must NOT use.
+        revenue_min_usd: Minimum annual revenue in USD (integer, no commas).
+        revenue_max_usd: Maximum annual revenue in USD (integer, no commas).
+        total_funding_min_usd: Minimum total funding raised in USD (integer).
+        total_funding_max_usd: Maximum total funding raised in USD (integer).
+        latest_funding_min_usd: Minimum most-recent funding round size in USD.
+        latest_funding_max_usd: Maximum most-recent funding round size in USD.
+        latest_funding_after: Only companies whose latest round closed on/after this date (YYYY-MM-DD).
+        latest_funding_before: Only companies whose latest round closed on/before this date (YYYY-MM-DD).
+        hiring_job_titles: Comma-separated titles the company is currently hiring for
+            (e.g., "VP Sales,Account Executive"). Strong buying signal.
+        hiring_locations: Comma-separated locations where the company is hiring.
+        num_jobs_min: Minimum number of open jobs at the company.
+        num_jobs_max: Maximum number of open jobs at the company.
+        job_posted_after: Only companies with jobs posted on/after this date (YYYY-MM-DD).
+        job_posted_before: Only companies with jobs posted on/before this date (YYYY-MM-DD).
         limit: Maximum results to return (default 10, max 100).
 
     Returns:
@@ -381,19 +505,74 @@ def apollo_search_companies(
                 loc.strip() for loc in organization_locations.split(",")
             ]
 
+        if organization_not_locations:
+            params["organization_not_locations"] = [
+                loc.strip() for loc in organization_not_locations.split(",")
+            ]
+
         if organization_num_employees_ranges:
-            ranges = []
-            for range_str in organization_num_employees_ranges.split(";"):
-                parts = range_str.split(",")
-                if len(parts) == 2:
-                    ranges.append({"min": int(parts[0].strip()), "max": int(parts[1].strip())})
-            if ranges:
-                params["organization_num_employees_ranges"] = ranges
+            # Apollo wants an array of "min,max" strings, not dicts.
+            params["organization_num_employees_ranges"] = [
+                r.strip() for r in organization_num_employees_ranges.split(";") if r.strip()
+            ]
 
         if organization_keywords:
             params["q_organization_keyword_tags"] = [
                 k.strip() for k in organization_keywords.split(",")
             ]
+
+        if technologies:
+            params["currently_using_any_of_technology_uids"] = [
+                t.strip() for t in technologies.split(",")
+            ]
+
+        if technologies_all:
+            params["currently_using_all_of_technology_uids"] = [
+                t.strip() for t in technologies_all.split(",")
+            ]
+
+        if technologies_exclude:
+            params["currently_not_using_any_of_technology_uids"] = [
+                t.strip() for t in technologies_exclude.split(",")
+            ]
+
+        if revenue_min_usd is not None:
+            params["revenue_range[min]"] = revenue_min_usd
+        if revenue_max_usd is not None:
+            params["revenue_range[max]"] = revenue_max_usd
+
+        if total_funding_min_usd is not None:
+            params["total_funding_range[min]"] = total_funding_min_usd
+        if total_funding_max_usd is not None:
+            params["total_funding_range[max]"] = total_funding_max_usd
+
+        if latest_funding_min_usd is not None:
+            params["latest_funding_amount_range[min]"] = latest_funding_min_usd
+        if latest_funding_max_usd is not None:
+            params["latest_funding_amount_range[max]"] = latest_funding_max_usd
+
+        if latest_funding_after:
+            params["latest_funding_date_range[min]"] = latest_funding_after
+        if latest_funding_before:
+            params["latest_funding_date_range[max]"] = latest_funding_before
+
+        if hiring_job_titles:
+            params["q_organization_job_titles"] = [t.strip() for t in hiring_job_titles.split(",")]
+
+        if hiring_locations:
+            params["organization_job_locations"] = [
+                loc.strip() for loc in hiring_locations.split(",")
+            ]
+
+        if num_jobs_min is not None:
+            params["organization_num_jobs_range[min]"] = num_jobs_min
+        if num_jobs_max is not None:
+            params["organization_num_jobs_range[max]"] = num_jobs_max
+
+        if job_posted_after:
+            params["organization_job_posted_at_range[min]"] = job_posted_after
+        if job_posted_before:
+            params["organization_job_posted_at_range[max]"] = job_posted_before
 
         response = client.post("/mixed_companies/search", json=params)
         organizations = response.get("organizations", [])
