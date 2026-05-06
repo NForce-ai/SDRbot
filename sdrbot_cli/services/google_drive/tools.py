@@ -3,7 +3,6 @@
 Google Drive is a file storage service - all tools are static (no schema sync required).
 """
 
-import io
 import json
 import os
 
