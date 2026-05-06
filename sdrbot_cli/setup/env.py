@@ -63,11 +63,15 @@ async def get_or_prompt(
     if required:
         console.print(f"[{COLORS['primary']}]Missing {display_name}.[/]")
         console.print(f"[{COLORS['dim']}](Press ESC to cancel)[/{COLORS['dim']}]")
-        return await session.prompt_async(
-            f"  Please enter your {display_name}: ",
-            is_password=is_secret,
-            default=default or "",
-        )
+        while True:
+            value = await session.prompt_async(
+                f"  Please enter your {display_name}: ",
+                is_password=is_secret,
+                default=default or "",
+            )
+            if value.strip():
+                return value
+            console.print(f"  [{COLORS['tool']}]Value cannot be empty.[/{COLORS['tool']}]")
     else:
         if Confirm.ask(
             f"[{COLORS['primary']}]Do you want to configure {display_name}?[/", default=False

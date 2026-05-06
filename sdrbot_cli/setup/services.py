@@ -50,6 +50,12 @@ SERVICE_CATEGORIES = {
             ("generic_email", "Generic Email (IMAP/SMTP)"),
         ],
     },
+    "storage": {
+        "label": "Storage",
+        "services": [
+            ("google_drive", "Google Drive"),
+        ],
+    },
 }
 
 
@@ -98,6 +104,10 @@ def get_service_status(service_name: str) -> tuple[bool, bool]:
         configured = bool(os.getenv("MYSQL_HOST"))
     elif service_name == "mongodb":
         configured = bool(os.getenv("MONGODB_URI"))
+    elif service_name == "google_drive":
+        configured = bool(
+            os.getenv("GOOGLE_DRIVE_CLIENT_ID") and os.getenv("GOOGLE_DRIVE_CLIENT_SECRET")
+        )
     elif service_name == "gmail":
         configured = bool(os.getenv("GMAIL_CLIENT_ID") and os.getenv("GMAIL_CLIENT_SECRET"))
     elif service_name == "outlook":
@@ -667,6 +677,53 @@ async def _setup_service_impl(service_name: str, force: bool = False) -> bool:
                 )
 
             enable_service("gmail", sync=False, verbose=True)
+            return True
+
+    elif service_name == "google_drive":
+        console.print(
+            f"[{COLORS['primary']}]--- Google Drive Configuration ---[/{COLORS['primary']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]Create OAuth credentials at console.cloud.google.com[/{COLORS['dim']}]"
+        )
+        console.print(
+            f"[{COLORS['dim']}]Enable Google Drive API and create a Desktop app OAuth client[/{COLORS['dim']}]"
+        )
+        gdrive_client_id = await get_or_prompt(
+            "GOOGLE_DRIVE_CLIENT_ID", "Google Drive Client ID", required=True, force=force
+        )
+        gdrive_client_secret = await get_or_prompt(
+            "GOOGLE_DRIVE_CLIENT_SECRET",
+            "Google Drive Client Secret",
+            is_secret=True,
+            required=True,
+            force=force,
+        )
+
+        if gdrive_client_id:
+            env_vars["GOOGLE_DRIVE_CLIENT_ID"] = gdrive_client_id
+        if gdrive_client_secret:
+            env_vars["GOOGLE_DRIVE_CLIENT_SECRET"] = gdrive_client_secret
+
+        if gdrive_client_id and gdrive_client_secret:
+            save_env_vars(env_vars)
+            reload_env_and_settings()
+
+            try:
+                import sdrbot_cli.auth.google_drive as gdrive_auth
+
+                importlib.reload(gdrive_auth)
+                gdrive_auth.login()
+                console.print(
+                    f"[{COLORS['primary']}]Google Drive authentication complete![/{COLORS['primary']}]"
+                )
+            except Exception as e:
+                console.print(f"[red]Google Drive authentication failed: {e}[/red]")
+                console.print(
+                    f"[{COLORS['dim']}]You can authenticate later when you first use Google Drive.[/{COLORS['dim']}]"
+                )
+
+            enable_service("google_drive", sync=False, verbose=True)
             return True
 
     elif service_name == "outlook":
