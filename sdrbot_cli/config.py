@@ -794,8 +794,7 @@ class Settings:
     def has_google_drive(self) -> bool:
         """Check if Google Drive OAuth credentials are configured."""
         return (
-            self.google_drive_client_id is not None
-            and self.google_drive_client_secret is not None
+            self.google_drive_client_id is not None and self.google_drive_client_secret is not None
         )
 
     @property

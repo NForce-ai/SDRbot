@@ -30,9 +30,7 @@ def _headers() -> dict:
     """Get authorization headers."""
     headers = gdrive_auth.get_headers()
     if not headers:
-        raise RuntimeError(
-            "Google Drive not authenticated. Run /setup to configure Google Drive."
-        )
+        raise RuntimeError("Google Drive not authenticated. Run /setup to configure Google Drive.")
     return headers
 
 
