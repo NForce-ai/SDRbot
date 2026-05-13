@@ -17,9 +17,9 @@ fi
 # This regex looks for 'version = "..."' in the [project] section roughly
 # It assumes standard formatting in pyproject.toml
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  sed -i '' "s/^version = ".*"/version = "$NEW_VERSION"/" pyproject.toml
+  sed -i '' 's/^version = ".*"/version = "'"$NEW_VERSION"'"/' pyproject.toml
 else
-  sed -i "s/^version = ".*"/version = "$NEW_VERSION"/" pyproject.toml
+  sed -i 's/^version = ".*"/version = "'"$NEW_VERSION"'"/' pyproject.toml
 fi
 
 echo "✅ Updated pyproject.toml to $NEW_VERSION"
