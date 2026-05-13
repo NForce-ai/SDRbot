@@ -1709,4 +1709,13 @@ def get_service_config_screen(service_code: str, service_label: str) -> ModalScr
     elif service_code == "generic_email":
         return GenericEmailScreen()
 
+    elif service_code == "google_drive":
+        return OAuthCredentialsScreen(
+            service_code,
+            service_label,
+            "GOOGLE_DRIVE_CLIENT_ID",
+            "GOOGLE_DRIVE_CLIENT_SECRET",
+            "sdrbot_cli.auth.google_drive",
+        )
+
     return None

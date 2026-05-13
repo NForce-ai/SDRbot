@@ -396,6 +396,10 @@ class Settings:
     gmail_client_id: str | None
     gmail_client_secret: str | None
 
+    # Google Drive Config
+    google_drive_client_id: str | None
+    google_drive_client_secret: str | None
+
     # Outlook Config
     outlook_client_id: str | None
     outlook_client_secret: str | None
@@ -513,6 +517,8 @@ class Settings:
         apollo_api_key = os.environ.get("APOLLO_API_KEY")
         gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
         gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
+        google_drive_client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID")
+        google_drive_client_secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
         outlook_client_id = os.environ.get("OUTLOOK_CLIENT_ID")
         outlook_client_secret = os.environ.get("OUTLOOK_CLIENT_SECRET")
 
@@ -586,6 +592,8 @@ class Settings:
             apollo_api_key=apollo_api_key,
             gmail_client_id=gmail_client_id,
             gmail_client_secret=gmail_client_secret,
+            google_drive_client_id=google_drive_client_id,
+            google_drive_client_secret=google_drive_client_secret,
             outlook_client_id=outlook_client_id,
             outlook_client_secret=outlook_client_secret,
             imap_host=imap_host,
@@ -656,6 +664,8 @@ class Settings:
         self.apollo_api_key = new_settings.apollo_api_key
         self.gmail_client_id = new_settings.gmail_client_id
         self.gmail_client_secret = new_settings.gmail_client_secret
+        self.google_drive_client_id = new_settings.google_drive_client_id
+        self.google_drive_client_secret = new_settings.google_drive_client_secret
         self.outlook_client_id = new_settings.outlook_client_id
         self.outlook_client_secret = new_settings.outlook_client_secret
         self.imap_host = new_settings.imap_host
@@ -781,6 +791,13 @@ class Settings:
         return self.gmail_client_id is not None and self.gmail_client_secret is not None
 
     @property
+    def has_google_drive(self) -> bool:
+        """Check if Google Drive OAuth credentials are configured."""
+        return (
+            self.google_drive_client_id is not None and self.google_drive_client_secret is not None
+        )
+
+    @property
     def has_outlook(self) -> bool:
         """Check if Outlook OAuth credentials are configured."""
         return self.outlook_client_id is not None and self.outlook_client_secret is not None
@@ -842,6 +859,7 @@ class Settings:
             "hunter": self.has_hunter,
             "apollo": self.has_apollo,
             "gmail": self.has_gmail,
+            "google_drive": self.has_google_drive,
             "outlook": self.has_outlook,
             "generic_email": self.has_generic_email,
             "postgres": self.has_postgres,
