@@ -22,6 +22,7 @@ SERVICES = [
     "gmail",
     "outlook",
     "generic_email",
+    "google_drive",
     "tavily",
     "postgres",
     "mysql",
