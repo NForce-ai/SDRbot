@@ -49,9 +49,9 @@ def twenty_link_note_to_record(
         Success message or error message.
     """
     target_field_map = {
-        "person": "targetPerson",
-        "company": "targetCompany",
-        "opportunity": "targetOpportunity",
+        "person": "targetPersonId",
+        "company": "targetCompanyId",
+        "opportunity": "targetOpportunityId",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -87,11 +87,10 @@ def twenty_list_notes_on_record(
     Returns:
         Formatted list of notes or error message.
     """
-    # Map target type to the correct relation field name
     target_field_map = {
-        "person": "targetPerson",
-        "company": "targetCompany",
-        "opportunity": "targetOpportunity",
+        "person": "targetPersonId",
+        "company": "targetCompanyId",
+        "opportunity": "targetOpportunityId",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -167,9 +166,9 @@ def twenty_link_task_to_record(
         Success message or error message.
     """
     target_field_map = {
-        "person": "targetPerson",
-        "company": "targetCompany",
-        "opportunity": "targetOpportunity",
+        "person": "targetPersonId",
+        "company": "targetCompanyId",
+        "opportunity": "targetOpportunityId",
     }
 
     target_field = target_field_map.get(target_type.lower())
@@ -206,9 +205,9 @@ def twenty_list_tasks_on_record(
         Formatted list of tasks or error message.
     """
     target_field_map = {
-        "person": "targetPerson",
-        "company": "targetCompany",
-        "opportunity": "targetOpportunity",
+        "person": "targetPersonId",
+        "company": "targetCompanyId",
+        "opportunity": "targetOpportunityId",
     }
 
     target_field = target_field_map.get(target_type.lower())
