@@ -93,39 +93,13 @@ def create_custom_deep_agent(
         session_state=session_state,
     )
 
-    # Discover subagent definitions from .md files
-    from pathlib import Path
-
-    from sdrbot_cli.config import get_config_dir
-
-    discovered_defs = scan_subagent_dirs(
-        Path(__file__).parent / "subagents",  # built-in
-        get_config_dir() / "subagents",  # project-level
-    )
-    # Convert discovered dicts to SubAgent objects
-    discovered_subagents: list[SubAgent] = [
-        SubAgent(
-            name=d["name"],
-            description=d["description"],
-            system_prompt=d["system_prompt"],
-        )
-        for d in discovered_defs
-    ]
-
-    # Built-in specialized subagents + discovered + any custom ones passed in
-    builtin_subagents: list[SubAgent | CompiledSubAgent] = [
-        MIGRATION_EXECUTOR,
-        *discovered_subagents,
-    ]
-    all_subagents = builtin_subagents + (subagents or [])
-
     # Extract ShellMiddleware from passed middleware for subagents
     # (subagents need shell access but not memory/skills middleware)
     from sdrbot_cli.shell import ShellMiddleware
 
     shell_middleware = [m for m in (middleware or []) if isinstance(m, ShellMiddleware)]
 
-    # Build subagent middleware stack
+    # Build subagent middleware stack (must be before subagent creation)
     subagent_middleware: list[AgentMiddleware] = [
         TodoListMiddleware(),
         FilesystemMiddleware(backend=backend),
@@ -141,17 +115,87 @@ def create_custom_deep_agent(
         PatchToolCallsMiddleware(),
     ]
 
+    # Discover subagent definitions from .md files
+    from pathlib import Path
+
+    from sdrbot_cli.config import get_config_dir
+
+    discovered_defs = scan_subagent_dirs(
+        Path(__file__).parent / "subagents",  # built-in
+        get_config_dir() / "subagents",  # project-level
+    )
+
+    # Build model string for subagents (provider:model-name format)
+    from sdrbot_cli.config import load_model_config
+
+    model_config = load_model_config()
+    if model_config:
+        provider = model_config["provider"]
+        model_name = model_config["model_name"]
+        if provider == "anthropic":
+            model_str = f"anthropic:{model_name}"
+        elif provider == "google":
+            model_str = f"google:{model_name}"
+        elif provider == "ollama":
+            model_str = f"ollama:{model_name}"
+        else:
+            model_str = f"openai:{model_name}"
+    else:
+        # Fallback: detect from model class name
+        model_str = f"anthropic:{model.model_name}" if hasattr(model, "model_name") else "anthropic:claude-sonnet-4-6"
+
+    tools_list = list(tools) if tools else []
+
+    def _resolve_subagent_tools(tool_names: list[str] | None) -> list[BaseTool]:
+        """Map tool name strings (from .md frontmatter) to actual tool objects."""
+        if not tool_names:
+            return tools_list
+        return [t for t in tools_list if t.name in frozenset(tool_names)]
+
+    # Convert discovered dicts to SubAgent objects with required model/tools/middleware
+    discovered_subagents: list[SubAgent] = [
+        SubAgent(
+            name=d["name"],
+            description=d["description"],
+            system_prompt=d["system_prompt"],
+            model=model_str,
+            tools=_resolve_subagent_tools(d.get("tools")),
+            middleware=subagent_middleware,
+            interrupt_on=interrupt_on,
+        )
+        for d in discovered_defs
+    ]
+
+    # Built-in specialized subagents + discovered + any custom ones passed in
+    builtin_subagents: list[SubAgent | CompiledSubAgent] = [
+        SubAgent(
+            **MIGRATION_EXECUTOR,
+            model=model_str,
+            tools=tools_list,
+            middleware=subagent_middleware,
+            interrupt_on=interrupt_on,
+        ),
+        # General-purpose subagent (replaces old general_purpose_agent=True)
+        SubAgent(
+            name="general-purpose",
+            description="General-purpose agent for complex, multi-step tasks that don't fit a specialized subagent. Use when the task requires multiple different tools or broad reasoning.",
+            system_prompt="You are a general-purpose assistant. Complete the task given to you using the tools available. Be thorough and return a clear, complete response when done.",
+            model=model_str,
+            tools=tools_list,
+            middleware=subagent_middleware,
+            interrupt_on=interrupt_on,
+        ),
+        *discovered_subagents,
+    ]
+    all_subagents = builtin_subagents + (subagents or [])
+
     # Build middleware stack
     deepagent_middleware: list[AgentMiddleware] = [
         TodoListMiddleware(),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(
-            default_model=model,
-            default_tools=tools,
+            backend=backend,
             subagents=all_subagents,
-            default_middleware=subagent_middleware,
-            default_interrupt_on=interrupt_on,
-            general_purpose_agent=True,
         ),
         summarization_middleware,
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
