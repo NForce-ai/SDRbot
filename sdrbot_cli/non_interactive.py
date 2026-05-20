@@ -75,7 +75,7 @@ async def run_non_interactive(
         }
 
     # Create agent
-    session_state = SessionState(assistant_id=assistant_id, auto_approve=auto_approve)
+    session_state = SessionState(auto_approve=auto_approve)
     agent, backend, tool_count, skill_count, checkpointer, baseline_tokens = (
         create_agent_with_config(
             model=model,
