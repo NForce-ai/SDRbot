@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -16,19 +17,95 @@ _ClientSession = None
 _StdioServerParameters = None
 _stdio_client = None
 _sse_client = None
+_streamable_http_client = None
+_create_mcp_http_client = None
+_OAuthClientProvider = None
 
 try:
     from mcp import ClientSession as _ClientSession
     from mcp import StdioServerParameters as _StdioServerParameters
     from mcp.client.sse import sse_client as _sse_client
     from mcp.client.stdio import stdio_client as _stdio_client
+    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+    from mcp.shared._httpx_utils import create_mcp_http_client as _create_mcp_http_client
 
     MCP_AVAILABLE = True
 except ImportError:
     pass
 
+try:
+    from mcp.client.auth.oauth2 import OAuthClientProvider as _OAuthClientProvider
+except ImportError:
+    pass
+
 if TYPE_CHECKING:
     from mcp import ClientSession
+
+
+def _unwrap_error(exc: BaseException) -> str:
+    """Unwrap ExceptionGroup/TaskGroup errors to show underlying cause."""
+    # Python 3.11+ ExceptionGroup
+    if hasattr(exc, "exceptions"):
+        subs = getattr(exc, "exceptions", None)
+        if subs:
+            messages = []
+            for sub in subs:
+                msg = _unwrap_error(sub)
+                if msg not in messages:
+                    messages.append(msg)
+            return "; ".join(messages) if messages else str(exc)
+
+    # httpx.HTTPStatusError — include status code, URL, and response body
+    if hasattr(exc, "response"):
+        response = getattr(exc, "response", None)
+        if response is not None:
+            status = response.status_code
+            reason = getattr(response, "reason_phrase", "")
+            url = str(response.url) if hasattr(response, "url") else ""
+            body = ""
+            try:
+                raw = response.read()
+                body = raw.decode("utf-8", errors="replace")[:500]
+            except Exception:
+                try:
+                    body = response.text[:500]
+                except Exception:
+                    pass
+            if body:
+                return f"HTTP {status} {reason} for {url}: {body}"
+            return f"HTTP {status} {reason} for {url}"
+
+    return str(exc)
+
+
+@contextlib.asynccontextmanager
+async def _streamable_http_no_get(
+    url: str, http_client=None, terminate_on_close: bool = True
+):
+    """StreamableHTTP transport that skips the GET stream.
+
+    Monkey-patches _is_initialized_notification to return False for the
+    duration of this context, preventing the GET stream from starting.
+    The patch is undone when the context exits.
+    """
+    from mcp.client.streamable_http import StreamableHTTPTransport
+
+    _original = StreamableHTTPTransport._is_initialized_notification
+
+    def _noop_is_init(self, message):
+        return False
+
+    StreamableHTTPTransport._is_initialized_notification = _noop_is_init
+
+    try:
+        async with _streamable_http_client(
+            url,
+            http_client=http_client,
+            terminate_on_close=terminate_on_close,
+        ) as streams:
+            yield streams
+    finally:
+        StreamableHTTPTransport._is_initialized_notification = _original
 
 
 @dataclass
@@ -40,6 +117,7 @@ class MCPServerConnection:
     session: ClientSession | None = None
     tools: list[Any] = field(default_factory=list)
     _context_stack: list[Any] = field(default_factory=list)
+    last_error: str = ""
 
     async def connect(self) -> bool:
         """
@@ -49,7 +127,9 @@ class MCPServerConnection:
             True if connection successful, False otherwise
         """
         if not MCP_AVAILABLE:
-            console.print("[red]MCP SDK not installed. Run: pip install mcp[/red]")
+            msg = "MCP SDK not installed. Run: pip install mcp"
+            self.last_error = msg
+            console.print(f"[red]{msg}[/red]")
             return False
 
         try:
@@ -79,29 +159,74 @@ class MCPServerConnection:
                 read_stream, write_stream = streams
 
             elif transport == "sse":
-                # Build auth headers if configured
-                auth_headers = build_auth_headers(self.config.get("auth"))
+                auth_config = self.config.get("auth", {})
+                auth_type = auth_config.get("type", "none") if auth_config else "none"
 
-                # Enter sse_client context
-                sse_ctx = _sse_client(self.config["url"], headers=auth_headers or None)
+                if auth_type == "oauth":
+                    # Use MCP SDK's OAuthClientProvider for full OAuth 2.0 flow
+                    if _OAuthClientProvider is None:
+                        msg = "OAuth support requires mcp package with auth module"
+                        self.last_error = msg
+                        console.print(f"[red]{msg}[/red]")
+                        return False
+
+                    from .oauth import create_oauth_provider
+
+                    scopes = auth_config.get("scopes")
+                    client_metadata_url = auth_config.get("client_metadata_url")
+                    oauth_provider = create_oauth_provider(
+                        self.name, self.config["url"], scopes, client_metadata_url
+                    )
+                    sse_ctx = _sse_client(self.config["url"], auth=oauth_provider)
+                else:
+                    # Build static auth headers
+                    auth_headers = build_auth_headers(auth_config)
+                    sse_ctx = _sse_client(self.config["url"], headers=auth_headers or None)
+
                 streams = await sse_ctx.__aenter__()
                 self._context_stack.append(sse_ctx)
                 read_stream, write_stream = streams[0], streams[1]
 
             elif transport == "http":
-                # Streamable HTTP transport is currently disabled due to a bug in the
-                # MCP SDK that corrupts the asyncio event loop during cleanup.
-                # See: https://github.com/modelcontextprotocol/python-sdk/issues/915
-                console.print(
-                    "[red]HTTP transport is temporarily disabled due to an upstream bug.[/red]\n"
-                    "[dim]The MCP SDK's streamablehttp_client has a known issue that corrupts\n"
-                    "the asyncio event loop. Use 'stdio' or 'sse' transport instead.\n"
-                    "See: https://github.com/modelcontextprotocol/python-sdk/issues/915[/dim]"
-                )
-                return False
+                auth_config = self.config.get("auth", {})
+                auth_type = auth_config.get("type", "none") if auth_config else "none"
+
+                if auth_type == "oauth":
+                    if _OAuthClientProvider is None:
+                        msg = "OAuth support requires mcp package with auth module"
+                        self.last_error = msg
+                        console.print(f"[red]{msg}[/red]")
+                        return False
+
+                    from .oauth import create_oauth_provider
+
+                    scopes = auth_config.get("scopes")
+                    client_metadata_url = auth_config.get("client_metadata_url")
+                    oauth_provider = create_oauth_provider(
+                        self.name, self.config["url"], scopes, client_metadata_url
+                    )
+                    http_client = _create_mcp_http_client(auth=oauth_provider)
+                    http_ctx = _streamable_http_no_get(
+                        self.config["url"], http_client=http_client
+                    )
+                else:
+                    auth_headers = build_auth_headers(auth_config)
+                    if auth_headers:
+                        http_client = _create_mcp_http_client(headers=auth_headers)
+                        http_ctx = _streamable_http_no_get(
+                            self.config["url"], http_client=http_client
+                        )
+                    else:
+                        http_ctx = _streamable_http_no_get(self.config["url"])
+
+                streams = await http_ctx.__aenter__()
+                self._context_stack.append(http_ctx)
+                read_stream, write_stream, _ = streams
 
             else:
-                console.print(f"[red]Unknown transport: {transport}[/red]")
+                msg = f"Unknown transport: {transport}"
+                self.last_error = msg
+                console.print(f"[red]{msg}[/red]")
                 return False
 
             # Create and initialize session
@@ -117,8 +242,11 @@ class MCPServerConnection:
 
             return True
 
-        except Exception as e:
-            console.print(f"[red]Failed to connect to {self.name}: {e}[/red]")
+        except BaseException as e:
+            # Unwrap ExceptionGroup/TaskGroup errors to show the real cause
+            msg = f"Failed to connect to {self.name}: {_unwrap_error(e)}"
+            self.last_error = msg
+            console.print(f"[red]{msg}[/red]")
             await self.disconnect()
             return False
 
@@ -183,12 +311,15 @@ class MCPServerConnection:
         return [tool.name for tool in self.tools]
 
 
-async def test_mcp_connection(config: dict[str, Any]) -> tuple[bool, int, str]:
+async def test_mcp_connection(
+    config: dict[str, Any], server_name: str = "test"
+) -> tuple[bool, int, str]:
     """
     Test connection to an MCP server.
 
     Args:
         config: Server configuration dict
+        server_name: Name for OAuth token storage (use real server name)
 
     Returns:
         (success, tool_count, error_message)
@@ -196,7 +327,7 @@ async def test_mcp_connection(config: dict[str, Any]) -> tuple[bool, int, str]:
     if not MCP_AVAILABLE:
         return False, 0, "MCP SDK not installed. Run: pip install mcp"
 
-    conn = MCPServerConnection(name="test", config=config)
+    conn = MCPServerConnection(name=server_name, config=config)
 
     try:
         success = await conn.connect()
@@ -204,7 +335,7 @@ async def test_mcp_connection(config: dict[str, Any]) -> tuple[bool, int, str]:
             tool_count = len(conn.tools)
             await conn.disconnect()
             return True, tool_count, ""
-        return False, 0, "Connection failed"
+        return False, 0, conn.last_error or "Connection failed"
     except Exception as e:
         await conn.disconnect()
         return False, 0, str(e)
