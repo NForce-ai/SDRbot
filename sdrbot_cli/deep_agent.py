@@ -142,7 +142,11 @@ def create_custom_deep_agent(
             model_str = f"openai:{model_name}"
     else:
         # Fallback: detect from model class name
-        model_str = f"anthropic:{model.model_name}" if hasattr(model, "model_name") else "anthropic:claude-sonnet-4-6"
+        model_str = (
+            f"anthropic:{model.model_name}"
+            if hasattr(model, "model_name")
+            else "anthropic:claude-sonnet-4-6"
+        )
 
     tools_list = list(tools) if tools else []
 
