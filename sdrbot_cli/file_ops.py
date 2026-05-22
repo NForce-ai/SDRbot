@@ -117,7 +117,11 @@ class FileOperationRecord:
 
 
 def resolve_physical_path(path_str: str | None, assistant_id: str | None) -> Path | None:
-    """Convert a virtual/relative path to a physical filesystem path."""
+    """Convert a virtual/relative path to a physical filesystem path.
+
+    Handles POSIX-style absolute paths (/workspace/file.txt) that Windows'
+    ``Path.is_absolute()`` doesn't recognize (no drive letter).
+    """
     if not path_str:
         return None
     try:
@@ -128,6 +132,11 @@ def resolve_physical_path(path_str: str | None, assistant_id: str | None) -> Pat
         path = Path(path_str)
         if path.is_absolute():
             return path
+        # On Windows, a POSIX-style absolute path like /workspace/file.txt
+        # has a root but no drive, so is_absolute() returns False and the
+        # naive / join would steal the path portion of the cwd.
+        if path_str.startswith("/"):
+            return (Path.cwd() / path_str.lstrip("/")).resolve()
         return (Path.cwd() / path).resolve()
     except (OSError, ValueError):
         return None

@@ -474,7 +474,7 @@ def create_agent_with_config(
             virtual_mode=True,
         )
         composite_backend = CompositeBackend(
-            default=FilesystemBackend(root_dir=files_dir),
+            default=FilesystemBackend(root_dir=files_dir, virtual_mode=True),
             routes={"/tmp": tmp_backend},
         )
 
