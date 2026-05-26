@@ -1,6 +1,7 @@
 """Agent management and creation for the CLI."""
 
 import os
+import platform
 from pathlib import Path
 
 from deepagents.backends import CompositeBackend
@@ -184,7 +185,26 @@ All code execution and file operations happen in this sandbox environment.
 """
     else:
         cwd = Path.cwd()
-        working_dir_section = f"""<env>
+        if platform.system() == "Windows":
+            working_dir_section = f"""<env>
+Working directory: {cwd}
+</env>
+
+### Current Working Directory
+
+The filesystem backend is currently operating in: `{cwd}`
+
+### File System and Paths
+
+**IMPORTANT - Path Handling on Windows:**
+- For file tools (ls, read_file, write_file, edit_file, glob, grep): use virtual paths starting with `/` (e.g., `/file.txt`, `/subdir/file.txt`)
+- Virtual paths map to your working directory (`{cwd}`)
+- For shell commands: use native Windows paths or relative paths (e.g., `.\\file.txt`)
+- Never use Windows-style absolute paths (e.g., `C:\\...`) with file tools — they are not supported
+
+"""
+        else:
+            working_dir_section = f"""<env>
 Working directory: {cwd}
 </env>
 
