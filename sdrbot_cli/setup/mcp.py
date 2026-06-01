@@ -135,12 +135,11 @@ async def _add_mcp_server() -> None:
             return
 
         # Choose transport
-        # NOTE: HTTP transport is disabled due to MCP SDK bug
-        # See: https://github.com/modelcontextprotocol/python-sdk/issues/915
         transport = await show_choice_menu(
             [
                 ("stdio", "stdio - Run as subprocess (npx, uvx, python, etc.)"),
-                ("sse", "SSE - Server-Sent Events"),
+                ("http", "HTTP - Streamable HTTP (most remote servers)"),
+                ("sse", "SSE - Server-Sent Events (legacy)"),
             ],
             title="Transport type",
         )
@@ -198,6 +197,7 @@ async def _add_mcp_server() -> None:
                     ("bearer", "Bearer Token - Authorization: Bearer <token>"),
                     ("apikey", "API Key - X-API-Key: <key>"),
                     ("custom", "Custom Headers - Define your own headers"),
+                    ("oauth", "OAuth 2.0 - Browser-based authorization (PKCE)"),
                 ],
                 title="Authentication",
             )
@@ -238,6 +238,27 @@ async def _add_mcp_server() -> None:
                 if headers:
                     auth_config["headers"] = headers
 
+            elif auth_type == "oauth":
+                console.print(
+                    f"[{COLORS['dim']}]OAuth 2.0 uses your browser for authorization.[/{COLORS['dim']}]"
+                )
+                console.print(
+                    f"[{COLORS['dim']}]A local server on port 8080 will receive the callback.[/{COLORS['dim']}]"
+                )
+                scopes = await session.prompt_async(
+                    "Scopes (optional, space-separated, e.g., 'read write'): "
+                )
+                scopes = scopes.strip()
+                if scopes:
+                    auth_config["scopes"] = scopes
+
+                client_metadata_url = await session.prompt_async(
+                    "Client Metadata URL (optional, for CIMD): "
+                )
+                client_metadata_url = client_metadata_url.strip()
+                if client_metadata_url:
+                    auth_config["client_metadata_url"] = client_metadata_url
+
             server_config = {
                 "enabled": True,
                 "transport": transport,  # "http" or "sse"
@@ -248,7 +269,7 @@ async def _add_mcp_server() -> None:
         # Test connection
         console.print(f"\n[{COLORS['dim']}]Testing connection...[/{COLORS['dim']}]")
 
-        success, tool_count, error = await test_mcp_connection(server_config)
+        success, tool_count, error = await test_mcp_connection(server_config, name)
 
         if success:
             console.print(f"[green]✓ Connected! Found {tool_count} tools[/green]")
@@ -372,7 +393,7 @@ async def _manage_mcp_server(name: str) -> None:
 
         elif choice == "test":
             console.print(f"\n[{COLORS['dim']}]Testing connection...[/{COLORS['dim']}]")
-            success, new_tool_count, error = await test_mcp_connection(server_config)
+            success, new_tool_count, error = await test_mcp_connection(server_config, name)
 
             if success:
                 console.print(f"[green]✓ Connected! Found {new_tool_count} tools[/green]")

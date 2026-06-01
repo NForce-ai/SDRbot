@@ -57,8 +57,7 @@ class MCPSetupScreen(Screen[bool | None]):
             yield Static("MCP Servers", classes="setup-title")
             yield ListView(id="mcp-list", classes="setup-list")
             yield Static("", id="mcp-hint", classes="setup-hint")
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Back", variant="default", id="btn-back", classes="setup-btn")
+            yield Button("Back", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
         """Populate the server list on mount."""
@@ -175,18 +174,18 @@ class AddMCPServerScreen(ModalScreen[bool]):
 
             yield Static("", id="error-message", classes="setup-error")
 
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Continue", variant="success", id="btn-continue", classes="setup-btn")
-                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+            with Horizontal():
+                yield Button("Continue", variant="success", id="btn-continue")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_mount(self) -> None:
         """Populate transport list and focus input."""
         list_view = self.query_one("#transport-list", ListView)
 
-        # NOTE: HTTP transport disabled due to MCP SDK bug
         transports = [
             ("stdio", "stdio - Run as subprocess (npx, uvx, python)"),
-            ("sse", "SSE - Server-Sent Events (HTTP streaming)"),
+            ("http", "HTTP - Streamable HTTP (most remote servers)"),
+            ("sse", "SSE - Server-Sent Events (legacy)"),
         ]
 
         for transport_id, transport_label in transports:
@@ -239,9 +238,14 @@ class AddMCPServerScreen(ModalScreen[bool]):
                 StdioConfigScreen(name),
                 self._on_config_complete,
             )
-        else:  # sse
+        elif transport == "sse":
             self.app.push_screen(
-                SSEConfigScreen(name),
+                SSEConfigScreen(name, transport="sse"),
+                self._on_config_complete,
+            )
+        else:  # http
+            self.app.push_screen(
+                SSEConfigScreen(name, transport="http"),
                 self._on_config_complete,
             )
 
@@ -321,9 +325,9 @@ class StdioConfigScreen(ModalScreen[bool]):
             yield Static("", id="status-message", classes="setup-hint")
             yield Static("", id="error-message", classes="setup-error")
 
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Continue", variant="success", id="btn-save", classes="setup-btn")
-                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+            with Horizontal():
+                yield Button("Continue", variant="success", id="btn-save")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_mount(self) -> None:
         """Focus the first input."""
@@ -380,7 +384,7 @@ class StdioConfigScreen(ModalScreen[bool]):
         status_label = self.query_one("#status-message", Static)
         error_label = self.query_one("#error-message", Static)
 
-        success, tool_count, error = await test_mcp_connection(server_config)
+        success, tool_count, error = await test_mcp_connection(server_config, self.server_name)
 
         if success:
             status_label.update(f"Connected! Found {tool_count} tools")
@@ -431,13 +435,15 @@ class SSEConfigScreen(ModalScreen[bool]):
         ("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, server_name: str) -> None:
+    def __init__(self, server_name: str, transport: str = "sse") -> None:
         super().__init__()
         self.server_name = server_name
+        self.transport = transport
 
     def compose(self) -> ComposeResult:
+        transport_label = self.transport.upper()
         with Container(id="sse-dialog", classes="setup-dialog-wide"):
-            yield Static(f"Configure {self.server_name} (SSE)", classes="setup-title")
+            yield Static(f"Configure {self.server_name} ({transport_label})", classes="setup-title")
 
             with Vertical(classes="setup-field"):
                 yield Label("Server URL:", classes="setup-field-label")
@@ -454,9 +460,9 @@ class SSEConfigScreen(ModalScreen[bool]):
             yield Static("", id="status-message", classes="setup-hint")
             yield Static("", id="error-message", classes="setup-error")
 
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Continue", variant="success", id="btn-continue", classes="setup-btn")
-                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+            with Horizontal():
+                yield Button("Continue", variant="success", id="btn-continue")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_mount(self) -> None:
         """Populate auth list and focus input."""
@@ -467,6 +473,7 @@ class SSEConfigScreen(ModalScreen[bool]):
             ("bearer", "Bearer Token"),
             ("apikey", "API Key (X-API-Key header)"),
             ("custom", "Custom Headers"),
+            ("oauth", "OAuth 2.0 (browser-based authorization)"),
         ]
 
         for auth_id, auth_label in auth_types:
@@ -504,15 +511,21 @@ class SSEConfigScreen(ModalScreen[bool]):
             # No auth needed, go directly to test
             server_config = {
                 "enabled": True,
-                "transport": "sse",
+                "transport": self.transport,
                 "url": url,
                 "auth": {"type": "none"},
             }
             self.run_worker(self._test_and_save(server_config), exclusive=True)
+        elif auth_type == "oauth":
+            # OAuth 2.0 - optionally configure scopes, then test
+            self.app.push_screen(
+                OAuthConfigScreen(self.server_name, url, self.transport),
+                self._on_auth_complete,
+            )
         else:
             # Need to get auth details
             self.app.push_screen(
-                SSEAuthScreen(self.server_name, url, auth_type),
+                SSEAuthScreen(self.server_name, url, auth_type, self.transport),
                 self._on_auth_complete,
             )
 
@@ -529,14 +542,14 @@ class SSEConfigScreen(ModalScreen[bool]):
         status_label.update("Testing connection...")
         error_label.update("")
 
-        success, tool_count, error = await test_mcp_connection(server_config)
+        success, tool_count, error = await test_mcp_connection(server_config, self.server_name)
 
         if success:
             status_label.update(f"Connected! Found {tool_count} tools")
 
             add_mcp_server(
                 name=self.server_name,
-                transport="sse",
+                transport=self.transport,
                 url=server_config["url"],
                 auth=server_config.get("auth"),
                 enabled=True,
@@ -570,11 +583,12 @@ class SSEAuthScreen(ModalScreen[bool]):
         ("escape", "cancel", "Cancel"),
     ]
 
-    def __init__(self, server_name: str, url: str, auth_type: str) -> None:
+    def __init__(self, server_name: str, url: str, auth_type: str, transport: str = "sse") -> None:
         super().__init__()
         self.server_name = server_name
         self.url = url
         self.auth_type = auth_type
+        self.transport = transport
 
     def compose(self) -> ComposeResult:
         with Container(id="auth-dialog", classes="setup-dialog"):
@@ -616,9 +630,9 @@ class SSEAuthScreen(ModalScreen[bool]):
             yield Static("", id="status-message", classes="setup-hint")
             yield Static("", id="error-message", classes="setup-error")
 
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Continue", variant="success", id="btn-save", classes="setup-btn")
-                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+            with Horizontal():
+                yield Button("Continue", variant="success", id="btn-save")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_mount(self) -> None:
         """Focus the appropriate input."""
@@ -662,7 +676,7 @@ class SSEAuthScreen(ModalScreen[bool]):
 
         server_config = {
             "enabled": True,
-            "transport": "sse",
+            "transport": self.transport,
             "url": self.url,
             "auth": auth_config,
         }
@@ -677,14 +691,14 @@ class SSEAuthScreen(ModalScreen[bool]):
         status_label.update("Testing connection...")
         error_label.update("")
 
-        success, tool_count, error = await test_mcp_connection(server_config)
+        success, tool_count, error = await test_mcp_connection(server_config, self.server_name)
 
         if success:
             status_label.update(f"Connected! Found {tool_count} tools")
 
             add_mcp_server(
                 name=self.server_name,
-                transport="sse",
+                transport=self.transport,
                 url=server_config["url"],
                 auth=server_config.get("auth"),
                 enabled=True,
@@ -703,6 +717,126 @@ class SSEAuthScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class OAuthConfigScreen(ModalScreen[bool]):
+    """Modal screen for configuring OAuth 2.0 authentication."""
+
+    CSS_PATH = [SETUP_CSS_PATH]
+
+    CSS = """
+    OAuthConfigScreen {
+        align: center middle;
+    }
+    """
+
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, server_name: str, url: str, transport: str = "http") -> None:
+        super().__init__()
+        self.server_name = server_name
+        self.url = url
+        self.transport = transport
+
+    def compose(self) -> ComposeResult:
+        with Container(id="oauth-dialog", classes="setup-dialog"):
+            yield Static("OAuth 2.0 Configuration", classes="setup-title")
+            yield Static(
+                "OAuth uses your browser to authorize. A local callback server\n"
+                "on port 8080 handles the redirect automatically.",
+                classes="setup-hint",
+            )
+
+            with Vertical(classes="setup-field"):
+                yield Label("Scopes (optional, space-separated):", classes="setup-field-label")
+                yield Input(
+                    placeholder="e.g., read write admin",
+                    id="scopes-input",
+                    classes="setup-field-input",
+                )
+
+            with Vertical(classes="setup-field"):
+                yield Label("Client Metadata URL (optional, for CIMD):", classes="setup-field-label")
+                yield Input(
+                    placeholder="e.g., https://auth.example.com/client-metadata",
+                    id="client-metadata-url-input",
+                    classes="setup-field-input",
+                )
+
+            yield Static("", id="status-message", classes="setup-hint")
+            yield Static("", id="error-message", classes="setup-error")
+
+            with Horizontal():
+                yield Button("Test & Save", variant="success", id="btn-save")
+                yield Button("Cancel", variant="default", id="btn-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#scopes-input", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-save":
+            self._test_and_save()
+        elif event.button.id == "btn-cancel":
+            self.dismiss(False)
+
+    def _test_and_save(self) -> None:
+        scopes = self.query_one("#scopes-input", Input).value.strip() or None
+        client_metadata_url = (
+            self.query_one("#client-metadata-url-input", Input).value.strip() or None
+        )
+
+        auth_config: dict = {"type": "oauth"}
+        if scopes:
+            auth_config["scopes"] = scopes
+        if client_metadata_url:
+            auth_config["client_metadata_url"] = client_metadata_url
+
+        server_config = {
+            "enabled": True,
+            "transport": self.transport,
+            "url": self.url,
+            "auth": auth_config,
+        }
+
+        self.run_worker(self._do_test_and_save(server_config), exclusive=True)
+
+    async def _do_test_and_save(self, server_config: dict) -> None:
+        from sdrbot_cli.mcp.client import test_mcp_connection
+
+        status_label = self.query_one("#status-message", Static)
+        error_label = self.query_one("#error-message", Static)
+
+        status_label.update(
+            "Testing connection...\nIf this is your first time, a browser will open for authorization."
+        )
+        error_label.update("")
+
+        success, tool_count, error = await test_mcp_connection(server_config, self.server_name)
+
+        if success:
+            status_label.update(f"Connected! Found {tool_count} tools")
+
+            add_mcp_server(
+                name=self.server_name,
+                transport=self.transport,
+                url=server_config["url"],
+                auth=server_config.get("auth"),
+                enabled=True,
+            )
+            update_server_tool_count(self.server_name, tool_count)
+
+            self.notify(
+                f"Added MCP server: {self.server_name}", severity="information"
+            )
+            self.dismiss(True)
+        else:
+            status_label.update("")
+            error_label.update(error)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class ManageMCPServerScreen(ModalScreen[bool]):
     """Modal screen for managing an existing MCP server."""
 
@@ -713,8 +847,12 @@ class ManageMCPServerScreen(ModalScreen[bool]):
         align: center middle;
     }
 
-    #manage-list {
-        max-height: 8;
+    #manage-dialog {
+        width: 46;
+        height: auto;
+        border: heavy $accent;
+        background: $panel;
+        padding: 1 2;
     }
     """
 
@@ -727,12 +865,15 @@ class ManageMCPServerScreen(ModalScreen[bool]):
         self.server_name = server_name
 
     def compose(self) -> ComposeResult:
-        with Container(id="manage-dialog", classes="setup-dialog"):
+        with Container(id="manage-dialog"):
             yield Static(f"Manage: {self.server_name}", classes="setup-title")
             yield Static("", id="server-info", classes="setup-hint")
-            yield ListView(id="manage-list", classes="setup-list")
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Back", variant="default", id="btn-back", classes="setup-btn")
+
+            yield Button("Enable", variant="success", id="btn-toggle")
+            yield Button("Test Connection", variant="primary", id="btn-test")
+            yield Button("View Tools", variant="default", id="btn-view-tools")
+            yield Button("Remove Server", variant="error", id="btn-remove")
+            yield Button("Back", variant="default", id="btn-back")
 
     def on_mount(self) -> None:
         """Populate server info and actions."""
@@ -766,53 +907,41 @@ class ManageMCPServerScreen(ModalScreen[bool]):
         info_label = self.query_one("#server-info", Static)
         info_label.update(f"Transport: {transport}\n{info}\nTools: {tool_count}")
 
-        # Build action list
-        list_view = self.query_one("#manage-list", ListView)
-        list_view.clear()
-
+        # Update toggle button
+        btn_toggle = self.query_one("#btn-toggle", Button)
         if enabled:
-            disable_item = ListItem(Static("Disable"))
-            disable_item.data = "disable"
-            list_view.append(disable_item)
+            btn_toggle.label = "Disable"
+            btn_toggle.variant = "warning"
         else:
-            enable_item = ListItem(Static("Enable"))
-            enable_item.data = "enable"
-            list_view.append(enable_item)
+            btn_toggle.label = "Enable"
+            btn_toggle.variant = "success"
+        btn_toggle.refresh(layout=True)
 
-        test_item = ListItem(Static("Test Connection"))
-        test_item.data = "test"
-        list_view.append(test_item)
-
-        view_item = ListItem(Static(f"View Tools ({tool_count})"))
-        view_item.data = "view_tools"
-        list_view.append(view_item)
-
-        remove_item = ListItem(Static("Remove Server"))
-        remove_item.data = "remove"
-        list_view.append(remove_item)
+        # Update tools button
+        btn_tools = self.query_one("#btn-view-tools", Button)
+        btn_tools.label = f"Tools ({tool_count})"
+        btn_tools.refresh(layout=True)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
-        if event.button.id == "btn-back":
+        btn_id = event.button.id
+        if btn_id == "btn-back":
             self.dismiss(True)
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        """Handle action selection."""
-        action = getattr(event.item, "data", None)
-
-        if action == "enable":
-            enable_mcp_server(self.server_name)
-            self.notify(f"Enabled {self.server_name}", severity="information")
+        elif btn_id == "btn-toggle":
+            config = load_mcp_config()
+            server_config = config.get("servers", {}).get(self.server_name, {})
+            if server_config.get("enabled", False):
+                disable_mcp_server(self.server_name)
+                self.notify(f"Disabled {self.server_name}", severity="warning")
+            else:
+                enable_mcp_server(self.server_name)
+                self.notify(f"Enabled {self.server_name}", severity="information")
             self._refresh_view()
-        elif action == "disable":
-            disable_mcp_server(self.server_name)
-            self.notify(f"Disabled {self.server_name}", severity="warning")
-            self._refresh_view()
-        elif action == "test":
+        elif btn_id == "btn-test":
             self.run_worker(self._test_connection(), exclusive=True)
-        elif action == "view_tools":
+        elif btn_id == "btn-view-tools":
             self.app.push_screen(ViewToolsScreen(self.server_name))
-        elif action == "remove":
+        elif btn_id == "btn-remove":
             self.app.push_screen(
                 ConfirmRemoveScreen(self.server_name),
                 self._on_remove_complete,
@@ -829,7 +958,7 @@ class ManageMCPServerScreen(ModalScreen[bool]):
 
         self.notify("Testing connection...", severity="information")
 
-        success, tool_count, error = await test_mcp_connection(server_config)
+        success, tool_count, error = await test_mcp_connection(server_config, self.server_name)
 
         if success:
             self.notify(f"Connected! Found {tool_count} tools", severity="information")
@@ -875,9 +1004,9 @@ class ConfirmRemoveScreen(ModalScreen[bool]):
                 classes="setup-hint",
             )
 
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Remove", variant="error", id="btn-remove", classes="setup-btn")
-                yield Button("Cancel", variant="default", id="btn-cancel", classes="setup-btn")
+            with Horizontal():
+                yield Button("Remove", variant="error", id="btn-remove")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
@@ -927,8 +1056,7 @@ class ViewToolsScreen(ModalScreen[None]):
             yield Static(f"Tools: {self.server_name}", classes="setup-title")
             yield Static("Loading...", id="tools-status", classes="setup-hint")
             yield ListView(id="tools-list", classes="setup-list")
-            with Horizontal(classes="setup-buttons"):
-                yield Button("Close", variant="default", id="btn-close", classes="setup-btn")
+            yield Button("Close", variant="default", id="btn-close")
 
     def on_mount(self) -> None:
         """Load and display tools."""

@@ -1,6 +1,5 @@
 """Shared OAuth callback server with timeout support."""
 
-import socket
 import threading
 import urllib.parse
 from collections.abc import Callable
@@ -59,9 +58,11 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
 class TimeoutHTTPServer(HTTPServer):
     """HTTPServer with timeout support."""
 
+    allow_reuse_address = True  # sets SO_REUSEADDR before bind (via server_bind)
+
     def __init__(self, server_address, RequestHandlerClass, timeout: float = 1.0):
         super().__init__(server_address, RequestHandlerClass)
-        # Set socket timeout for handle_request() to return periodically
+        # Set socket timeout so handle_request() returns periodically
         self.socket.settimeout(timeout)
 
     def handle_timeout(self):
@@ -81,6 +82,7 @@ def wait_for_callback(
     port: int = 8080,
     timeout: float = 300.0,  # 5 minutes default
     check_cancelled: Callable[[], bool] | None = None,
+    on_ready: Callable[[], None] | None = None,
 ) -> tuple[str | None, dict]:
     """
     Start a local server and wait for an OAuth callback.
@@ -90,6 +92,7 @@ def wait_for_callback(
         port: Port to listen on
         timeout: Maximum time to wait in seconds
         check_cancelled: Optional callback to check if operation was cancelled
+        on_ready: Optional callback invoked once the socket is bound and listening
 
     Returns:
         Tuple of (auth_code, extra_params) or (None, {}) if timed out/cancelled
@@ -111,8 +114,8 @@ def wait_for_callback(
 
     with _server_lock:
         try:
+            # SO_REUSEADDR must be set before bind; subclass server_bind to do that.
             server = TimeoutHTTPServer(server_address, OAuthCallbackHandler, timeout=1.0)
-            server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             _active_server = server
         except OSError as e:
             if "Address already in use" in str(e):
@@ -121,6 +124,10 @@ def wait_for_callback(
                     "Please wait a moment and try again, or restart the application."
                 ) from e
             raise
+
+    # Notify caller that the socket is now bound and accepting connections.
+    if on_ready:
+        on_ready()
 
     try:
         elapsed = 0.0

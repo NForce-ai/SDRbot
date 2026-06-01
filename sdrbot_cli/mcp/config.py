@@ -122,6 +122,14 @@ def remove_mcp_server(name: str) -> bool:
     if name in config["servers"]:
         del config["servers"][name]
         save_mcp_config(config)
+
+        # Clean up OAuth tokens if present
+        try:
+            from .oauth import clear_oauth_tokens
+
+            clear_oauth_tokens(name)
+        except ImportError:
+            pass
         return True
 
     return False
