@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import threading
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -98,16 +100,61 @@ class FileTokenStorage:
             self._path.unlink()
 
 
+# Shared state between _open_browser and _wait_for_callback.
+# The MCP SDK calls redirect_handler (browser open) BEFORE callback_handler,
+# so we must start the local server in the redirect step to avoid a race where
+# the browser receives the auth code and hits localhost:8080 before the server
+# is listening.
+_callback_future: "asyncio.Future[tuple[str | None, dict]] | None" = None
+
+
 async def _open_browser(url: str) -> None:
-    """Redirect handler: open the authorization URL in the browser."""
+    """Redirect handler: start callback server, then open the authorization URL.
+
+    The server thread signals `_server_ready` once the socket is bound, so the
+    browser only opens after localhost:8080 is definitely listening.
+    """
+    from sdrbot_cli.auth.oauth_server import reset_handler, wait_for_callback
+
+    global _callback_future
+
     logger.info(f"Opening browser for OAuth: {url}")
+
+    loop = asyncio.get_running_loop()
+    _callback_future = loop.create_future()
+    _server_ready = threading.Event()
+    _server_start_error: list[Exception] = []  # mutable container for thread→async communication
+
+    reset_handler()
+
+    def _run_server():
+        try:
+            result = wait_for_callback(
+                callback_path="/callback",
+                port=8080,
+                timeout=300.0,
+                on_ready=_server_ready.set,  # called directly in this thread — thread-safe
+            )
+            loop.call_soon_threadsafe(_callback_future.set_result, result)
+        except Exception as exc:
+            _server_start_error.append(exc)
+            _server_ready.set()  # unblock the waiter even on failure
+            loop.call_soon_threadsafe(_callback_future.set_exception, exc)
+
+    threading.Thread(target=_run_server, daemon=True).start()
+
+    # Wait until the socket is confirmed bound (or fails), then check before opening browser.
+    await loop.run_in_executor(None, lambda: _server_ready.wait(timeout=5.0))
+
+    if _server_start_error:
+        raise _server_start_error[0]
+
     opened = webbrowser.open(url)
     if not opened:
         logger.warning(
             "Failed to open browser automatically. "
             f"Please open this URL manually:\n{url}"
         )
-        # Also print to console so TUI users see it
         from sdrbot_cli.config import console
 
         console.print(
@@ -118,27 +165,18 @@ async def _open_browser(url: str) -> None:
 
 
 async def _wait_for_callback() -> tuple[str, str | None]:
-    """Callback handler: start local server and wait for OAuth callback.
+    """Callback handler: await the result from the server started in _open_browser.
 
     Returns (auth_code, state) tuple.
     """
-    import asyncio
+    global _callback_future
 
-    from sdrbot_cli.auth.oauth_server import reset_handler, wait_for_callback
+    if _callback_future is None:
+        raise RuntimeError("Callback server not started — redirect_handler must be called first")
 
-    reset_handler()
+    auth_code, extra = await _callback_future
+    _callback_future = None
 
-    # wait_for_callback is synchronous (blocking HTTP server) -
-    # run it in a thread to avoid blocking the event loop
-    loop = asyncio.get_running_loop()
-    auth_code, extra = await loop.run_in_executor(
-        None,
-        lambda: wait_for_callback(
-            callback_path="/callback",
-            port=8080,
-            timeout=300.0,
-        ),
-    )
     if auth_code is None:
         raise RuntimeError("OAuth authorization timed out or was cancelled")
     state = extra.get("state") if extra else None
